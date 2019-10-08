@@ -1,5 +1,5 @@
 {
-    "name": "muskie",
-    "path": "/opt/smartdc/muskie/etc/config.json",
-	"master": true
+    "name": "buckets-api",
+    "path": "/opt/smartdc/buckets-api/etc/config.json",
+    "master": true
 }

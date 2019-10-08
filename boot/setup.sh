@@ -55,7 +55,7 @@ function manta_setup_buckets_api {
         num_instances=4
     elif [ "$size" = "production" ]
     then
-    num_instances=16
+        num_instances=16
     fi
 
     #Build the list of ports.  That'll be used for everything else.
@@ -91,7 +91,7 @@ function manta_setup_buckets_api {
         local buckets_api_instance="buckets-api-${ports[i]}"
         local buckets_api_xml_out=$SVC_ROOT/smf/manifests/buckets-api-${ports[i]}.xml
         sed -e "s#@@BUCKETS_API_PORT@@#${ports[i]}#g" \
-        -e "s#@@BUCKETS_API_INSECURE_PORT@@#${insecure_ports[i]}#g" \
+            -e "s#@@BUCKETS_API_INSECURE_PORT@@#${insecure_ports[i]}#g" \
             -e "s#@@BUCKETS_API_INSTANCE_NAME@@#$buckets_api_instance#g" \
             $buckets_api_xml_in  > $buckets_api_xml_out || \
             fatal "could not process $buckets_api_xml_in to $buckets_api_xml_out"

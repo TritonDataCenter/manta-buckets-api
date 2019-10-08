@@ -7,7 +7,7 @@
 #
 
 #
-# Copyright (c) 2017, Joyent, Inc.
+# Copyright 2019 Joyent, Inc.
 #
 
 set -o xtrace
@@ -18,7 +18,7 @@ if [[ -h $SOURCE ]]; then
 fi
 DIR="$( cd -P "$( dirname "$SOURCE" )" && pwd )"
 PROFILE=/root/.bashrc
-SVC_ROOT=/opt/smartdc/muskie
+SVC_ROOT=/opt/smartdc/buckets-api
 
 source ${DIR}/scripts/util.sh
 source ${DIR}/scripts/services.sh
@@ -37,17 +37,17 @@ function wait_for_resolv_conf {
         num_ns=$(grep nameserver /etc/resolv.conf | wc -l)
         if [ $num_ns -gt 1 ]
         then
-		    isok=1
-		    break
+            isok=1
+            break
         fi
-	    let attempt=attempt+1
-	    sleep 1
+        let attempt=attempt+1
+        sleep 1
     done
     [[ $isok -eq 1 ]] || fatal "manatee is not up"
 }
 
 
-function manta_setup_muskie {
+function manta_setup_buckets_api {
     local num_instances=1
     local size=`json -f ${METADATA} SIZE`
     if [ "$size" = "lab" ]
@@ -55,7 +55,7 @@ function manta_setup_muskie {
         num_instances=4
     elif [ "$size" = "production" ]
     then
-	num_instances=16
+    num_instances=16
     fi
 
     #Build the list of ports.  That'll be used for everything else.
@@ -71,39 +71,39 @@ function manta_setup_muskie {
 
     #haproxy
     for port in "${ports[@]}"; do
-        hainstances="$hainstances        server muskie-$port 127.0.0.1:$port check inter 10s slowstart 10s error-limit 3 on-error mark-down\n"
+        hainstances="$hainstances        server buckets-api-$port 127.0.0.1:$port check inter 10s slowstart 10s error-limit 3 on-error mark-down\n"
     done
     for insecure_port in "${insecure_ports[@]}"; do
-        hainstances_insecure="$hainstances_insecure        server muskie-$insecure_port 127.0.0.1:$insecure_port check inter 10s slowstart 10s error-limit 3 on-error mark-down\n"
+        hainstances_insecure="$hainstances_insecure        server buckets-api-$insecure_port 127.0.0.1:$insecure_port check inter 10s slowstart 10s error-limit 3 on-error mark-down\n"
     done
 
-    sed -e "s#@@MUSKIE_INSTANCES@@#$hainstances#g" \
-	-e "s#@@MUSKIE_INSECURE_INSTANCES@@#$hainstances_insecure#g" \
+    sed -e "s#@@BUCKETS_API_INSTANCES@@#$hainstances#g" \
+    -e "s#@@BUCKETS_API_INSECURE_INSTANCES@@#$hainstances_insecure#g" \
         $SVC_ROOT/etc/haproxy.cfg.in > $SVC_ROOT/etc/haproxy.cfg || \
         fatal "could not process $src to $dest"
 
     svccfg import $SVC_ROOT/smf/manifests/haproxy.xml || \
-	fatal "unable to import haproxy"
+    fatal "unable to import haproxy"
 
-    #muskie instances
-    local muskie_xml_in=$SVC_ROOT/smf/manifests/muskie.xml.in
+    #buckets-api instances
+    local buckets_api_xml_in=$SVC_ROOT/smf/manifests/buckets-api.xml.in
     for (( i=1; i<=$num_instances; i++ )); do
-        local muskie_instance="muskie-${ports[i]}"
-        local muskie_xml_out=$SVC_ROOT/smf/manifests/muskie-${ports[i]}.xml
-        sed -e "s#@@MUSKIE_PORT@@#${ports[i]}#g" \
-	    -e "s#@@MUSKIE_INSECURE_PORT@@#${insecure_ports[i]}#g" \
-            -e "s#@@MUSKIE_INSTANCE_NAME@@#$muskie_instance#g" \
-            $muskie_xml_in  > $muskie_xml_out || \
-            fatal "could not process $muskie_xml_in to $muskie_xml_out"
+        local buckets_api_instance="buckets-api-${ports[i]}"
+        local buckets_api_xml_out=$SVC_ROOT/smf/manifests/buckets-api-${ports[i]}.xml
+        sed -e "s#@@BUCKETS_API_PORT@@#${ports[i]}#g" \
+        -e "s#@@BUCKETS_API_INSECURE_PORT@@#${insecure_ports[i]}#g" \
+            -e "s#@@BUCKETS_API_INSTANCE_NAME@@#$buckets_api_instance#g" \
+            $buckets_api_xml_in  > $buckets_api_xml_out || \
+            fatal "could not process $buckets_api_xml_in to $buckets_api_xml_out"
 
-        svccfg import $muskie_xml_out || \
-            fatal "unable to import $muskie_instance: $muskie_xml_out"
-        svcadm enable "$muskie_instance" || \
-            fatal "unable to start $muskie_instance"
+        svccfg import $buckets_api_xml_out || \
+            fatal "unable to import $buckets_api_instance: $buckets_api_xml_out"
+        svcadm enable "$buckets_api_instance" || \
+            fatal "unable to start $buckets_api_instance"
         sleep 1
     done
 
-    # Setup haproxy after the muskie's are kicked up
+    # Setup haproxy after the buckets-api's are kicked up
     svcadm enable "manta/haproxy" || fatal "unable to start haproxy"
 
     unset IFS
@@ -113,20 +113,20 @@ function manta_setup_muskie {
     local crontab=/tmp/.manta_webapi_cron
     crontab -l > $crontab
 
-    echo "30 * * * * /opt/smartdc/muskie/bin/backup_pg_dumps.sh >> /var/log/backup_pg_dump.log 2>&1" >> $crontab
+    echo "30 * * * * /opt/smartdc/buckets-api/bin/backup_pg_dumps.sh >> /var/log/backup_pg_dump.log 2>&1" >> $crontab
     [[ $? -eq 0 ]] || fatal "Unable to write to $crontab"
     crontab $crontab
     [[ $? -eq 0 ]] || fatal "Unable import crons"
 
     #.bashrc
-    echo 'function req() { grep "$@" /var/log/muskie.log | bunyan ;}' \
+    echo 'function req() { grep "$@" /var/log/buckets-api.log | bunyan ;}' \
         >>/root/.bashrc
 }
 
 
-function manta_setup_muskie_rsyslogd {
+function manta_setup_buckets_api_rsyslogd {
     #rsyslog was already set up by common setup- this will overwrite the
-    # config and restart since we want muskie to log locally.
+    # config and restart since we want buckets-api to log locally.
     local domain_name=$(json -f ${METADATA} domain_name)
     [[ $? -eq 0 ]] || fatal "Unable to domain name from metadata"
 
@@ -143,18 +143,18 @@ $ModLoad imudp
 
 $template bunyan,"%msg:R,ERE,1,FIELD:(\{.*\})--end%\n"
 
-*.err;kern.notice;auth.notice			/dev/sysmsg
-*.err;kern.debug;daemon.notice;mail.crit	/var/adm/messages
+*.err;kern.notice;auth.notice           /dev/sysmsg
+*.err;kern.debug;daemon.notice;mail.crit    /var/adm/messages
 
-*.alert;kern.err;daemon.err			operator
-*.alert						root
+*.alert;kern.err;daemon.err         operator
+*.alert                     root
 
-*.emerg						*
+*.emerg                     *
 
-mail.debug					/var/log/syslog
+mail.debug                  /var/log/syslog
 
-auth.info					/var/log/auth.log
-mail.info					/var/log/postfix.log
+auth.info                   /var/log/auth.log
+mail.info                   /var/log/postfix.log
 
 $WorkDirectory /var/tmp/rsyslog/work
 $ActionQueueType Direct
@@ -168,7 +168,7 @@ HERE
 
 # Support node bunyan logs going to local0 and forwarding
 # only as logs are already captured via SMF
-local0.* /var/log/muskie.log;bunyan
+local0.* /var/log/buckets-api.log;bunyan
 
 HERE
 
@@ -182,7 +182,7 @@ HERE
     [[ $? -eq 0 ]] || fatal "Unable to restart rsyslog"
 
     #log pulling
-    manta_add_logadm_entry "muskie" "/var/log" "exact"
+    manta_add_logadm_entry "buckets-api" "/var/log" "exact"
 }
 
 
@@ -193,23 +193,20 @@ echo "Running common setup scripts"
 manta_common_presetup
 
 echo "Adding local manifest directories"
-manta_add_manifest_dir "/opt/smartdc/muskie"
+manta_add_manifest_dir "/opt/smartdc/buckets-api"
 
-manta_common_setup "muskie"
+manta_common_setup "buckets-api"
 
 manta_ensure_zk
 
-echo "Setting up muskie"
+echo "Setting up buckets-api"
 
 # MANTA-1827
-# Sometimes muskies come up before DNS resolvers are in /etc/resolv.conf
+# Sometimes buckets-api instances come up before DNS resolvers are in /etc/resolv.conf
 wait_for_resolv_conf
-manta_setup_muskie
-manta_setup_muskie_rsyslogd
+manta_setup_buckets_api
+manta_setup_buckets_api_rsyslogd
 
 manta_common_setup_end
-
-# Setup the mlocate alias
-echo "alias mlocate='/opt/smartdc/muskie/bin/mlocate -f /opt/smartdc/muskie/etc/config.json'" >> $PROFILE
 
 exit 0

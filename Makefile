@@ -5,11 +5,11 @@
 #
 
 #
-# Copyright (c) 2019, Joyent, Inc.
+# Copyright 2019 Joyent, Inc.
 #
 
 #
-# Makefile: Muskie, the public-facing Manta API server
+# Makefile: buckets-api, the public-facing Manta bucket API server
 #
 
 #
@@ -19,21 +19,21 @@ DOC_FILES =		index.md
 RESTDOWN_FLAGS =	--brand-dir=docs/bluejoy
 RESTDOWN_EXT =		.md
 
-JS_FILES :=		bin/mlocate bin/mpicker \
-			$(shell ls *.js) \
-			$(shell find lib test -name '*.js')
-JSL_CONF_NODE =		tools/jsl.node.conf
-JSL_FILES_NODE =	$(JS_FILES)
-JSSTYLE_FILES =		$(JS_FILES)
-JSSTYLE_FLAGS =		-f tools/jsstyle.conf
+JS_FILES :=     bin/mlocate bin/mpicker \
+            $(shell ls *.js) \
+            $(shell find lib test -name '*.js')
+JSL_CONF_NODE =     tools/jsl.node.conf
+JSL_FILES_NODE =    $(JS_FILES)
+JSSTYLE_FILES =     $(JS_FILES)
+JSSTYLE_FLAGS =     -f tools/jsstyle.conf
 
-SMF_MANIFESTS_IN =	smf/manifests/muskie.xml.in \
-			smf/manifests/haproxy.xml.in
+SMF_MANIFESTS_IN =  smf/manifests/buckets-api.xml.in \
+            smf/manifests/haproxy.xml.in
 
 #
 # Variables
 #
-NAME 			= muskie
+NAME       = buckets-api
 NODE_PREBUILT_TAG       = zone
 NODE_PREBUILT_VERSION	:= v0.10.48
 # sdc-minimal-multiarch-lts 15.4.1
@@ -57,8 +57,8 @@ ROOT :=			$(shell pwd)
 RELSTAGEDIR :=		/tmp/$(NAME)-$(STAMP)
 
 BASE_IMAGE_UUID = 04a48d7d-6bb5-4e83-8c3b-e60a99e0f48f
-BUILDIMAGE_NAME = manta-webapi
-BUILDIMAGE_DESC	= Manta webapi
+BUILDIMAGE_NAME = manta-buckets-api
+BUILDIMAGE_DESC = Manta buckets api
 BUILDIMAGE_PKGSRC = haproxy-1.6.2
 AGENTS		= amon config registrar
 

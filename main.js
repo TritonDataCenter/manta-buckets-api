@@ -32,6 +32,7 @@ var vasync = require('vasync');
 
 var app = require('./lib');
 var boray = require('./lib/buckets/boray');
+var metadata_placement = require('./lib/metadata_placement');
 var uploadsCommon = require('./lib/uploads/common');
 
 ///--- Internal Functions
@@ -317,61 +318,13 @@ function createMetadataPlacementClient(opts, onConnect) {
 
     var log = opts.log.child({component: 'metadataPlacementClient'}, true);
 
-    var client = app.metadata_placement.createClient(opts);
+    var client = metadata_placement.createClient(opts);
 
     client.once('connect', function _onConnect() {
         log.info('metadataPlacementClient connected %s', client.toString());
         onConnect(client);
     });
 }
-
-
-// function onBorayConnect(clients, barrier, borayClient) {
-//     clients.boray = borayClient;
-//     barrier.done('createBorayClient');
-// }
-
-
-// function createBorayClient(opts, onConnect) {
-//     assert.object(opts, 'options');
-//     assert.object(opts.log, 'options.log');
-
-//     var log = opts.log.child({component: 'boray'}, true);
-//     opts.log = log;
-
-//     // var client = new boray.createClient(opts);
-
-//     // client.once('error', function (err) {
-//     //     client.removeAllListeners('connect');
-
-//     //     log.error(err, 'boray: failed to connect');
-//     // });
-
-//     log.info('creating boray client');
-//     boray_client.createClient({
-//         pnodes: opts.dataDirector.getPnodes(),
-//         borayOptions: options.borayOptions,
-//         log: options.log,
-//         crc_mode: client_crc_mode
-//     }, function (cErr, clients) {
-//         if (cErr) {
-//             throw new verror.VError(cErr, 'unable to create boray clients');
-//         }
-
-//         onConnect(clients);
-
-//     // client.once('connect', function _onConnect() {
-//     //     client.removeAllListeners('error');
-
-//     //     log.info({
-//     //         host: opts.host,
-//     //         port: opts.port
-//     //     }, 'boray: connected');
-
-//     //     onConnect(client);
-//     });
-// }
-
 
 function onMedusaConnect(clients, medusaClient) {
     clients.medusa = medusaClient;
@@ -392,9 +345,6 @@ function createMedusaConnector(opts, onConnect) {
         onConnect(client);
     });
 }
-
-
-
 
 function clientsConnected(appName, cfg, clients) {
     var server1, server2;

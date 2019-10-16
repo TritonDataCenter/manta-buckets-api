@@ -304,39 +304,73 @@ function createMorayClient(opts, onConnect) {
     });
 }
 
-
-function onBorayConnect(clients, barrier, borayClient) {
-    clients.boray = borayClient;
-    barrier.done('createBorayClient');
+function onMetadataPlacementClientConnect(clients, barrier, client) {
+    clients.metadataPlacement = client;
+    barrier.done('createMetadataPlacementClient');
 }
 
-
-function createBorayClient(opts, onConnect) {
+function createMetadataPlacementClient(opts, onConnect) {
     assert.object(opts, 'options');
+    assert.object(opts.electric_boray, 'options.electric_boray');
+    assert.object(opts.boray, 'options.boray');
     assert.object(opts.log, 'options.log');
 
-    var log = opts.log.child({component: 'boray'}, true);
-    opts.log = log;
+    var log = opts.log.child({component: 'metadataPlacementClient'}, true);
 
-    var client = new boray.createClient(opts);
-
-    client.once('error', function (err) {
-        client.removeAllListeners('connect');
-
-        log.error(err, 'boray: failed to connect');
-    });
+    var client = app.metadata_placement.createClient(opts);
 
     client.once('connect', function _onConnect() {
-        client.removeAllListeners('error');
-
-        log.info({
-            host: opts.host,
-            port: opts.port
-        }, 'boray: connected');
-
+        log.info('metadataPlacementClient connected %s', client.toString());
         onConnect(client);
     });
 }
+
+
+// function onBorayConnect(clients, barrier, borayClient) {
+//     clients.boray = borayClient;
+//     barrier.done('createBorayClient');
+// }
+
+
+// function createBorayClient(opts, onConnect) {
+//     assert.object(opts, 'options');
+//     assert.object(opts.log, 'options.log');
+
+//     var log = opts.log.child({component: 'boray'}, true);
+//     opts.log = log;
+
+//     // var client = new boray.createClient(opts);
+
+//     // client.once('error', function (err) {
+//     //     client.removeAllListeners('connect');
+
+//     //     log.error(err, 'boray: failed to connect');
+//     // });
+
+//     log.info('creating boray client');
+//     boray_client.createClient({
+//         pnodes: opts.dataDirector.getPnodes(),
+//         borayOptions: options.borayOptions,
+//         log: options.log,
+//         crc_mode: client_crc_mode
+//     }, function (cErr, clients) {
+//         if (cErr) {
+//             throw new verror.VError(cErr, 'unable to create boray clients');
+//         }
+
+//         onConnect(clients);
+
+//     // client.once('connect', function _onConnect() {
+//     //     client.removeAllListeners('error');
+
+//     //     log.info({
+//     //         host: opts.host,
+//     //         port: opts.port
+//     //     }, 'boray: connected');
+
+//     //     onConnect(client);
+//     });
+// }
 
 
 function onMedusaConnect(clients, medusaClient) {
@@ -390,7 +424,6 @@ function clientsConnected(appName, cfg, clients) {
     app.startKangServer();
 }
 
-
 ///--- Mainline
 
 (function main() {
@@ -433,14 +466,14 @@ function clientsConnected(appName, cfg, clients) {
     clients.agent = new cueball.HttpAgent(cfg.cueballHttpAgent);
     clients.mahi = createAuthCacheClient(cfg.auth, clients.agent);
 
-    barrier.start('createMorayClient');
-    createMorayClient(cfg.moray, onMorayConnect.bind(null, clients, barrier));
-
-    if (cfg.enableBuckets && cfg.boray) {
-        barrier.start('createBorayClient');
-        createBorayClient(cfg.boray,
-            onBorayConnect.bind(null, clients, barrier));
-    }
+    var metadataPlacementOpts = {
+        electric_boray: cfg.electric_boray,
+        boray: cfg.boray,
+        log: cfg.log
+    };
+    barrier.start('createMetadataPlacementClient');
+    createMetadataPlacementClient(metadataPlacementOpts,
+        onMetadataPlacementClientConnect.bind(null, clients, barrier));
 
     // Establish other client connections needed for writes and jobs requests.
     createPickerClient(cfg.storage, cfg.log,

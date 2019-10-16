@@ -29,7 +29,7 @@ frontend http_insecure
         default_backend insecure_servers
 
 backend trusted_servers
-@@MUSKIE_INSTANCES@@
+@@BUCKETS_API_INSTANCES@@
 
 backend insecure_servers
-@@MUSKIE_INSECURE_INSTANCES@@
+@@BUCKETS_API_INSECURE_INSTANCES@@

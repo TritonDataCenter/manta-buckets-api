@@ -19,6 +19,7 @@
         "boray": "git+https://github.com/joyent/node-boray.git#master",
         "bunyan": "0.22.1",
         "bunyan-syslog": "0.2.2",
+        "clone": "0.1.9",
         "cmdln": "4.3.0",
         "content-disposition": "0.5.3",
         "cueball": "2.2.9",

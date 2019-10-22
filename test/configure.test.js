@@ -5,7 +5,7 @@
  */
 
 /*
- * Copyright (c) 2019, Joyent, Inc.
+ * Copyright 2019 Joyent, Inc.
  */
 
 var bunyan = require('bunyan');
@@ -14,18 +14,10 @@ var configure = require('../lib/configure.js');
 exports.configureLogging = function (t) {
     var appName = 'muskie';
     var bunyanCfg1 = {
-        level: 'info',
-        syslog: {
-            facility: 'local0',
-            type: 'udp'
-        }
+        level: 'info'
     };
     var bunyanCfg2 = {
-        level: 'debug',
-        syslog: {
-            facility: 'local0',
-            type: 'udp'
-        }
+        level: 'debug'
     };
 
     var bunyanCfg3 = {

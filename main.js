@@ -14,7 +14,6 @@ var path = require('path');
 
 var apertureConfig = require('aperture-config').config;
 var assert = require('assert-plus');
-var bsyslog = require('bunyan-syslog');
 var bunyan = require('bunyan');
 var cueball = require('cueball');
 var dashdash = require('dashdash');

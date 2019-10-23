@@ -123,7 +123,7 @@ manta_common_presetup
 echo "Adding local manifest directories"
 manta_add_manifest_dir "/opt/smartdc/buckets-api"
 
-manta_common_setup "buckets-api"
+manta_buckets_common_setup "buckets-api"
 
 manta_ensure_zk
 
@@ -133,6 +133,8 @@ echo "Setting up buckets-api"
 # Sometimes buckets-api instances come up before DNS resolvers are in /etc/resolv.conf
 wait_for_resolv_conf
 manta_setup_buckets_api
+
+manta_buckets_setup_common_log_rotation "buckets-api"
 
 manta_common_setup_end
 

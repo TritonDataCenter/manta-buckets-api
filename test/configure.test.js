@@ -86,8 +86,10 @@ exports.configureLogging = function (t) {
     process.env.LOG_LEVEL = '';
     var logObj8 = configure.configureLogging(appName, bunyanCfg3, null);
 
-    t.equal(logObj8.streams.length, 1);
-    t.equal(logObj8.level(), bunyan.INFO);
+    t.equal(logObj8.streams.length, 2);
+    var logObject8Levels = logObj8.levels().sort();
+    t.equal(logObject8Levels[0], bunyan.DEBUG);
+    t.equal(logObject8Levels[1], bunyan.INFO);
     t.equal(logObj8.src, false);
 
     var logObj9 = configure.configureLogging(appName, bunyanCfg3, [true]);
@@ -111,8 +113,10 @@ exports.configureLogging = function (t) {
     process.env.LOG_LEVEL = 'info';
     var logObj12 = configure.configureLogging(appName, null, null);
 
-    t.equal(logObj12.streams.length, 1);
-    t.equal(logObj12.level(), bunyan.INFO);
+    t.equal(logObj12.streams.length, 2);
+    var logObject12Levels = logObj12.levels().sort();
+    t.equal(logObject12Levels[0], bunyan.DEBUG);
+    t.equal(logObject12Levels[1], bunyan.INFO);
     t.equal(logObj12.src, false);
 
     var logObj13 = configure.configureLogging(appName, null, [true]);

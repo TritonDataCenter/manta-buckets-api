@@ -57,7 +57,6 @@
                             value="/opt/smartdc/buckets-api/build/node/bin:/opt/local/bin:/usr/bin:/usr/sbin:/bin"/>
                     <envvar name="LD_PRELOAD_32"
                             value="/usr/lib/extendedFILE.so.1" />
-                    <envvar name="NODE_NDEBUG" value="1" />
         </method_environment>
             </method_context>
     </exec_method>

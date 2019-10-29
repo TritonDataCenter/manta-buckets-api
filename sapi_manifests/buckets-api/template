@@ -8,24 +8,24 @@
     }
   },
   "throttle": {
-    {{#MUSKIE_THROTTLE_ENABLED}}
-    "enabled": {{MUSKIE_THROTTLE_ENABLED}},
-    {{/MUSKIE_THROTTLE_ENABLED}}
-    {{^MUSKIE_THROTTLE_ENABLED}}
+    {{#BUCKETS_API_THROTTLE_ENABLED}}
+    "enabled": {{BUCKETS_API_THROTTLE_ENABLED}},
+    {{/BUCKETS_API_THROTTLE_ENABLED}}
+    {{^BUCKETS_API_THROTTLE_ENABLED}}
     "enabled": false,
-    {{/MUSKIE_THROTTLE_ENABLED}}
-    {{#MUSKIE_THROTTLE_CONCURRENCY}}
-    "concurrency": {{MUSKIE_THROTTLE_CONCURRENCY}},
-    {{/MUSKIE_THROTTLE_CONCURRENCY}}
-    {{^MUSKIE_THROTTLE_CONCURRENCY}}
+    {{/BUCKETS_API_THROTTLE_ENABLED}}
+    {{#BUCKETS_API_THROTTLE_CONCURRENCY}}
+    "concurrency": {{BUCKETS_API_THROTTLE_CONCURRENCY}},
+    {{/BUCKETS_API_THROTTLE_CONCURRENCY}}
+    {{^BUCKETS_API_THROTTLE_CONCURRENCY}}
     "concurrency": 50,
-    {{/MUSKIE_THROTTLE_CONCURRENCY}}
-    {{#MUSKIE_THROTTLE_QUEUE_TOLERANCE}}
-    "queueTolerance": {{MUSKIE_THROTTLE_QUEUE_TOLERANCE}}
-    {{/MUSKIE_THROTTLE_QUEUE_TOLERANCE}}
-    {{^MUSKIE_THROTTLE_QUEUE_TOLERANCE}}
+    {{/BUCKETS_API_THROTTLE_CONCURRENCY}}
+    {{#BUCKETS_API_THROTTLE_QUEUE_TOLERANCE}}
+    "queueTolerance": {{BUCKETS_API_THROTTLE_QUEUE_TOLERANCE}}
+    {{/BUCKETS_API_THROTTLE_QUEUE_TOLERANCE}}
+    {{^BUCKETS_API_THROTTLE_QUEUE_TOLERANCE}}
     "queueTolerance": 25
-    {{/MUSKIE_THROTTLE_QUEUE_TOLERANCE}}
+    {{/BUCKETS_API_THROTTLE_QUEUE_TOLERANCE}}
   },
   "maxObjectCopies": 6,
   "maxRequestAge": 600,
@@ -37,31 +37,6 @@
     "maxAuthCacheAgeMs": 300000,
     "maxTranslationCacheSize": 1000,
     "maxTranslationCacheAgeMs": 300000
-  },
-  "accountsSnaplinksDisabled": [ {{#ACCOUNTS_SNAPLINKS_DISABLED}}
-    {
-      "uuid": "{{uuid}}"
-    }{{^last}},{{/last}}{{/ACCOUNTS_SNAPLINKS_DISABLED}}
-  ],
-  "moray": {
-    "morayOptions": {
-        "srvDomain": "{{ELECTRIC_MORAY}}",
-        "cueballOptions": {
-            "resolvers": ["nameservice.{{DOMAIN_NAME}}"]
-        }
-    }
-  },
-  "marlin": {
-    "moray": {
-        "srvDomain": "{{MARLIN_MORAY_SHARD}}",
-        "cueballOptions": {
-            "resolvers": ["nameservice.{{DOMAIN_NAME}}"]
-        }
-    },
-    "jobCache": {
-      "size": 500,
-      "expiry": 30
-    }
   },
 
   {{!
@@ -179,34 +154,12 @@
     "maximum": 2000
   },
 
-  {{#MPU_ENABLE}}
-  "enableMPU": true,
-
-  "multipartUpload": {
-  {{#MUSKIE_MPU_PREFIX_DIR_LEN}}
-    "prefixDirLen": {{MUSKIE_MPU_PREFIX_DIR_LEN}}
-    {{/MUSKIE_MPU_PREFIX_DIR_LEN}}
-  },
-  {{/MPU_ENABLE}}
-
-  "medusa": {
-    "moray": {
-      "srvDomain": "{{ELECTRIC_MORAY}}",
-      "cueballOptions": {
-          "resolvers": ["nameservice.{{DOMAIN_NAME}}"]
-      }
-    },
-    "reflector": {
-      "host": "{{MEDUSA_REFLECTOR}}",
-      "port": 8381
-    }
-  },
   "storage": {
     "lag": 60000,
-    "multiDC": {{MUSKIE_MULTI_DC}}{{#MUSKIE_DEFAULT_MAX_STREAMING_SIZE_MB}},
-    "defaultMaxStreamingSizeMB": {{MUSKIE_DEFAULT_MAX_STREAMING_SIZE_MB}}{{/MUSKIE_DEFAULT_MAX_STREAMING_SIZE_MB}}{{#MUSKIE_MAX_UTILIZATION_PCT}},
-    "maxUtilizationPct": {{MUSKIE_MAX_UTILIZATION_PCT}}{{/MUSKIE_MAX_UTILIZATION_PCT}}{{#MUSKIE_MAX_OPERATOR_UTILIZATION_PCT}},
-    "maxOperatorUtilizationPct": {{MUSKIE_MAX_OPERATOR_UTILIZATION_PCT}}{{/MUSKIE_MAX_OPERATOR_UTILIZATION_PCT}},
+    "multiDC": {{BUCKETS_API_MULTI_DC}}{{#BUCKETS_API_DEFAULT_MAX_STREAMING_SIZE_MB}},
+    "defaultMaxStreamingSizeMB": {{BUCKETS_API_DEFAULT_MAX_STREAMING_SIZE_MB}}{{/BUCKETS_API_DEFAULT_MAX_STREAMING_SIZE_MB}}{{#BUCKETS_API_MAX_UTILIZATION_PCT}},
+    "maxUtilizationPct": {{BUCKETS_API_MAX_UTILIZATION_PCT}}{{/BUCKETS_API_MAX_UTILIZATION_PCT}}{{#BUCKETS_API_MAX_OPERATOR_UTILIZATION_PCT}},
+    "maxOperatorUtilizationPct": {{BUCKETS_API_MAX_OPERATOR_UTILIZATION_PCT}}{{/BUCKETS_API_MAX_OPERATOR_UTILIZATION_PCT}},
     "moray": {
         "srvDomain": "{{STORAGE_MORAY_SHARD}}",
         "cueballOptions": {
@@ -215,9 +168,9 @@
     }
   },
   "authToken": {
-    "salt": "{{MUSKIE_JOB_TOKEN_AES_SALT}}",
-    "key": "{{MUSKIE_JOB_TOKEN_AES_KEY}}",
-    "iv": "{{MUSKIE_JOB_TOKEN_AES_IV}}",
+    "salt": "{{BUCKETS_API_JOB_TOKEN_AES_SALT}}",
+    "key": "{{BUCKETS_API_JOB_TOKEN_AES_KEY}}",
+    "iv": "{{BUCKETS_API_JOB_TOKEN_AES_IV}}",
     "maxAge": 604800000
   },
   "ufds": {
@@ -238,9 +191,6 @@
   "region": "{{REGION}}",
   "server_uuid": "{{auto.SERVER_UUID}}",
   "zone_uuid": "{{auto.ZONENAME}}",
-
-  {{! Buckets configuration options }}
-  "enableBuckets": {{#BUCKETS_ENABLE}}{{{BUCKETS_ENABLE}}}{{/BUCKETS_ENABLE}}{{^BUCKETS_ENABLE}}false{{/BUCKETS_ENABLE}},
   "electric_boray": {
      "srvDomain": "{{ELECTRIC_BORAY}}",
       "cueballOptions": {

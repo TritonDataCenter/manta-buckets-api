@@ -20,14 +20,6 @@ exports.configureLogging = function (t) {
         level: 'debug'
     };
 
-    var bunyanCfg3 = {
-        level: 'info'
-    };
-
-    var bunyanCfg4 = {
-        level: 'debug'
-    };
-
     // Record the value of LOG_LEVEL so it can be restored after testing
     var startingLogLevel = process.env.LOG_LEVEL || '';
 
@@ -82,33 +74,6 @@ exports.configureLogging = function (t) {
     t.equal(logObj7.streams.length, 1);
     t.equal(logObj7.level(), bunyan.TRACE);
     t.equal(logObj7.src, true);
-
-    process.env.LOG_LEVEL = '';
-    var logObj8 = configure.configureLogging(appName, bunyanCfg3, null);
-
-    t.equal(logObj8.streams.length, 2);
-    var logObject8Levels = logObj8.levels().sort();
-    t.equal(logObject8Levels[0], bunyan.DEBUG);
-    t.equal(logObject8Levels[1], bunyan.INFO);
-    t.equal(logObj8.src, false);
-
-    var logObj9 = configure.configureLogging(appName, bunyanCfg3, [true]);
-
-    t.equal(logObj9.streams.length, 1);
-    t.equal(logObj9.level(), bunyan.DEBUG);
-    t.equal(logObj9.src, true);
-
-    var logObj10 = configure.configureLogging(appName, bunyanCfg4, null);
-
-    t.equal(logObj10.streams.length, 1);
-    t.equal(logObj10.level(), bunyan.DEBUG);
-    t.equal(logObj10.src, true);
-
-    var logObj11 = configure.configureLogging(appName, bunyanCfg4, [true]);
-
-    t.equal(logObj11.streams.length, 1);
-    t.equal(logObj11.level(), bunyan.TRACE);
-    t.equal(logObj11.src, true);
 
     process.env.LOG_LEVEL = 'info';
     var logObj12 = configure.configureLogging(appName, null, null);

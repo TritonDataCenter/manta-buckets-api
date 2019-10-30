@@ -136,6 +136,6 @@ manta_setup_buckets_api
 
 manta_buckets_setup_common_log_rotation "buckets-api"
 
-manta_common_setup_end
+manta_buckets_common_setup_end
 
 exit 0

@@ -61,10 +61,13 @@ function manta_setup_buckets_api {
     #Build the list of ports.  That'll be used for everything else.
     local ports
     local insecure_ports
+    local portlist
     for (( i=1; i<=$num_instances; i++ )); do
         ports[$i]=`expr 8080 + $i`
         insecure_ports[$i]=`expr 9080 + $i`
     done
+
+    portlist=$(IFS=, ; echo "${ports[*]}")
 
     #To preserve whitespace in echo commands...
     IFS='%'
@@ -108,7 +111,15 @@ function manta_setup_buckets_api {
 
     unset IFS
 
-    # add manatee metadata backup cron
+    # Now update our registration to publish the ports as SRV records
+    RTPL="$SVC_ROOT/sapi_manifests/registrar/template"
+    sed -e "s/@@PORTS@@/${portlist}/g" ${RTPL}.in > ${RTPL}
+
+    # Wait until config-agent updates registrar's config before restarting
+    # registrar.
+    svcadm disable -st config-agent
+    svcadm enable -st config-agent
+    svcadm restart registrar
 
     local crontab=/tmp/.manta_webapi_cron
     crontab -l > $crontab

@@ -229,38 +229,41 @@ effect on the entire system the addition of metrics and metadata labels can have
 before adding them. This is an issue that would likely not appear in a
 development or staging environment.
 
-## Notes on DNS and service discovery
+## Service registration
 
-Like most other components in Triton and Manta, Muskie (deployed with service
-name "webapi") uses [Registrar](https://github.com/joyent/registrar/) to
-register its instances in internal DNS so that other components can find them.
+Like most other components in Triton and Manta, this service is configured to
+use [Registrar](https://github.com/joyent/registrar/). Each of the API server
+ports are registered under a `SRV` record as described in the Registrar
+documentation, and the registration type is `load\_balancer`.
+
 The general mechanism is [documented in detail in the Registrar
-README](https://github.com/joyent/registrar/blob/master/README.md).  There are
-some quirks worth noting about how Muskie uses this mechanism.
+README](https://github.com/joyent/registrar/blob/master/README.md).
 
-First, while most components use local config-agent manifests that are checked
-into the component repository (e.g., `$repo_root/sapi_manifest/registrar`),
-Muskie still uses an application-provided SAPI manifest.  See
-[MANTA-3173](https://smartos.org/bugview/MANTA-3173) for details.
+As with other services providing multiple ports per zone instance, the registrar
+template is itself modified during setup via `boot/setup.sh` to populate the
+list of ports. Consequently, querying DNS for `SRV` entries will show something
+like (if we have two instances each with four API servers):
 
-Second, Muskie registers itself with DNS domain `manta.$dns_suffix` (where
-`$dns_suffix` is the DNS suffix for the whole deployment).  This is the same DNS
-name that the "loadbalancer" service uses for its instances.  If you look up
-`manta.$dns_suffix` in a running Manta deployment, you get back the list of
-"loadbalancer" instances -- not any of the "webapi" (muskie) instances.  That's
-because "loadbalancer" treats this like an ordinary service registration with a
-service record at `manta.$dns_suffix` and `load_balancer` records underneath
-that that represent individual instances of the `manta.$dns_suffix` service, but
-"webapi" registers `host` records underneath that domain.  As the
-above-mentioned Registrar docs explain, `host` records are not included in DNS
-results when a client queries for the service DNS name.  They can only be used
-to query for the IP address of a specific instance.  **The net result of all
-this is that you can find the IP address of a Muskie zone whose zonename you
-know by querying for `$zonename.manta.$dns_suffix`, but there is no way to
-enumerate the Muskie instances using DNS, nor is there a way to add that without
-changing the DNS name for webapi instances, which would be a flag day for
-Muppet.**  (This may explain why [muppet](https://github.com/joyent/muppet) is a
-ZooKeeper consumer rather than just a DNS client.)
+````
+$ dig +nocmd +nocomments +noquestion +nostats -t SRV _http._tcp.buckets-api.manta.example.com
+_http._tcp.buckets-api.manta.example.com. 60 IN SRV 0 10 8081 243844f9-8cc1-497d-99a0-627263524e7a.buckets-api.manta.example.com.
+_http._tcp.buckets-api.manta.example.com. 60 IN SRV 0 10 8082 243844f9-8cc1-497d-99a0-627263524e7a.buckets-api.manta.example.com.
+_http._tcp.buckets-api.manta.example.com. 60 IN SRV 0 10 8083 243844f9-8cc1-497d-99a0-627263524e7a.buckets-api.manta.example.com.
+_http._tcp.buckets-api.manta.example.com. 60 IN SRV 0 10 8084 243844f9-8cc1-497d-99a0-627263524e7a.buckets-api.manta.example.com.
+_http._tcp.buckets-api.manta.example.com. 60 IN SRV 0 10 8081 4a1af359-a671-47d1-bc8b-70e4ea81af7c.buckets-api.manta.example.com.
+_http._tcp.buckets-api.manta.example.com. 60 IN SRV 0 10 8082 4a1af359-a671-47d1-bc8b-70e4ea81af7c.buckets-api.manta.example.com.
+_http._tcp.buckets-api.manta.example.com. 60 IN SRV 0 10 8083 4a1af359-a671-47d1-bc8b-70e4ea81af7c.buckets-api.manta.example.com.
+_http._tcp.buckets-api.manta.example.com. 60 IN SRV 0 10 8084 4a1af359-a671-47d1-bc8b-70e4ea81af7c.buckets-api.manta.example.com.
+243844f9-8cc1-497d-99a0-627263524e7a.buckets-api.manta.example.com. 30 IN A 192.168.0.39
+4a1af359-a671-47d1-bc8b-70e4ea81af7c.buckets-api.manta.example.com. 30 IN A 192.168.0.38
+```
+
+The `buckets-api` client, [muppet](https://github.com/joyent/muppet), doesn't
+directly use DNS lookups: instead the corresponding Zookeeper nodes are watched
+for changes, updating its `haproxy` configuration as needed. This is partly for
+historical reasons (both muppet and the old webapi registered themselves with a
+service name of "manta"), and to reduce load on
+[binder](https://github.com/joyent/binder/).
 
 ## Dtrace Probes
 

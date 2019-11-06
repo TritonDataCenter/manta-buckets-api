@@ -72,22 +72,6 @@ function manta_setup_buckets_api {
     #To preserve whitespace in echo commands...
     IFS='%'
 
-    #haproxy
-    for port in "${ports[@]}"; do
-        hainstances="$hainstances        server buckets-api-$port 127.0.0.1:$port check inter 10s slowstart 10s error-limit 3 on-error mark-down\n"
-    done
-    for insecure_port in "${insecure_ports[@]}"; do
-        hainstances_insecure="$hainstances_insecure        server buckets-api-$insecure_port 127.0.0.1:$insecure_port check inter 10s slowstart 10s error-limit 3 on-error mark-down\n"
-    done
-
-    sed -e "s#@@BUCKETS_API_INSTANCES@@#$hainstances#g" \
-    -e "s#@@BUCKETS_API_INSECURE_INSTANCES@@#$hainstances_insecure#g" \
-        $SVC_ROOT/etc/haproxy.cfg.in > $SVC_ROOT/etc/haproxy.cfg || \
-        fatal "could not process $src to $dest"
-
-    svccfg import $SVC_ROOT/smf/manifests/haproxy.xml || \
-    fatal "unable to import haproxy"
-
     #buckets-api instances
     local buckets_api_xml_in=$SVC_ROOT/smf/manifests/buckets-api.xml.in
     for (( i=1; i<=$num_instances; i++ )); do
@@ -105,9 +89,6 @@ function manta_setup_buckets_api {
             fatal "unable to start $buckets_api_instance"
         sleep 1
     done
-
-    # Setup haproxy after the buckets-api's are kicked up
-    svcadm enable "manta/haproxy" || fatal "unable to start haproxy"
 
     unset IFS
 

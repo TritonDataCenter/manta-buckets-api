@@ -27,8 +27,7 @@ JSL_FILES_NODE =    $(JS_FILES)
 JSSTYLE_FILES =     $(JS_FILES)
 JSSTYLE_FLAGS =     -f tools/jsstyle.conf
 
-SMF_MANIFESTS_IN =  smf/manifests/buckets-api.xml.in \
-            smf/manifests/haproxy.xml.in
+SMF_MANIFESTS_IN =  smf/manifests/buckets-api.xml.in
 
 #
 # Variables
@@ -59,7 +58,6 @@ RELSTAGEDIR :=		/tmp/$(NAME)-$(STAMP)
 BASE_IMAGE_UUID = 04a48d7d-6bb5-4e83-8c3b-e60a99e0f48f
 BUILDIMAGE_NAME = manta-buckets-api
 BUILDIMAGE_DESC = Manta buckets api
-BUILDIMAGE_PKGSRC = haproxy-1.6.2
 AGENTS		= amon config registrar
 
 #
@@ -112,8 +110,6 @@ release: all docs
 	    $(ROOT)/smf \
 	    $(ROOT)/test \
 	    $(RELSTAGEDIR)/root/opt/smartdc/$(NAME)
-	cp $(ROOT)/etc/haproxy.cfg.in \
-	    $(RELSTAGEDIR)/root/opt/smartdc/$(NAME)/etc/
 	mv $(RELSTAGEDIR)/root/opt/smartdc/$(NAME)/build/scripts \
 	    $(RELSTAGEDIR)/root/opt/smartdc/$(NAME)/boot
 	ln -s /opt/smartdc/$(NAME)/boot/setup.sh \

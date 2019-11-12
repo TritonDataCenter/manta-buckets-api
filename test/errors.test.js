@@ -5,7 +5,7 @@
  */
 
 /*
- * Copyright (c) 2017, Joyent, Inc.
+ * Copyright 2019 Joyent, Inc.
  */
 
 var _helper = __dirname + '/helper.js';
@@ -24,7 +24,7 @@ test('ServiceUnavailableError', function (t) {
     var cause = new Error('cause');
     var err = new errors.ServiceUnavailableError(null, cause);
 
-    t.ok(err instanceof errors.MuskieError, 'error is a MuskieError');
+    t.ok(err instanceof errors.BucketsApiError, 'error is a BucketsApiError');
     t.equal(err.restCode, 'ServiceUnavailable');
     t.equal(err.statusCode, 503);
     t.equal(err.message, 'manta is unable to serve this request');

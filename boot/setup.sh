@@ -123,7 +123,7 @@ manta_common_presetup
 echo "Adding local manifest directories"
 manta_add_manifest_dir "/opt/smartdc/buckets-api"
 
-manta_buckets_common_setup "buckets-api"
+manta_common2_setup "buckets-api"
 
 manta_ensure_zk
 
@@ -134,8 +134,8 @@ echo "Setting up buckets-api"
 wait_for_resolv_conf
 manta_setup_buckets_api
 
-manta_buckets_setup_common_log_rotation "buckets-api"
+manta_setup_common2_log_rotation "buckets-api"
 
-manta_buckets_common_setup_end
+manta_common2_setup_end
 
 exit 0

@@ -134,7 +134,7 @@ echo "Setting up buckets-api"
 wait_for_resolv_conf
 manta_setup_buckets_api
 
-manta_setup_common2_log_rotation "buckets-api"
+manta_common2_setup_log_rotation "buckets-api"
 
 manta_common2_setup_end
 

@@ -32,7 +32,7 @@
         "keep-alive-agent": "0.0.1",
         "keyapi": "git+https://github.com/joyent/keyapi.git#e14b3d58",
         "libmanta": "git+https://github.com/joyent/node-libmanta.git#v1.3.0",
-        "libuuid": "0.1.2",
+        "uuid": "3.3.3",
         "lstream": "0.0.4",
         "mahi": "2.3.1",
         "marlin": "git+https://github.com/joyent/manta-marlin.git#master",
@@ -52,7 +52,6 @@
         "strsplit": "1.0.0",
         "manta": "5.1.0",
         "nodeunit": "0.9.1",
-        "node-uuid": "1.4.1",
         "forkexec": "^1.0.0",
         "smartdc-auth": "^2.5.7",
         "jsverify": "^0.8.4"

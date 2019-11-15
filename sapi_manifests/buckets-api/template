@@ -1,11 +1,7 @@
 {
   "clearProxyPort": 81,
   "bunyan": {
-    "level": "info",
-    "syslog": {
-      "facility": "local0",
-      "type": "udp"
-    }
+    "level": "info"
   },
   "throttle": {
     {{#BUCKETS_API_THROTTLE_ENABLED}}

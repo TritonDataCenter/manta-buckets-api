@@ -108,7 +108,7 @@ function createMonitoringServer(cfg) {
 
     monitorServer = restify.createServer({ serverName: 'Monitor' });
     monitorServer.get('/metrics', app.getMetricsHandler(cfg.collector));
-    monitorServer.get('/*', kang.knRestifyHandler(kangOpts));
+    monitorServer.get(new RegExp('.*'), kang.knRestifyHandler(kangOpts));
 
     monitorServer.listen(port, '0.0.0.0', function () {
         cfg.log.info('monitoring server started on port %d', port);

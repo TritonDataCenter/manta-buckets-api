@@ -40,15 +40,9 @@ function getMuskieOptions() {
             helpArg: 'FILE'
         },
         {
-            names: ['insecure-port', 'i'],
-            type: 'positiveInteger',
-            help: 'Listen for insecure requests on port.',
-            helpArg: 'PORT'
-        },
-        {
             names: ['port', 'p'],
             type: 'positiveInteger',
-            help: 'Listen for secure requests on port.',
+            help: 'Listen for requests on port.',
             helpArg: 'PORT'
         },
         {
@@ -235,28 +229,19 @@ function createMetadataPlacementClient(opts, onConnect) {
 }
 
 function clientsConnected(appName, cfg, clients) {
-    var server1, server2;
+    var server;
     var log = cfg.log;
 
     log.info('requisite client connections established, '
     + 'starting muskie servers');
 
-    server1 = app.createServer(cfg, clients, 'ssl');
-    server1.on('error', function (err) {
-        log.fatal(err, 'server (secure) error');
+    server = app.createServer(cfg, clients);
+    server.on('error', function (err) {
+        log.fatal(err, 'createServer() error');
         process.exit(1);
     });
-    server1.listen(cfg.port, function () {
-        log.info('%s listening at (trusted port) %s', appName, server1.url);
-    });
-
-    server2 = app.createServer(cfg, clients, 'insecure');
-    server2.on('error', function (err) {
-        log.fatal(err, 'server (clear) error');
-        process.exit(1);
-    });
-    server2.listen(cfg.insecurePort, function () {
-        log.info('%s listening at (clear port) %s', appName, server2.url);
+    server.listen(cfg.port, function () {
+        log.info('%s listening at port %s', appName, server.url);
     });
 
     app.startKangServer();

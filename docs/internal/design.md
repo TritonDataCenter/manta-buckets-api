@@ -40,12 +40,12 @@ purely in-memory so all muskie *processes* have a cached copy.
 
 # Monitoring
 
-There is a second server running in each muskie process to
-facilitate monitoring.  This is accessible at `http_insecure_port + 800`.  For
-example, the first (of 16 in production) muskie process within a zone usually
-runs on port 8081, so the monitoring server would be accesible on port 8881 from
-both the `manta` and `admin` networks.  The monitoring server exposes
-Kang debugging information and Prometheus application metrics.
+There is a second server running in each muskie process to facilitate
+monitoring.  This is accessible at `port + 800`.  For example, the first (of 16
+in production) muskie process within a zone usually runs on port 8081, so the
+monitoring server would be accessible on port 8881 from both the `manta` and
+`admin` networks.  The monitoring server exposes Kang debugging information and
+Prometheus application metrics.
 
 ## Kang
 

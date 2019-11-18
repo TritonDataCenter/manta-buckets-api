@@ -46,7 +46,7 @@
 
     <exec_method type="method"
              name="start"
-             exec="node --abort-on-uncaught-exception main.js -f etc/config.json -i %{buckets-api/insecure_port} -p %{buckets-api/port} &amp;"
+             exec="node --abort-on-uncaught-exception main.js -f etc/config.json -p %{buckets-api/port} &amp;"
              timeout_seconds="30">
         <method_context working_directory="/opt/smartdc/buckets-api">
                 <method_credential user="nobody"
@@ -74,7 +74,6 @@
         <instance name="@@BUCKETS_API_INSTANCE_NAME@@" enabled="true">
             <property_group name="buckets-api" type="application">
                 <propval name="port" type="astring" value="@@BUCKETS_API_PORT@@" />
-                <propval name="insecure_port" type="astring" value="@@BUCKETS_API_INSECURE_PORT@@" />
             </property_group>
         </instance>
 

@@ -60,11 +60,9 @@ function manta_setup_buckets_api {
 
     #Build the list of ports.  That'll be used for everything else.
     local ports
-    local insecure_ports
     local portlist
     for (( i=1; i<=$num_instances; i++ )); do
         ports[$i]=`expr 8080 + $i`
-        insecure_ports[$i]=`expr 9080 + $i`
     done
 
     portlist=$(IFS=, ; echo "${ports[*]}")
@@ -78,7 +76,6 @@ function manta_setup_buckets_api {
         local buckets_api_instance="buckets-api-${ports[i]}"
         local buckets_api_xml_out=$SVC_ROOT/smf/manifests/buckets-api-${ports[i]}.xml
         sed -e "s#@@BUCKETS_API_PORT@@#${ports[i]}#g" \
-            -e "s#@@BUCKETS_API_INSECURE_PORT@@#${insecure_ports[i]}#g" \
             -e "s#@@BUCKETS_API_INSTANCE_NAME@@#$buckets_api_instance#g" \
             $buckets_api_xml_in  > $buckets_api_xml_out || \
             fatal "could not process $buckets_api_xml_in to $buckets_api_xml_out"

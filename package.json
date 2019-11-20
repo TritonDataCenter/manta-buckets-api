@@ -16,7 +16,7 @@
         "assert-plus": "0.1.5",
         "backoff": "2.3.0",
         "bignum": "0.6.0",
-        "buckets-mdapi": "git+https://github.com/joyent/node-buckets-mdapi.git#v0.1.0",
+        "boray": "git+https://github.com/joyent/node-buckets-mdapi.git#v0.1.0",
         "bunyan": "0.22.1",
         "clone": "0.1.9",
         "cmdln": "4.3.0",

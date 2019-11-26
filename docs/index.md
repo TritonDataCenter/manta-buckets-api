@@ -1,7 +1,6 @@
 ---
 title: Joyent Manta Service REST API
 markdown2extras: wiki-tables, code-friendly
-apisections: Directories, Objects, Jobs, SnapLinks, Multipart Uploads
 ---
 <!--
     This Source Code Form is subject to the terms of the Mozilla Public
@@ -13,64 +12,20 @@ apisections: Directories, Objects, Jobs, SnapLinks, Multipart Uploads
     Copyright 2019 Joyent, Inc.
 -->
 
-# REST API
+# Manta Buckets Storage Service
 
-This is the API reference documentation for the Joyent Manta Storage
-Service, which enables you to store data in the cloud and process that data
-using the built-in compute facility.
+This is the API reference documentation for the Joyent Manta Buckets Storage
+Service, which enables you to store data in the cloud using a buckets and
+objects abstraction.
 
 This document covers only the HTTP interface and all examples are given in curl.
 
-Before you do the examples in this section, it's important to go through the
-examples using the CLI and setting up your environment.
+## Authentication
 
-* [Getting Started](index.html)
+Authentication will be handled in the same manner as it is currently with Manta
+as described [here](https://apidocs.joyent.com/manta/api.html#authentication).
 
-There are also detailed reference materials:
-
-* [Object Storage Reference](storage-reference.html)
-* [Compute Jobs Reference](jobs-reference.html)
-* [Multipart Uploads Reference](mpu-reference.html)
-
-## Conventions
-
-Any content formatted like this:
-
-    $ curl -is https://us-east.manta.joyent.com
-
-is a command-line example that you can run from a shell. All other examples and
-information are formatted like this:
-
-    GET /my/stor/foo HTTP/1.1
-
-
-# Authentication
-
-There are a few access methodologies. The predominant means of
-authenticating requests to the service is to use the
-[HTTP Signature](http://tools.ietf.org/html/draft-cavage-http-signatures-00)
-over TLS.
-
-In most situations, you will only need to sign the lowercase `date: ` and value
-of the HTTP `Date` header using your SSH private key; doing this allows you to
-create interactive shell functions (see below).  All requests require an HTTP
-Authorization header where the scheme is `Signature`.
-
-Full details are available in the `http signatures` specification, but a simple
-form is:
-
-    Authorization: Signature keyId="/:login/keys/:fp",algorithm="rsa-sha256",signature="$base64_signature"
-
-The `keyId` for the service is always
-`/$your_joyent_login/keys/$ssh_fingerprint`, and the supported algorithms are:
-`rsa-sha1`, `rsa-sha256` and `dsa-sha`. The ssh key fingerprint must be a MD5
-fingerprint (ex. `a1:b2:c3:d4:e5:f6:a7:b8:c9:d0:e1:f2:a3:b4:c5:d6`)
-
-To make a request for an RBAC subuser, change the `keyId` for the signature to
-`/$your_joyent_login/$subuser_login/keys/$ssh_fingerprint`. To make a request
-using a RBAC role, include the HTTP header `Role`.
-
-## Interacting with the Joyent Manta Storage Service from the shell (bash)
+## Interacting from the shell (Bash)
 
 Most things in the service are easy to interact with via [cURL](http://curl.haxx.se/),
 but note that all requests to the service must be authenticated.  You can string
@@ -94,29 +49,34 @@ function manta {
 }
 ```
 
-Paste into `~/.bash_profile` or `~/.bashrc` and restart your terminal to pick up the changes.
+Paste into `~/.bash_profile` or `~/.bashrc` and restart your terminal to pick
+up the changes.
 
-    pbpaste > ~/.bash_profile
+The following environmental variables will need to be set (see
+[Authentication](#authentication) above for more details):
 
-And edit the file, replacing `$JOYENT_CLOUD_USER_NAME` with your actual cloud username.
+    export MANTA_USER=<username>
+    export MANTA_KEY_ID=<ssh-key-finger-print>
+    export MANTA_URL=<url-to-manta>
 
 This all is setup correctly you will be able to:
 
-    $ manta /$MANTA_USER/stor
-    $ manta /$MANTA_USER/stor/moved -X PUT -H "content-type: application/json; type=file"
-    $ manta /$MANTA_USER/stor/foo -X PUT -H "content-type: application/json; type=directory"
-    $ manta /$MANTA_USER/stor -X GET
-    {"name":"foo","type":"directory","mtime":"2013-06-16T05:42:56.515Z"}
-      {"name":"moved","etag":"bfaa3227-3abb-4ed6-915a-a2179f623172","size":0,"type":"object","mtime":"2013-06-16T05:42:45.460Z"}
+    $ manta /$MANTA_USER/buckets -i -X OPTIONS
+    HTTP/1.1 204 No Content
+    server: Manta
+    allow: OPTIONS, GET
+    date: Tue, 26 Nov 2019 19:34:48 GMT
+    x-request-id: 84178b7a-9f0a-44b9-8f24-67f07c93c3e3
+    x-response-time: 86
+    x-server-name: 1caf2114-99a7-4731-acd9-4541dd007ef7
 
 All sample "curl" requests in the rest of this document use the
-function above.  Throughout the rest of the document, the value of the
-Authorization header is simply represented as `$Authorization`.
+function above.
 
 # Errors
 
 All HTTP requests can return user or server errors (HTTP status codes >= 400).
-In these cases, you can usually expect a JSON body to come along that has the following
+In these cases, you can expect a JSON body to come along that has the following
 structure:
 
 ``` json
@@ -128,54 +88,64 @@ structure:
 
 The complete list of codes that will be sent are:
 
-- AuthSchemeError
-- AuthorizationError
-- BadRequestError
-- BucketAlreadyExistsError
-- BucketNotEmptyError
-- BucketNotFoundError
-- ChecksumError
-- ConcurrentRequestError
-- ContentLengthError
-- ContentMD5MismatchError
-- DirectoryDoesNotExistError
-- DirectoryNotEmptyError
-- EntityExistsError
-- InternalError
-- InvalidArgumentError
-- InvalidAuthTokenError
-- InvalidCredentialsError
-- InvalidDurabilityLevelError
-- InvalidKeyIdError
-- InvalidLimitError
-- InvalidMultipartUploadStateError
-- InvalidSignatureError
-- InvalidUpdateError
-- KeyDoesNotExistError
-- MultipartUploadInvalidArgumentError
-- NotAcceptableError
-- NotEnoughSpaceError
-- ObjectNotFoundError
-- ParentNotBucketError
-- ParentNotBucketRootError
-- PreSignedRequestError
-- PreconditionFailedError
-- RequestEntityTooLargeError
-- ResourceNotFoundError
-- SSLRequiredError
-- ServiceUnavailableError
-- UploadTimeoutError
-- UserDoesNotExistError
+- `AuthSchemeError`
+- `AuthorizationError`
+- `BadRequestError`
+- `BucketAlreadyExistsError`
+- `BucketNotEmptyError`
+- `BucketNotFoundError`
+- `ChecksumError`
+- `ConcurrentRequestError`
+- `ContentLengthError`
+- `ContentMD5MismatchError`
+- `DirectoryDoesNotExistError`
+- `DirectoryNotEmptyError`
+- `EntityExistsError`
+- `InternalError`
+- `InvalidArgumentError`
+- `InvalidAuthTokenError`
+- `InvalidCredentialsError`
+- `InvalidDurabilityLevelError`
+- `InvalidKeyIdError`
+- `InvalidLimitError`
+- `InvalidMultipartUploadStateError`
+- `InvalidSignatureError`
+- `InvalidUpdateError`
+- `KeyDoesNotExistError`
+- `MultipartUploadInvalidArgumentError`
+- `NotAcceptableError`
+- `NotEnoughSpaceError`
+- `ObjectNotFoundError`
+- `ParentNotBucketError`
+- `ParentNotBucketRootError`
+- `PreSignedRequestError`
+- `PreconditionFailedError`
+- `RequestEntityTooLargeError`
+- `ResourceNotFoundError`
+- `SSLRequiredError`
+- `ServiceUnavailableError`
+- `UploadTimeoutError`
+- `UserDoesNotExistError`
 
-Additionally, jobs may emit the above errors, or:
+# Endpoints
 
-|| **Error name** || **Reason** ||
-|| TaskInitError  || Failed to initialize a task (usually a failure to load assets). ||
-|| UserTaskError  || User's script returned a non-zero status or one of its processes dumped core. ||
+| name | endpoint |
+| --- | --- |
+| [OptionsBuckets](#optionsbuckets) | `OPTIONS /:login/buckets` |
+| [ListBuckets](#listbuckets) | `GET /:login/buckets` |
+| [CreateBucket](#createbucket) | `PUT /:login/buckets/:bucket_name` |
+| [HeadBucket](#headbucket) | `HEAD /:login/buckets/:bucket_name` |
+| [DeleteBucket](#deletebucket) | `DELETE /:login/buckets/:bucket_name` |
+| [ListBucketObjects](#listbucketobjects) | `GET /:login/buckets/:bucket_name/objects` |
+| [CreateBucketObject](#createbucketobject) | `PUT /:login/buckets/:bucket_name/objects/:object_name` |
+| [GetBucketObject](#getbucketobject) | `GET /:login/buckets/:bucket_name/objects/:object_name` |
+| [HeadBucketObject](#headbucketobject) | `HEAD /:login/buckets/:bucket_name/objects/:object_name` |
+| [DeleteBucketObject](#deletebucketobject) | `DELETE /:login/buckets/:bucket_name/objects/:object_name` |
+| [UpdateBucketObjectMetadata](#updatebucketobjectmetadata) | `PUT /:login/buckets/:bucket_name/objects/:object_name/metadata` |
 
-# Buckets
+## OptionsBuckets
 
-## OptionsBuckets (OPTIONS /:login/buckets)
+    OPTIONS /:login/buckets
 
 Returns success if buckets is supported.  This is a way to determine if a manta
 setup supports buckets (i.e.: is using `manta-buckets-api` and not
@@ -185,7 +155,11 @@ setup supports buckets (i.e.: is using `manta-buckets-api` and not
 
 On success this will return a `204` status code with no data.
 
-## ListBuckets (GET /:login/buckets)
+---
+
+## ListBuckets
+
+    GET /:login/buckets
 
 Lists the buckets owned by a user.
 
@@ -295,21 +269,43 @@ also helps the backend service by being able to skip multiple entries that
 match the same delimiter.  Whether the `bucket-` group encompasses 5,000
 entries, or 50,000 entries, the work for the server should be similar.
 
-## CreateBucket (PUT /:login/buckets/:bucket_name)
+---
+
+## CreateBucket
+
+    PUT /:login/buckets/:bucket_name
 
 Create a new bucket.
-
-### Headers
-
-The following header(s) must be supplied with each request:
-
-- `Content-Type` must be set to `application/json; type=bucket`
 
 ### Return Data
 
 On success this will return a `204` status code with no data.
 
-## HeadBucket (HEAD /:login/buckets/:bucket_name)
+### Restrictions
+
+Bucket names must be between 3 and 63 characters long, and must not
+"resemble an IP address" as defined below.
+
+A valid bucket name is composed of one or more "labels" separated by periods.
+
+A label is defined as a string that meets the following criteria:
+- Contains only lowercase letters, numbers, and hyphens.
+- Does not start or end with a hyphen.
+
+"resembling an IP address" is to mean four groups of between one and three
+digits each, separated by periods. This includes strings that are not actually
+valid IP addresses. For example:
+
+- 1.1.1.1 resembles an IP address
+- 999.999.999.999 also resembles an IP address
+- 172.25.1234.1 does not, because there is a section with more than three
+  digits. This is thus a valid bucket name.
+
+---
+
+## HeadBucket
+
+    HEAD /:login/buckets/:bucket_name
 
 Checks for the existence of a bucket by name.
 
@@ -319,7 +315,11 @@ On success this will return a status code of `200`. The only failure mode is if
 the bucket was not found, in which case will be a `BucketNotFoundError` with a
 status code of 404.
 
-## DeleteBucket (DELETE /:login/buckets/:bucket_name)
+---
+
+## DeleteBucket
+
+    DELETE /:login/buckets/:bucket_name
 
 Delete a bucket by name.
 
@@ -330,7 +330,9 @@ with a `BucketNotFoundError` or a `BucketNotEmptyError`.
 
 ---
 
-## ListBucketObjects (GET /:login/buckets/:bucket_name/objects)
+## ListBucketObjects
+
+    GET /:login/buckets/:bucket_name/objects
 
 Lists the objects of a bucket.
 
@@ -422,7 +424,11 @@ $ manta /$MANTA_USER/buckets/bucket-1/objects?prefix=dir1%2f\&delimiter=%2f
 {"name":"dir1/c.txt","type":"bucketobject","etag":"07507f42-92ab-e7bb-871b-c869fe14f143","size":11,"contentType":"application/json","contentMD5":"puh9hLJiq0smQ3Xk6c+wdg==","mtime":"2019-10-16T20:35:24.675Z"}
 ```
 
-## CreateBucketObject (PUT /:login/buckets/:bucket_name/objects/:object_name)
+---
+
+## CreateBucketObject
+
+    PUT /:login/buckets/:bucket_name/objects/:object_name
 
 Create a new object in a bucket.
 
@@ -433,6 +439,13 @@ The following header(s) must be supplied with each request:
 - `Content-Type` set to anything, this will be used by the server when this
 object is requested
 
+The following headers may optionally be sent with the request:
+
+- `Durability-Level`
+- `If-Unmodified-Since`
+- `If-Match`
+- `If-None-Match`
+
 ### Return Data
 
 On success this will return a `204` status code with no data.
@@ -442,9 +455,32 @@ Also, it will include the following headers:
 - `Etag` the etag generated for the object
 - `Computed-MD5` the generated md5 checksum for the object
 
-## GetBucketObject (GET /:login/buckets/:bucket_name/objects/:object_name)
+### Restrictions
+
+There are very few limitations imposed on object names. Object names must
+contain only valid UTF-8 characters and may be a maximum of 1024 characters in
+length. Object names may include forward slash characters (or any other valid
+UTF-8 character) to create the suggestion of a directory hierarchy for a set of
+object even though the buckets system uses a flat namespace. Care must be
+taken, however, to properly URL encode all object names to avoid problems when
+interacting with the server.
+
+---
+
+## GetBucketObject
+
+    GET /:login/buckets/:bucket_name/objects/:object_name
 
 Get an objects data.
+
+### Headers
+
+The following headers may optionally be sent with the request:
+
+- `If-Modified-Since`
+- `If-Unmodified-Since`
+- `If-Match`
+- `If-None-Match`
 
 ### Return Data
 
@@ -463,9 +499,22 @@ Also, it will include the following headers:
 This request can fail with a `BucketNotFoundError` if the bucket does not
 exist.
 
-## HeadBucketObject (HEAD /:login/buckets/:bucket_name/objects/:object_name)
+---
+
+## HeadBucketObject
+
+    HEAD /:login/buckets/:bucket_name/objects/:object_name
 
 Get an objects metadata.
+
+### Headers
+
+The following headers may optionally be sent with the request:
+
+- `If-Modified-Since`
+- `If-Unmodified-Since`
+- `If-Match`
+- `If-None-Match`
 
 ### Return Data
 
@@ -475,16 +524,32 @@ as the `GetBucketObject` request.
 This request can fail with a `BucketNotFoundError` if the bucket does not
 exist, or an `ObjectNotFoundError` if the object does not exist.
 
-## DeleteBucketObject (DELETE /:login/buckets/:bucket_name/objects/:object_name)
+---
+
+## DeleteBucketObject
+
+    DELETE /:login/buckets/:bucket_name/objects/:object_name
 
 Delete an object.
+
+### Headers
+
+The following headers may optionally be sent with the request:
+
+- `If-Unmodified-Since`
+- `If-Match`
+- `If-None-Match`
 
 ### Return Data
 
 On success this will return a `204` status code with no data.  This can fail
 with a `BucketNotFoundError` or an `ObjectNotFoundError`).
 
-## UpdateBucketObjectMetadata (PUT /:login/buckets/:bucket_name/objects/:object_name/metadata)
+---
+
+## UpdateBucketObjectMetadata
+
+    PUT /:login/buckets/:bucket_name/objects/:object_name/metadata
 
 Update an objects metadata (headers).
 

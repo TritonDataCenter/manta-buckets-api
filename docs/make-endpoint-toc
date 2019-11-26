@@ -1,0 +1,57 @@
+#!/usr/bin/awk -f
+#
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+#
+# This is a super basic and super dumb awk script that can be used to make a
+# GitHub compatible Table-of-Contents in Markdown based on API information
+# given in a specific format.  The markdown file must be passed over stdin or
+# as the first argument.  Example:
+#
+# $ ./make-endpoint-toc index.md
+# | name | endpoint |
+# ...
+#
+# This script requires:
+#
+# 1. all endpoint documentation must be contained in an h1 header named
+# "Endpoints"
+# 2. endpoint names begin with an h2 (##) header
+# 3. endpoint paths contain their own code block (4 spaces at the beginning of
+# their line)
+#
+# This script will output a markdown table with links to the h2 (endpoint
+# names) anchors.
+#
+
+#
+#Copyright 2019 Joyent, Inc.
+#
+
+BEGIN {
+	print "| name | endpoint |"
+	print "| --- | --- |"
+}
+
+/^# / {
+	flag = 0
+}
+
+/^# Endpoints$/ {
+	flag = 1
+}
+
+flag && /^## [a-zA-Z0-9]+$/ {
+	name = $2
+}
+
+flag && /^    [A-Z]+ \/.*$/ {
+	endpoint = sprintf("%s %s", $1, $2)
+}
+
+name && endpoint {
+	printf("| [%s](#%s) | `%s` |\n", name, tolower(name), endpoint)
+	name = ""
+	endpoint = ""
+}

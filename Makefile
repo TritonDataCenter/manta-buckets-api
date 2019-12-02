@@ -57,7 +57,7 @@ ROOT :=			$(shell pwd)
 RELSTAGEDIR :=		/tmp/$(NAME)-$(STAMP)
 
 BASE_IMAGE_UUID = 04a48d7d-6bb5-4e83-8c3b-e60a99e0f48f
-BUILDIMAGE_NAME = manta-buckets-api
+BUILDIMAGE_NAME = mantav2-buckets-api
 BUILDIMAGE_DESC = Manta buckets api
 AGENTS		= amon config registrar
 

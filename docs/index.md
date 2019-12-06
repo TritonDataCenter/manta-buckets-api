@@ -63,7 +63,7 @@ This all is setup correctly you will be able to:
 
     $ manta /$MANTA_USER/buckets -i -X OPTIONS
     HTTP/1.1 204 No Content
-    server: Manta
+    Server: Manta/2
     allow: OPTIONS, GET
     date: Tue, 26 Nov 2019 19:34:48 GMT
     x-request-id: 84178b7a-9f0a-44b9-8f24-67f07c93c3e3
@@ -234,7 +234,7 @@ HTTP/1.1 200 OK
 Connection: close
 Next-Marker: bucket-2
 Date: Wed, 16 Oct 2019 18:10:22 GMT
-Server: Manta
+Server: Manta/2
 
 {"name":"bucket-1","type":"bucket","mtime":"2019-10-16T18:04:38.270Z"}
 {"name":"bucket-2","type":"bucket","mtime":"2019-10-16T18:05:26.831Z"}
@@ -242,7 +242,7 @@ $ manta /$MANTA_USER/buckets?prefix=bucket\&limit=2\&marker=bucket-2 -i
 HTTP/1.1 200 OK
 Connection: close
 Date: Wed, 16 Oct 2019 18:10:43 GMT
-Server: Manta
+Server: Manta/2
 
 {"name":"bucket-3","type":"bucket","mtime":"2019-10-16T18:05:33.562Z"}
 ```
@@ -259,7 +259,7 @@ $ manta /$MANTA_USER/buckets?prefix=bucket\&delimiter=- -i
 HTTP/1.1 200 OK
 Connection: close
 Date: Wed, 16 Oct 2019 18:12:17 GMT
-Server: Manta
+Server: Manta/2
 
 {"name":"bucket-","type":"group"}
 ```

@@ -106,7 +106,7 @@ function createMonitoringServer(cfg) {
     kangOpts = cueball.poolMonitor.toKangOptions();
     port = cfg.port + 800;
 
-    monitorServer = restify.createServer({ serverName: 'Monitor' });
+    monitorServer = restify.createServer({ name: 'Monitor' });
     monitorServer.get('/metrics', app.getMetricsHandler(cfg.collector));
     monitorServer.get(new RegExp('.*'), kang.knRestifyHandler(kangOpts));
 

@@ -32,7 +32,7 @@
         "keyapi": "git+https://github.com/joyent/keyapi.git#e14b3d58",
         "lstream": "0.0.4",
         "mahi": "2.3.1",
-        "mime": "1.4.0",
+        "mime": "2.4.4",
         "moray": "3.4.1",
         "once": "1.4.0",
         "restify": "6.4.0",

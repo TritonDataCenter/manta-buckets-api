@@ -214,8 +214,8 @@ function onMetadataPlacementClientConnect(clients, barrier, client) {
 
 function createMetadataPlacementClient(opts, onConnect) {
     assert.object(opts, 'options');
-    assert.object(opts.electric_boray, 'options.electric_boray');
-    assert.object(opts.boray, 'options.boray');
+    assert.object(opts.buckets_mdplacement, 'options.buckets_mdplacement');
+    assert.object(opts.buckets_mdapi, 'options.buckets_mdapi');
     assert.object(opts.log, 'options.log');
 
     var log = opts.log.child({component: 'metadataPlacementClient'}, true);
@@ -290,8 +290,8 @@ function clientsConnected(appName, cfg, clients) {
     clients.mahi = createAuthCacheClient(cfg.auth, clients.agent);
 
     var metadataPlacementOpts = {
-        electric_boray: cfg.electric_boray,
-        boray: cfg.boray,
+        buckets_mdplacement: cfg.buckets_mdplacement,
+        buckets_mdapi: cfg.buckets_mdapi,
         log: cfg.log
     };
     barrier.start('createMetadataPlacementClient');

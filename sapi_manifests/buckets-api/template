@@ -187,14 +187,14 @@
   "region": "{{REGION}}",
   "server_uuid": "{{auto.SERVER_UUID}}",
   "zone_uuid": "{{auto.ZONENAME}}",
-  "electric_boray": {
-     "srvDomain": "{{ELECTRIC_BORAY}}",
+  "buckets_mdplacement": {
+     "srvDomain": "{{BUCKETS_MDPLACEMENT}}",
       "cueballOptions": {
           "resolvers": ["nameservice.{{DOMAIN_NAME}}"]
       }
   },
-  "boray": {
-    "borayOptions": {
+  "buckets_mdapi": {
+    "bucketsMdapiOptions": {
         "cueballOptions": {
             "resolvers": ["nameservice.{{DOMAIN_NAME}}"]
         }

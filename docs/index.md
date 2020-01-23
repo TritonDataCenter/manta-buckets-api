@@ -9,7 +9,7 @@ markdown2extras: wiki-tables, code-friendly
 -->
 
 <!--
-    Copyright 2019 Joyent, Inc.
+    Copyright 2020 Joyent, Inc.
 -->
 
 # Manta Buckets Storage Service
@@ -283,8 +283,8 @@ On success this will return a `204` status code with no data.
 
 ### Restrictions
 
-Bucket names must be between 3 and 63 characters long, and must not
-"resemble an IP address" as defined below.
+Bucket names must be between 3 and 63 characters long (calculated in bytes),
+and must not "resemble an IP address" as defined below.
 
 A valid bucket name is composed of one or more "labels" separated by periods.
 
@@ -459,11 +459,11 @@ Also, it will include the following headers:
 
 There are very few limitations imposed on object names. Object names must
 contain only valid UTF-8 characters and may be a maximum of 1024 characters in
-length. Object names may include forward slash characters (or any other valid
-UTF-8 character) to create the suggestion of a directory hierarchy for a set of
-object even though the buckets system uses a flat namespace. Care must be
-taken, however, to properly URL encode all object names to avoid problems when
-interacting with the server.
+length (in bytes). Object names may include forward slash characters (or any
+other valid UTF-8 character) to create the suggestion of a directory hierarchy
+for a set of object even though the buckets system uses a flat namespace. Care
+must be taken, however, to properly URL encode all object names to avoid
+problems when interacting with the server.
 
 ---
 

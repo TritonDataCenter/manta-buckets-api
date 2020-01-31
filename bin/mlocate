@@ -70,30 +70,12 @@ var OPTIONS = [
  * }
  */
 function parsePath(dataPath, cb) {
-    var ERR = verror.VError('paths must be of the form <user>:<bucket> or ' +
-        '<user>:<bucket>/<object>');
-
-    // Split at ':' into login and rest of dataPath
-    var pathArr = dataPath.split(':');
-    // Error if no ':' in dataPath at all
-    if (pathArr.length < 2) {
-        cb(ERR);
-    }
-
-    /*
-     * Account for multiple colons in dataPath: re-join everything except first
-     * element of pathArr
-     */
-    pathArr = [pathArr.shift(), pathArr.join(':')];
-
-    /*
-     * Split rest of path into bucket and object, then create list of login,
-     * bucket, object
-     */
-    pathArr = [pathArr[0]].concat(pathArr[1].split('/'));
+    var pathArr = dataPath.split('/');
 
     if (pathArr.length !== 2 && pathArr.length != 3) {
-        cb(ERR);
+        cb(verror.VError(
+            'paths must be of the form <user>/<bucket> or ' +
+            '<user>/<bucket>/<object>'));
         return;
     }
 

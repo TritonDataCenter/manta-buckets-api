@@ -70,19 +70,35 @@ var OPTIONS = [
  * }
  */
 function parsePath(dataPath, cb) {
+    var ERR = verror.VError('paths must be of the form <user>/<bucket> or ' +
+        '<user>/<bucket>/<object>');
     var pathArr = dataPath.split('/');
 
     if (pathArr.length !== 2 && pathArr.length != 3) {
-        cb(verror.VError(
-            'paths must be of the form <user>/<bucket> or ' +
-            '<user>/<bucket>/<object>'));
+        cb(ERR);
         return;
     }
 
     var ret = {};
+
     ret.login = decodeURIComponent(pathArr[0]);
+    if (ret.login === '') {
+        cb(ERR);
+        return;
+    }
+
     ret.bucket = decodeURIComponent(pathArr[1]);
-    ret.object = pathArr[2] === undefined ?
+    if (ret.bucket === '') {
+        cb(ERR);
+        return;
+    }
+
+    /*
+     * If the user specified a path of the form <user>/<bucket>/ with a trailing
+     * slash, pathArr[2] will be an empty string. We allow this syntax and parse
+     * this as meaning that no object was specified.
+     */
+    ret.object = pathArr[2] === undefined || pathArr[2] === '' ?
         null : decodeURIComponent(pathArr[2]);
 
     cb(null, ret);

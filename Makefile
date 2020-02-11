@@ -5,7 +5,7 @@
 #
 
 #
-# Copyright 2019 Joyent, Inc.
+# Copyright 2020 Joyent, Inc.
 #
 
 #
@@ -19,7 +19,7 @@ DOC_FILES =		index.md
 RESTDOWN_FLAGS =	--brand-dir=docs/bluejoy
 RESTDOWN_EXT =		.md
 
-JS_FILES :=     bin/mlocate bin/mpicker \
+JS_FILES :=     bin/mlocate \
             $(shell ls *.js) \
             $(shell find lib test -name '*.js')
 JSL_CONF_NODE =     tools/jsl.node.conf
@@ -122,6 +122,8 @@ release: all docs
 	    $(RELSTAGEDIR)/root/opt/smartdc/$(NAME)/boot
 	ln -s /opt/smartdc/$(NAME)/boot/setup.sh \
 	    $(RELSTAGEDIR)/root/opt/smartdc/boot/setup.sh
+	ln -s ../node_modules/storinfo/bin/mchoose \
+	    $(RELSTAGEDIR)/root/opt/smartdc/$(NAME)/bin/mchoose
 	chmod 755 $(RELSTAGEDIR)/root/opt/smartdc/$(NAME)/boot/setup.sh
 	cd $(RELSTAGEDIR) && $(TAR) -I pigz -cf $(ROOT)/$(RELEASE_TARBALL) root site
 	@rm -rf $(RELSTAGEDIR)

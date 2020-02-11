@@ -5,7 +5,7 @@
  */
 
 /*
- * Copyright 2019 Joyent, Inc.
+ * Copyright 2020 Joyent, Inc.
  */
 
 var net = require('net');
@@ -24,6 +24,7 @@ var keyapi = require('keyapi');
 var mahi = require('mahi');
 var once = require('once');
 var restify = require('restify');
+var storinfo = require('storinfo');
 var vasync = require('vasync');
 
 var app = require('./lib');
@@ -155,32 +156,6 @@ function createCueballSharkAgent(sharkCfg) {
 }
 
 
-function onPickerConnect(clients, pickerClient) {
-    clients.picker = pickerClient;
-}
-
-
-function createPickerClient(cfg, log, onConnect) {
-    var opts = {
-        interval: cfg.interval,
-        lag: cfg.lag,
-        moray: cfg.moray,
-        log: log.child({component: 'picker'}, true),
-        multiDC: cfg.multiDC,
-        defaultMaxStreamingSizeMB: cfg.defaultMaxStreamingSizeMB,
-        maxUtilizationPct: cfg.maxUtilizationPct,
-        maxOperatorUtilizationPct: cfg.maxOperatorUtilizationPct
-    };
-
-    var client = app.picker.createClient(opts);
-
-    client.once('connect', function _onConnect() {
-        log.info('picker connected %s', client.toString());
-        onConnect(client);
-    });
-}
-
-
 function createAuthCacheClient(authCfg, agent) {
     assert.object(authCfg, 'authCfg');
     assert.string(authCfg.url, 'authCfg.url');
@@ -247,6 +222,26 @@ function clientsConnected(appName, cfg, clients) {
     app.startKangServer();
 }
 
+function createStorinfoClient(cfg, clients, barrier) {
+    var opts = {
+        log: cfg.log.child({component: 'storinfo'}, true),
+        url: cfg.storinfo.url,
+        pollInterval: cfg.storinfo.pollInterval,
+        cueballOpts: cfg.storinfo.cueballOpts,
+        defaultMaxStreamingSizeMB: cfg.storage.defaultMaxStreamingSizeMB,
+        maxUtilizationPct: cfg.storage.maxUtilizationPct,
+        multiDC: cfg.storage.multiDC,
+        standalone: false
+    };
+
+    clients.storinfo = storinfo.createClient(opts);
+
+    clients.storinfo.once('topology', function () {
+        opts.log.info('first poll completed');
+        barrier.done('createStorinfoClient');
+    });
+}
+
 ///--- Mainline
 
 (function main() {
@@ -289,6 +284,9 @@ function clientsConnected(appName, cfg, clients) {
     clients.agent = new cueball.HttpAgent(cfg.cueballHttpAgent);
     clients.mahi = createAuthCacheClient(cfg.auth, clients.agent);
 
+    barrier.start('createStorinfoClient');
+    createStorinfoClient(cfg, clients, barrier);
+
     var metadataPlacementOpts = {
         buckets_mdplacement: cfg.buckets_mdplacement,
         buckets_mdapi: cfg.buckets_mdapi,
@@ -299,8 +297,6 @@ function clientsConnected(appName, cfg, clients) {
         onMetadataPlacementClientConnect.bind(null, clients, barrier));
 
     // Establish other client connections needed for writes and jobs requests.
-    createPickerClient(cfg.storage, cfg.log,
-        onPickerConnect.bind(null, clients));
     clients.sharkAgent = createCueballSharkAgent(cfg.sharkConfig);
     clients.keyapi = createKeyAPIClient(cfg);
 

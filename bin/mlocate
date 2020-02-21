@@ -298,7 +298,8 @@ function lookupAndFetchData(opts, cb) {
 
     /*
      * Add some extra fields to the returned object. Note that we also add the
-     * mdplacement URL to the printed object in main() below.
+     * mdplacement URL to the printed object in main() below, and the bucket
+     * name to data objects only in getObject() below.
      */
     function addExtraFields(ctx, next) {
         ret._key = key;
@@ -398,6 +399,11 @@ function doLocate(opts, dataPath, nextPath) {
                     return;
                 }
                 ret = data;
+                /*
+                 * Add the bucket name to the object, which only has the
+                 * bucket uuid by default.
+                 */
+                ret._bucket_name = ctx.path.bucket;
                 next();
             });
         } else {

@@ -190,6 +190,7 @@
   "buckets_mdplacement": {
      "srvDomain": "{{BUCKETS_MDPLACEMENT}}",
       "cueballOptions": {
+          "service": "_buckets-mdplacement._tcp",
           "resolvers": ["nameservice.{{DOMAIN_NAME}}"]
       }
   },

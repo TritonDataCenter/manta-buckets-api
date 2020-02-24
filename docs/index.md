@@ -9,7 +9,7 @@ markdown2extras: wiki-tables, code-friendly
 -->
 
 <!--
-    Copyright 2019 Joyent, Inc.
+    Copyright 2020 Joyent, Inc.
 -->
 
 # Manta Buckets Storage Service
@@ -458,12 +458,12 @@ Also, it will include the following headers:
 ### Restrictions
 
 There are very few limitations imposed on object names. Object names must
-contain only valid UTF-8 characters and may be a maximum of 1024 characters in
-length. Object names may include forward slash characters (or any other valid
-UTF-8 character) to create the suggestion of a directory hierarchy for a set of
-object even though the buckets system uses a flat namespace. Care must be
-taken, however, to properly URL encode all object names to avoid problems when
-interacting with the server.
+contain only valid UTF-8 characters and may be a maximum of 1024 bytes.  Object
+names may include forward slash characters (or any other valid UTF-8 character)
+to create the suggestion of a directory hierarchy for a set of object even
+though the buckets system uses a flat namespace. Care must be taken, however,
+to properly URL encode all object names to avoid problems when interacting with
+the server.
 
 ---
 

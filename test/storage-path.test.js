@@ -35,19 +35,20 @@ exports.storagePathTest = function (t) {
             objectName: objectName,
             objectNameHash: objectNameHash,
             objectId: uuidv4(),
-            storagePathVersion: 2
+            storageLayoutVersion: 2
         };
 
         var storagePath = shark_client.storagePath(storagePathOpts);
 
         var actualPathParts = storagePath.substr(1).split('/');
         var actualPathPartCount = actualPathParts.length;
+        var expectedObjectIdPrefix = storagePathOpts.objectId.substr(0, 2);
 
         return (actualPathPartCount === 5 &&
                 actualPathParts[0] === 'v2' &&
                 actualPathParts[1] === storagePathOpts.owner &&
                 actualPathParts[2] === storagePathOpts.bucketId &&
-                actualPathParts[3] === 'aa' &&
+                actualPathParts[3] === expectedObjectIdPrefix &&
                 actualPathParts[4] === storagePathOpts.objectId + ',' +
                     storagePathOpts.objectNameHash);
     }

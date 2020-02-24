@@ -7,31 +7,32 @@
  */
 
 /*
- * Copyright 2019 Joyent, Inc.
+ * Copyright 2020 Joyent, Inc.
  */
 
 var fs = require('fs');
 var path = require('path');
 
 var assert = require('assert-plus');
+var bignum = require('bignum');
 var bunyan = require('bunyan');
+var clone = require('clone');
+var crypto = require('crypto');
 var dashdash = require('dashdash');
-var libmanta = require('libmanta');
-var uuidv4 = require('uuid/v4');
+var fast = require('fast');
+var mdapi = require('buckets-mdapi');
 var mahi = require('mahi');
-var manta = require('manta');
-var once = require('once');
 var restify = require('restify');
+var sprintf = require('util').format;
+var url = require('url');
+var uuidv4 = require('uuid/v4');
 var vasync = require('vasync');
+var verror = require('verror');
 
-var app = require('../lib');
 var common = require('../lib/common');
-
-
 
 ///--- Globals
 
-var CLIENT;
 var DEFAULT_CFG = path.join(__dirname, '../etc/config.json');
 var LOG = bunyan.createLogger({
     name: require('path').basename(process.argv[1]),
@@ -58,34 +59,84 @@ var OPTIONS = [
     }
 ];
 
-
-
 ///--- Helpers
+
+/*
+ * Parses the given path and returns an object of the form:
+ * {
+ *     login (string)
+ *     bucket (string)
+ *     object (string OR null)
+ * }
+ */
+function parsePath(dataPath, cb) {
+    var ERR = verror.VError('paths must be of the form <user>/<bucket> or ' +
+        '<user>/<bucket>/<object>');
+    var pathArr = dataPath.split('/');
+
+    if (pathArr.length !== 2 && pathArr.length != 3) {
+        cb(ERR);
+        return;
+    }
+
+    var ret = {};
+
+    ret.login = decodeURIComponent(pathArr[0]);
+    if (ret.login === '') {
+        cb(ERR);
+        return;
+    }
+
+    ret.bucket = decodeURIComponent(pathArr[1]);
+    if (ret.bucket === '') {
+        cb(ERR);
+        return;
+    }
+
+    /*
+     * If the user specified a path of the form <user>/<bucket>/ with a trailing
+     * slash, pathArr[2] will be an empty string. We allow this syntax and parse
+     * this as meaning that no object was specified.
+     */
+    ret.object = pathArr[2] === undefined || pathArr[2] === '' ?
+        null : decodeURIComponent(pathArr[2]);
+
+    cb(null, ret);
+}
 
 function createAuthCacheClient(opts, cb) {
     assert.object(opts, 'options');
     assert.string(opts.url, 'options.url');
     assert.func(cb, 'callback');
 
-    cb = once(cb);
-
     opts.log = LOG.child({component: 'authCache'}, true);
     var client = mahi.createClient(opts);
-    setTimeout(cb, 0, null, client);
+    cb(null, client);
 }
 
 
-function createMorayClient(opts, cb) {
-    assert.object(opts, 'options');
+/*
+ * Can be used to connect to either an mdapi or mdplacement instance.
+ *
+ * Takes an additional argument: whether or not the client is connecting to
+ * an mdapi or mdplacement instance. All this affects is the 'component' field
+ * in the child log.
+ */
+function createMdapiClient(opts, isMdPlacement, cb) {
+    assert.object(opts, 'opts');
+    assert.bool(isMdPlacement, 'isMdPlacement');
     assert.func(cb, 'callback');
 
-    var log = LOG.child({component: 'moray'}, true);
-    opts.log = log;
+    var componentStr = isMdPlacement ? 'buckets-mdplacement' : 'buckets-mdapi';
+
+    opts.unwrapErrors = true;
+    opts.crc_mode = fast.FAST_CHECKSUM_V2;
+    opts.log = LOG.child({component: componentStr}, true);
     opts.readOnly = true;
 
-    var client = new libmanta.createMorayClient(opts);
+    var client = new mdapi.createClient(opts);
 
-    client.once('error', function (err) {
+    client.once('error', function onError(err) {
         cb(err);
     });
 
@@ -94,16 +145,16 @@ function createMorayClient(opts, cb) {
     });
 }
 
-
-function configure() {
+function getConfig() {
     var cfg;
     var opts;
     var parser = new dashdash.Parser({options: OPTIONS});
 
     function usage(msg) {
         var help = parser.help({includeEnv: true}).trimRight();
-        if (msg)
+        if (msg) {
             console.error(msg);
+        }
         console.error('usage: mlocate [OPTIONS] PATH\n'
                       + 'options:\n'
                       + help);
@@ -118,108 +169,351 @@ function configure() {
         process.exit(1);
     }
 
-    if (opts.help)
+    if (opts.help) {
         usage();
+    }
 
     cfg = JSON.parse(fs.readFileSync(opts.file || DEFAULT_CFG, 'utf8'));
 
     if (opts.verbose) {
-        opts.verbose.forEach(function () {
+        opts.verbose.forEach(function decrementLogLevel() {
             LOG.level(Math.max(bunyan.TRACE, (LOG.level() - 10)));
         });
     }
 
-    if (LOG.level() <= bunyan.DEBUG)
+    if (LOG.level() <= bunyan.DEBUG) {
         LOG = LOG.child({src: true});
+    }
 
-    cfg.log = LOG;
     if (opts._args.length < 1)
         usage('path required');
 
-    cfg.paths = opts._args.map(function (p) {
-        return (path.normalize(p));
-    });
+    cfg.paths = opts._args;
 
     return (cfg);
 }
 
+/*
+ * Opts:
+ *     - account: the uuid of the account who owns the path we're looking up
+ *     - bucket: the name or uuid of the bucket for the path we're looking up.
+ *       If we're looking up the bucket itself, this argument should be the
+ *       bucket name. If we're looking up an object in the bucket, this argument
+ *       should be the bucket uuid.
+ *     - object (optional): the name of the object we're looking up. If this is
+ *       not defined, we assume we're looking up the _bucket_ in the path
+ *       instead.
+ *     - placementData: the placementData object with which to look up the key
+ *     - mdapiCfg: a config object for use by the client in this function
+ */
+function lookupAndFetchData(opts, cb) {
+    assert.object(opts, 'opts');
+    assert.uuid(opts.account, 'opts.account');
+    assert.optionalString(opts.object, 'opts.object');
+    assert.object(opts.placementData, 'opts.placementData');
+    assert.object(opts.mdapiCfg, 'opts.mdapiCfg');
 
+    var account = opts.account;
+    var bucket = opts.bucket;
+    var key = account + ':' + bucket;
+    var placementData = opts.placementData;
+    var mdapiCfg = clone(opts.mdapiCfg);
+    var lookingUpObject = false;
+    var object = null;
+    if (opts.object) {
+        assert.uuid(opts.bucket, 'opts.bucket');
+        lookingUpObject = true;
+        object = opts.object;
+        key += ':' + object;
+    } else {
+        assert.string(opts.bucket, 'opts.bucket');
+    }
 
-///--- Mainline
+    var ret = null;
 
-(function main() {
-    var cfg = configure();
+    // Get the location of the data
+    function getLocation(ctx, next) {
+        ctx.location = common.getDataLocation(placementData, key);
+        next();
+    }
 
-    assert.object(cfg, 'no configuration');
-    assert.object(cfg.auth, 'no auth in configuration');
-    assert.object(cfg.moray, 'no moray in configuration');
+    // Connect to the mdapi instance responsible for the data
+    function createClient(ctx, next) {
+        var pnodeUrl = url.parse(ctx.location.pnode);
+        assert.string(pnodeUrl.port, 'pnodeUrl.port');
+        assert.string(pnodeUrl.hostname, 'pnodeUrl.hostname');
 
-    var mahic;
-    var moray;
-
-    var barrier = vasync.barrier();
-    function ready() {
-        if (!mahic || !moray)
-            return;
-
-        function resolve(p) {
-            var login = decodeURIComponent(p.split('/', 2).pop());
-            mahic.getUuid({ 'account': login }, function (err, result) {
-                if (err) {
-                    console.error('mahi: unable to resolve %s: %s',
-                                  login, err.toString());
-                    process.exit(1);
-                } else if (!result || !result.account) {
-                    console.error('%s is not a known account', login);
-                    process.exit(1);
-                }
-
-                LOG.debug(result, 'loaded %s', login);
-
-                var key = p.replace(common.PATH_LOGIN_RE,
-                                    '/' + result.account + '/');
-
-                var opts = {
-                    key: key,
-                    requestId: uuidv4()
-                };
-                moray.getMetadata(opts, function (err2, md, rawMd) {
-                    if (err2) {
-                        console.error('error loading %s: %s', p, err2);
-                        process.exit(1);
-                    }
-
-                    md._key = opts.path;
-                    md._moray = moray.url;
-                    md._node = rawMd._node;
-                    console.log(JSON.stringify(md));
-                    barrier.done(p);
-                });
-            });
+        mdapiCfg.srvDomain = pnodeUrl.hostname;
+        if (!mdapiCfg.cueballOptions) {
+            mdapiCfg.cueballOptions = {};
         }
+        mdapiCfg.cueballOptions.defaultPort =
+            parseInt(pnodeUrl.port, 10);
 
-        cfg.paths.forEach(function (p) {
-            barrier.start(p);
-            setImmediate(function () {
-                resolve(p);
-            });
-        });
-
-        barrier.once('drain', function () {
-            process.exit(0);
+        createMdapiClient(mdapiCfg, false,
+            function createdClient(err, client) {
+            if (err) {
+                next(err);
+                return;
+            }
+            ctx.mdapiClient = client;
+            next();
         });
     }
 
-    createAuthCacheClient(cfg.auth, function (err, client) {
-        assert.ifError(err, 'auth cache failure');
-        mahic = client;
-        ready();
-    });
+    // Get the data from the mdapi instance
+    function getData(ctx, next) {
+        if (lookingUpObject) {
+            ctx.mdapiClient.getObject(
+                account,
+                bucket,
+                object,
+                ctx.location.vnode,
+                uuidv4(),
+                function onGetObject(err, data) {
+                    if (err) {
+                        next(err);
+                        return;
+                    }
+                    ret = data;
+                    next();
+                });
 
-    createMorayClient(cfg.moray, function (err, client) {
-        assert.ifError(err, 'moray failure');
-        moray = client;
-        ready();
-    });
+        } else {
+            ctx.mdapiClient.getBucket(
+                account,
+                bucket,
+                ctx.location.vnode,
+                uuidv4(),
+                function onGetBucket(err, data) {
+                    if (err) {
+                        next(err);
+                        return;
+                    }
+                    ret = data;
+                    next();
+                });
+        }
+    }
 
+    /*
+     * Add some extra fields to the returned object. Note that we also add the
+     * mdplacement URL to the printed object in main() below.
+     */
+    function addExtraFields(ctx, next) {
+        ret._key = key;
+        ret._node = ctx.location;
+        next();
+    }
+
+    vasync.pipeline({
+        arg: {}, // ctx
+        funcs: [
+            getLocation,
+            createClient,
+            getData,
+            addExtraFields
+        ]
+    }, function pipelineDone(err) {
+        cb(err, ret);
+    });
+}
+
+/*
+ * Args:
+ *     opts:
+ *         - authcacheClient: authcache client
+ *         - placementData: mdplacement data
+ *         - mdapiCfg: mdapi config from config file
+ *     path: path to look up
+ *
+ * Returns an object containing the location data.
+ */
+function doLocate(opts, dataPath, nextPath) {
+    assert.object(opts.authcacheClient, 'opts.authcacheClient');
+    assert.object(opts.placementData, 'opts.placementData');
+
+    var ret = {};
+
+    // Parse the path string into its component parts
+    function getPathComponents(ctx, next) {
+        parsePath(dataPath, function parsedPath(err, result) {
+            if (err) {
+                next(err);
+                return;
+            }
+            ctx.path = result;
+            next();
+        });
+    }
+
+    // Translate the owner's login into their account uuid
+    function getAccount(ctx, next) {
+        var login = ctx.path.login;
+        opts.authcacheClient.getUuid({ 'account': login },
+            function gotUuid(err, result) {
+            if (err) {
+                next(err);
+                return;
+            } else if (!result || !result.account) {
+                next(new verror.VError('%s is not a known account', login));
+                return;
+            }
+            LOG.debug(result, 'loaded %s', login);
+            ctx.account = result.account;
+            next();
+        });
+    }
+
+    // Locate the bucket
+    function getBucket(ctx, next) {
+        lookupAndFetchData({
+            account: ctx.account,
+            bucket: ctx.path.bucket,
+            object: null,
+            placementData: opts.placementData,
+            mdapiCfg: opts.mdapiCfg
+        }, function gotBucket(err, data) {
+            if (err) {
+                next(err);
+                return;
+            }
+            ctx.bucketData = data;
+            next();
+        });
+    }
+
+    // Locate the object, if the path includes an object
+    function getObject(ctx, next) {
+        if (ctx.path.object) {
+            lookupAndFetchData({
+                account: ctx.account,
+                bucket: ctx.bucketData.id,
+                object: ctx.path.object,
+                placementData: opts.placementData,
+                mdapiCfg: opts.mdapiCfg
+            }, function gotObject(err, data) {
+                if (err) {
+                    next(err);
+                    return;
+                }
+                ret = data;
+                next();
+            });
+        } else {
+            ret = ctx.bucketData;
+            next();
+        }
+    }
+
+    vasync.pipeline({
+        arg: {}, // ctx
+        funcs: [
+            getPathComponents,
+            getAccount,
+            getBucket,
+            getObject
+        ]
+    }, function pipelineDone(err) {
+        nextPath(err, ret);
+    });
+}
+
+(function main() {
+    var cfg = getConfig();
+
+    assert.object(cfg, 'no configuration');
+    assert.object(cfg.auth, 'no auth in configuration');
+    assert.object(cfg.buckets_mdplacement,
+        'no buckets_mdplacement in configuration');
+    assert.object(cfg.buckets_mdapi,
+        'no buckets_mdapi in configuration');
+
+    // Connect to authcache and mdplacement
+    function getClients(ctx, next) {
+        vasync.parallel({
+            funcs: [
+                function getAuthCache(done) {
+                    createAuthCacheClient(cfg.auth,
+                        function gotClient(err, client) {
+                        if (err) {
+                            done(err);
+                            return;
+                        }
+                        ctx.authcacheClient = client;
+                        done();
+                    });
+                },
+                function getMdplacement(done) {
+                    createMdapiClient(
+                        cfg.buckets_mdplacement, true,
+                        function gotClient(err, client) {
+                        if (err) {
+                            done(err);
+                            return;
+                        }
+                        ctx.mdplacementClient = client;
+                        done();
+                    });
+                }
+            ]
+        }, next);
+    }
+
+    function getPlacementData(ctx, next) {
+        ctx.mdplacementClient.getPlacementData(function gotData(err, data) {
+            if (err) {
+                next(err);
+                return;
+            }
+            ctx.placementData = data;
+            next();
+        });
+    }
+
+    function locateObjects(ctx, next) {
+        function locateAndPrint(dataPath, nextPath) {
+            doLocate({
+                authcacheClient: ctx.authcacheClient,
+                placementData: ctx.placementData,
+                mdapiCfg: cfg.buckets_mdapi
+            }, dataPath, function gotObject(err, result) {
+                /*
+                 * If there's an error, we don't propagate it -- we print it for
+                 * the user.
+                 */
+                if (err) {
+                    console.error(sprintf('Error locating "%s": %s',
+                        dataPath, err.message));
+                } else {
+                    assert.object(result, 'result');
+                    // Add an extra piece of info
+                    result._buckets_mdplacement =
+                        cfg.buckets_mdplacement.srvDomain;
+                    console.log(JSON.stringify(result));
+                }
+                nextPath();
+            });
+        }
+
+        vasync.forEachPipeline({
+            func: locateAndPrint,
+            inputs: cfg.paths
+        }, function forEachParallelDone(err, results) {
+            assert.ifError(err);
+            next();
+        });
+    }
+
+    vasync.pipeline({
+        arg: {}, // ctx
+        funcs: [
+            getClients,
+            getPlacementData,
+            locateObjects
+        ]
+    }, function pipelineDone(err, results) {
+        assert.ifError(err);
+        process.exit(0);
+    });
 })();

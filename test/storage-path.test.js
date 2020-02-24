@@ -8,6 +8,7 @@
  * Copyright 2020 Joyent, Inc.
  */
 
+var crypto = require('crypto');
 var uuidv4 = require('uuid/v4');
 var jsc = require('jsverify');
 
@@ -25,17 +26,16 @@ var shark_client = require('../lib/shark_client.js');
 exports.storagePathTest = function (t) {
     function propStoragePath(objectNameLen) {
         var objectName = 'a'.repeat(objectNameLen);
-        var expectedPathPartCount =
-            Math.floor(objectNameLen / shark_client.OBJECT_NAME_PART_SIZE) + 3;
-        if (objectNameLen % shark_client.OBJECT_NAME_PART_SIZE > 0) {
-            expectedPathPartCount += 1;
-        }
+        var objectNameHash =
+            crypto.createHash('md5').update(objectName).digest('hex');
 
         var storagePathOpts = {
             owner: uuidv4(),
             bucketId: uuidv4(),
             objectName: objectName,
-            objectId: uuidv4()
+            objectNameHash: objectNameHash,
+            objectId: uuidv4(),
+            storagePathVersion: 2
         };
 
         var storagePath = shark_client.storagePath(storagePathOpts);
@@ -43,11 +43,13 @@ exports.storagePathTest = function (t) {
         var actualPathParts = storagePath.substr(1).split('/');
         var actualPathPartCount = actualPathParts.length;
 
-        return (actualPathPartCount === expectedPathPartCount &&
-                actualPathParts[0] === storagePathOpts.owner &&
-                actualPathParts[1] === storagePathOpts.bucketId &&
-                actualPathParts[expectedPathPartCount-1] ===
-                    storagePathOpts.objectId);
+        return (actualPathPartCount === 5 &&
+                actualPathParts[0] === 'v2' &&
+                actualPathParts[1] === storagePathOpts.owner &&
+                actualPathParts[2] === storagePathOpts.bucketId &&
+                actualPathParts[3] === 'aa' &&
+                actualPathParts[4] === storagePathOpts.objectId + ',' +
+                    storagePathOpts.objectNameHash);
     }
 
     var propRes =

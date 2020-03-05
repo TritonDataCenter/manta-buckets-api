@@ -11,6 +11,7 @@ cscope.out
 smf/manifests/*.xml
 *.tar.gz
 *.log
+etc/config.json
 
 ## Directory-based project format:
 .idea/

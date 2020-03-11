@@ -135,4 +135,7 @@ manta_common2_setup_log_rotation "buckets-api"
 
 manta_common2_setup_end
 
+# Setup the mlocate alias
+echo "alias mlocate='/opt/smartdc/buckets-api/bin/mlocate -f /opt/smartdc/buckets-api/etc/config.json'" >> $PROFILE
+
 exit 0

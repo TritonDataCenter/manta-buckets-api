@@ -5,7 +5,7 @@
 -->
 
 <!--
-    Copyright 2019 Joyent, Inc.
+    Copyright 2020 Joyent, Inc.
 -->
 
 # manta-buckets-api: The Manta Web API
@@ -46,7 +46,7 @@ Manta. If you're doing this for the first time, and not sure what to
 do, I had success with `make buildimage` which leaves you with an
 image and manifest in `./bits`. You can then import this image and
 follow this guide to upgrading manta components:
-https://github.com/joyent/manta/blob/master/docs/operator-guide.md#upgrading-manta-components
+https://github.com/joyent/manta/blob/master/docs/operator-guide/maintenance.md#upgrading-manta-components
 
 ## Metrics
 

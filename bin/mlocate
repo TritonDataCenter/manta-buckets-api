@@ -228,7 +228,8 @@ function lookupAndFetchData(opts, cb) {
          * The hash of the object name, not the object name itself, is included
          * in the string used to look up the object location.
          */
-        var object_hash = crypto.createHash('md5').update(opts.object).digest('hex');
+        var object_hash =
+            crypto.createHash('md5').update(opts.object).digest('hex');
         key += ':' + object_hash;
     } else {
         assert.string(opts.bucket, 'opts.bucket');

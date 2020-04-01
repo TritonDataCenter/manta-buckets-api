@@ -39,7 +39,7 @@
         "restify-clients": "2.6.7",
         "restify-errors": "^5.0.0",
         "sshpk": "1.16.1",
-        "storinfo": "git+https://github.com/joyent/node-storinfo.git#v1.0.0",
+        "storinfo": "1.0.1",
         "tab": "1.0.0",
         "uuid": "3.3.3",
         "vasync": "^2.2.0",

@@ -96,7 +96,7 @@ function manta_setup_buckets_api {
     # The metricPorts values are derived from the buckets-api service's "SIZE"
     # SAPI metadata. We don't need to worry about keeping the metricPorts updated
     # if this variable changes, because such a change does not affect
-    # already-provisioned zones. This is because electric-moray zones pull the
+    # already-provisioned zones. This is because buckets-api zones pull the
     # "SIZE" variable from /var/tmp/metadata.json, which is only written once,
     # when the zone is provisioned -- it is not managed by config-agent.
     #

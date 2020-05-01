@@ -60,9 +60,11 @@ function manta_setup_buckets_api {
 
     #Build the list of ports.  That'll be used for everything else.
     local ports
+    local metric_ports
     local portlist
     for (( i=1; i<=$num_instances; i++ )); do
-        ports[$i]=`expr 8080 + $i`
+        ports[$i]=$(expr 8080 + $i)
+        metric_ports[$i]=$(expr ${ports[i]} + 800)
     done
 
     portlist=$(IFS=, ; echo "${ports[*]}")
@@ -86,6 +88,19 @@ function manta_setup_buckets_api {
             fatal "unable to start $buckets_api_instance"
         sleep 1
     done
+
+    #
+    # We join the metric ports in a comma-separated list, then add this list as
+    # metricPorts mdata to allow scraping by cmon-agent.
+    #
+    # The metricPorts values are derived from the buckets-api service's "SIZE"
+    # SAPI metadata. We don't need to worry about keeping the metricPorts updated
+    # if this variable changes, because such a change does not affect
+    # already-provisioned zones. This is because electric-moray zones pull the
+    # "SIZE" variable from /var/tmp/metadata.json, which is only written once,
+    # when the zone is provisioned -- it is not managed by config-agent.
+    #
+    mdata-put metricPorts $(IFS=','; echo "${metric_ports[*]}")
 
     unset IFS
 

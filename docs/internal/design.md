@@ -5,7 +5,7 @@
 -->
 
 <!--
-    Copyright 2019 Joyent, Inc.
+    Copyright 2020 Joyent, Inc.
 -->
 
 
@@ -61,7 +61,6 @@ are returned in [Prometheus](https://prometheus.io/) v0.0.4 text format.
 The following metrics are collected:
 
 - Time-to-first-byte latency for all requests
-- End-to-end latency for all requests
 - Count of requests completed
 - Count of bytes streamed to and from storage
 - Count of object bytes deleted

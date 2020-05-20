@@ -191,6 +191,7 @@ function createMetadataPlacementClient(opts, onConnect) {
     assert.object(opts, 'options');
     assert.object(opts.buckets_mdplacement, 'options.buckets_mdplacement');
     assert.object(opts.buckets_mdapi, 'options.buckets_mdapi');
+    assert.object(opts.collector, 'options.collector');
     assert.object(opts.log, 'options.log');
 
     var log = opts.log.child({component: 'metadataPlacementClient'}, true);
@@ -290,6 +291,7 @@ function createStorinfoClient(cfg, clients, barrier) {
     var metadataPlacementOpts = {
         buckets_mdplacement: cfg.buckets_mdplacement,
         buckets_mdapi: cfg.buckets_mdapi,
+        collector: cfg.collector,
         log: cfg.log
     };
     barrier.start('createMetadataPlacementClient');

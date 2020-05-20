@@ -1,7 +1,7 @@
 {
     "name": "buckets-api",
     "description": "Manta user-facing API",
-    "version": "1.1.0",
+    "version": "1.2.0",
     "author": "Joyent (joyent.com)",
     "private": true,
     "repository": {
@@ -24,7 +24,7 @@
         "cueball": "2.10.0",
         "dashdash": "1.3.2",
         "dtrace-provider": "0.8.8",
-        "fast": "3.0.0",
+        "fast": "3.0.1",
         "http-signature": "1.1.0",
         "jsprim": "^2.0.0",
         "kang": "1.3.0",

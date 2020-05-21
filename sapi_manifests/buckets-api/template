@@ -210,6 +210,9 @@
           "resolvers": ["nameservice.{{DOMAIN_NAME}}"]
       }
   },
+  {{#DEV_CACHED_BUCKET}}
+  "cachedBucket": {{{DEV_CACHED_BUCKET}}},
+  {{/DEV_CACHED_BUCKET}}
   "buckets_mdapi": {
     "bucketsMdapiOptions": {
         "cueballOptions": {

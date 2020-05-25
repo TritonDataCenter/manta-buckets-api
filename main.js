@@ -104,7 +104,6 @@ function createMonitoringServer(cfg) {
      */
     var kangOpts;
     var metricsManager;
-    var monitorServer;
     var port;
     kangOpts = cueball.poolMonitor.toKangOptions();
     port = cfg.port + 800;
@@ -126,7 +125,8 @@ function createMonitoringServer(cfg) {
 
     cfg.collector = metricsManager.collector;
 
-    metricsManager.server.get(new RegExp('.*'), kang.knRestifyHandler(kangOpts));
+    metricsManager.server.get(new RegExp('.*'),
+        kang.knRestifyHandler(kangOpts));
 
     metricsManager.createNodejsMetrics();
     metricsManager.listen(function metricsServerStarted() {

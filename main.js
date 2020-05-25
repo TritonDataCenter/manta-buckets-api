@@ -116,7 +116,9 @@ function createMonitoringServer(cfg) {
         restify: restify,
         staticLabels: {
             datacenter: cfg.datacenter,
+            instance: cfg.zone_uuid,
             server: cfg.server_uuid,
+            service: 'buckets-api',
             zonename: cfg.zone_uuid,
             pid: process.pid
         }
@@ -124,7 +126,7 @@ function createMonitoringServer(cfg) {
 
     cfg.collector = metricsManager.collector;
 
-    monitorServer.server.get(new RegExp('.*'), kang.knRestifyHandler(kangOpts));
+    metricsManager.server.get(new RegExp('.*'), kang.knRestifyHandler(kangOpts));
 
     metricsManager.createNodejsMetrics();
     metricsManager.listen(function metricsServerStarted() {

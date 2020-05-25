@@ -15,6 +15,7 @@ var path = require('path');
 var apertureConfig = require('aperture-config').config;
 var assert = require('assert-plus');
 var bunyan = require('bunyan');
+var createMetricsManager = require('triton-metrics').createMetricsManager;
 var cueball = require('cueball');
 var dashdash = require('dashdash');
 var dtrace = require('dtrace-provider');
@@ -102,16 +103,31 @@ function createMonitoringServer(cfg) {
      * metrics including operation latency, and request counts.
      */
     var kangOpts;
+    var metricsManager;
     var monitorServer;
     var port;
     kangOpts = cueball.poolMonitor.toKangOptions();
     port = cfg.port + 800;
 
-    monitorServer = restify.createServer({ name: 'Monitor' });
-    monitorServer.get('/metrics', app.getMetricsHandler(cfg.collector));
-    monitorServer.get(new RegExp('.*'), kang.knRestifyHandler(kangOpts));
+    metricsManager = createMetricsManager({
+        address: '0.0.0.0',
+        log: cfg.log.child({component: 'Monitor'}),
+        port: port,
+        restify: restify,
+        staticLabels: {
+            datacenter: cfg.datacenter,
+            server: cfg.server_uuid,
+            zonename: cfg.zone_uuid,
+            pid: process.pid
+        }
+    });
 
-    monitorServer.listen(port, '0.0.0.0', function () {
+    cfg.collector = metricsManager.collector;
+
+    monitorServer.server.get(new RegExp('.*'), kang.knRestifyHandler(kangOpts));
+
+    metricsManager.createNodejsMetrics();
+    metricsManager.listen(function metricsServerStarted() {
         cfg.log.info('monitoring server started on port %d', port);
     });
 }
@@ -268,6 +284,9 @@ function createStorinfoClient(cfg, clients, barrier) {
     const opts = parseOptions();
     const cfg = app.configure(muskie, opts, dtProbes);
 
+    // Create monitoring server
+    createMonitoringServer(cfg);
+
     /*
      * Create a barrier to ensure client connections that are established
      * asynchronously and are required for muskie to serve a minimal subset of
@@ -301,9 +320,6 @@ function createStorinfoClient(cfg, clients, barrier) {
     // Establish other client connections needed for writes and jobs requests.
     clients.sharkAgent = createCueballSharkAgent(cfg.sharkConfig);
     clients.keyapi = createKeyAPIClient(cfg);
-
-    // Create monitoring server
-    createMonitoringServer(cfg);
 
     process.on('SIGHUP', process.exit.bind(process, 0));
 

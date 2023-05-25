@@ -12,7 +12,7 @@
 
 This repository is part of the Joyent Manta project.  For contribution
 guidelines, issues, and general documentation, visit the main
-[Manta](http://github.com/joyent/manta) project page.
+[Manta](http://github.com/TritonDataCenter/manta) project page.
 
 manta-buckets-api holds the source code for the Manta API, otherwise known as
 "the front door".  It is analogous to CloudAPI for SDC.  See the restdown
@@ -46,11 +46,11 @@ Manta. If you're doing this for the first time, and not sure what to
 do, I had success with `make buildimage` which leaves you with an
 image and manifest in `./bits`. You can then import this image and
 follow this guide to upgrading manta components:
-https://github.com/joyent/manta/blob/master/docs/operator-guide/maintenance.md#upgrading-manta-components
+https://github.com/TritonDataCenter/manta/blob/master/docs/operator-guide/maintenance.md#upgrading-manta-components
 
 ## Metrics
 
-Buckets-Api exposes metrics via [node-artedi](https://github.com/joyent/node-artedi).
+Buckets-Api exposes metrics via [node-artedi](https://github.com/TritonDataCenter/node-artedi).
 See the [design](./docs/internal/design.md) document for more information about
 the metrics that are exposed, and how to access them. For development, it is
 probably easiest to use `curl` to scrape metrics:
@@ -71,12 +71,12 @@ development or staging environment.
 ## Service registration
 
 Like most other components in Triton and Manta, this service is configured to
-use [Registrar](https://github.com/joyent/registrar/). Each of the API server
+use [Registrar](https://github.com/TritonDataCenter/registrar/). Each of the API server
 ports are registered under a `SRV` record as described in the Registrar
 documentation, and the registration type is `load\_balancer`.
 
 The general mechanism is [documented in detail in the Registrar
-README](https://github.com/joyent/registrar/blob/master/README.md).
+README](https://github.com/TritonDataCenter/registrar/blob/master/README.md).
 
 As with other services providing multiple ports per zone instance, the registrar
 template is itself modified during setup via `boot/setup.sh` to populate the
@@ -97,12 +97,12 @@ _http._tcp.buckets-api.manta.example.com. 60 IN SRV 0 10 8084 4a1af359-a671-47d1
 4a1af359-a671-47d1-bc8b-70e4ea81af7c.buckets-api.manta.example.com. 30 IN A 192.168.0.38
 ```
 
-The `buckets-api` client, [muppet](https://github.com/joyent/muppet), doesn't
+The `buckets-api` client, [muppet](https://github.com/TritonDataCenter/muppet), doesn't
 directly use DNS lookups: instead the corresponding Zookeeper nodes are watched
 for changes, updating its `haproxy` configuration as needed. This is partly for
 historical reasons (both muppet and the old webapi registered themselves with a
 service name of "manta"), and to reduce load on
-[binder](https://github.com/joyent/binder/).
+[binder](https://github.com/TritonDataCenter/binder/).
 
 ## Dtrace Probes
 

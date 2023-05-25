@@ -6,7 +6,7 @@
 
 <!--
     Copyright (c) 2014, Joyent, Inc.
-    Copyritht 2023 MNX Cloud, Inc.
+    Copyright 2023 MNX Cloud, Inc.
 -->
 
 # Access Control User Guide

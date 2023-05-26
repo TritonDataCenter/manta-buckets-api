@@ -6,6 +6,7 @@
 
 <!--
     Copyright (c) 2014, Joyent, Inc.
+    Copyright 2023 MNX Cloud, Inc.
 -->
 
 # Access Control User Guide
@@ -551,7 +552,7 @@ Some examples of aperture rules:
 * `Can putobject if day in (Monday, Tuesday, Wednesday, Thursday, Friday)`
 * `Can createjob`
 
-For more information see <https://github.com/joyent/node-aperture>
+For more information see <https://github.com/TritonDataCenter/node-aperture>
 
 Note: Aperture as a language supports explicit deny as the effect of a rule.
 However, explicit deny is not supported in Joyent's access control system.
@@ -621,5 +622,5 @@ Context specific to Manta requests:
 | parentdirectory | string | full path of the parent directory |
 | ... | ... | ... |
 
-[aperture]: https://github.com/joyent/node-aperture
-[types]: https://github.com/joyent/node-aperture#types
+[aperture]: https://github.com/TritonDataCenter/node-aperture
+[types]: https://github.com/TritonDataCenter/node-aperture#types

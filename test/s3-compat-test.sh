@@ -241,6 +241,92 @@ test_get_object() {
     fi
 }
 
+test_object_checksum_integrity() {
+    log "Testing: Object Upload/Download Checksum Integrity"
+    
+    local checksum_test_file="checksum-test.bin"
+    local downloaded_checksum_file="downloaded-$checksum_test_file"
+    
+    # Create a test file with known content for checksum verification
+    # Using a mix of text and binary-like content to ensure integrity
+    local test_data="S3 Checksum Test Data - $(date +%s)$(printf '\x00\x01\x02\x03\xFF\xFE\xFD\xFC')"
+    printf "%s" "$test_data" > "$checksum_test_file"
+    
+    # Calculate original checksum
+    local original_md5=$(md5sum "$checksum_test_file" | cut -d' ' -f1)
+    local original_sha256=$(sha256sum "$checksum_test_file" | cut -d' ' -f1)
+    
+    log "  Original file MD5: $original_md5"
+    log "  Original file SHA256: $original_sha256"
+    
+    set +e  # Temporarily disable exit on error
+    
+    # Upload the file
+    upload_result=$(aws_s3api put-object --bucket "$TEST_BUCKET" --key "$checksum_test_file" --body "$checksum_test_file" 2>&1)
+    local upload_exit_code=$?
+    
+    if [ $upload_exit_code -ne 0 ]; then
+        error "Checksum test - Failed to upload $checksum_test_file: $upload_result"
+        set -e
+        return 1
+    fi
+    
+    # Download the file
+    download_result=$(aws_s3api get-object --bucket "$TEST_BUCKET" --key "$checksum_test_file" "$downloaded_checksum_file" 2>&1)
+    local download_exit_code=$?
+    
+    set -e  # Re-enable exit on error
+    
+    if [ $download_exit_code -ne 0 ]; then
+        error "Checksum test - Failed to download $checksum_test_file: $download_result"
+        return 1
+    fi
+    
+    if [ ! -f "$downloaded_checksum_file" ]; then
+        error "Checksum test - Downloaded file $downloaded_checksum_file not found"
+        return 1
+    fi
+    
+    # Calculate downloaded file checksums
+    local downloaded_md5=$(md5sum "$downloaded_checksum_file" | cut -d' ' -f1)
+    local downloaded_sha256=$(sha256sum "$downloaded_checksum_file" | cut -d' ' -f1)
+    
+    log "  Downloaded file MD5: $downloaded_md5"
+    log "  Downloaded file SHA256: $downloaded_sha256"
+    
+    # Verify MD5 checksums match
+    if [ "$original_md5" = "$downloaded_md5" ]; then
+        success "Checksum test - MD5 checksums match ($original_md5)"
+    else
+        error "Checksum test - MD5 checksum mismatch! Original: $original_md5, Downloaded: $downloaded_md5"
+    fi
+    
+    # Verify SHA256 checksums match
+    if [ "$original_sha256" = "$downloaded_sha256" ]; then
+        success "Checksum test - SHA256 checksums match ($original_sha256)"
+    else
+        error "Checksum test - SHA256 checksum mismatch! Original: $original_sha256, Downloaded: $downloaded_sha256"
+    fi
+    
+    # Verify file sizes match
+    local original_size=$(wc -c < "$checksum_test_file")
+    local downloaded_size=$(wc -c < "$downloaded_checksum_file")
+    
+    if [ "$original_size" = "$downloaded_size" ]; then
+        success "Checksum test - File sizes match ($original_size bytes)"
+    else
+        error "Checksum test - File size mismatch! Original: $original_size bytes, Downloaded: $downloaded_size bytes"
+    fi
+    
+    # Cleanup test files
+    rm -f "$checksum_test_file" "$downloaded_checksum_file"
+    
+    # Cleanup S3 object
+    set +e
+    aws_s3api delete-object --bucket "$TEST_BUCKET" --key "$checksum_test_file" 2>/dev/null || true
+    set -e
+}
+
 test_list_bucket_objects_with_content() {
     log "Testing: List Bucket Objects (with content)"
     
@@ -340,6 +426,7 @@ run_tests() {
     test_put_object || true
     test_head_object || true
     test_get_object || true
+    test_object_checksum_integrity || true
     test_list_bucket_objects_with_content || true
     test_delete_object || true
     test_delete_bucket || true

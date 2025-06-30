@@ -42,20 +42,11 @@ function createS3Client(opts) {
 
 // AWS Signature V4 helper for testing
 function createAWSSignature(options) {
-    var method = options.method || 'GET';
-    var path = options.path || '/';
-    var query = options.query || '';
     var headers = options.headers || {};
     var body = options.body || '';
     
     // Mock AWS credentials for testing
-    var accessKey = process.env.AWS_ACCESS_KEY_ID || 'AKIATEST';
-    var secretKey = process.env.AWS_SECRET_ACCESS_KEY || 'testsecretkey';
-    var region = options.region || 'us-east-1';
-    var service = 's3';
-    
     var now = new Date();
-    var dateStamp = now.toISOString().split('T')[0].replace(/-/g, '');
     var amzDate = now.toISOString().replace(/[:\-]|\.\d{3}/g, '');
     
     headers['host'] = options.host || 'localhost:8080';

@@ -27,7 +27,7 @@ function createS3Client(opts) {
     opts = opts || {};
     var log = helper.createLogger();
     var restifyClients = require('restify-clients');
-    
+
     return restifyClients.createClient({
         agent: false,
         connectTimeout: 250,
@@ -44,16 +44,17 @@ function createS3Client(opts) {
 function createAWSSignature(options) {
     var headers = options.headers || {};
     var body = options.body || '';
-    
+
     // Mock AWS credentials for testing
     var now = new Date();
     var amzDate = now.toISOString().replace(/[:\-]|\.\d{3}/g, '');
-    
+
     headers['host'] = options.host || 'localhost:8080';
     headers['x-amz-date'] = amzDate;
-    headers['x-amz-content-sha256'] = crypto.createHash('sha256').update(body).digest('hex');
-    
-    return headers;
+    headers['x-amz-content-sha256'] =
+    crypto.createHash('sha256').update(body).digest('hex');
+
+    return (headers);
 }
 
 ///--- Tests
@@ -61,19 +62,19 @@ function createAWSSignature(options) {
 before(function (callback) {
     var serverOptions = {
         log: helper.createLogger(),
-        collector: { counter: function() {}, histogram: function() {} },
+        collector: { counter: function () {}, histogram: function () {} },
         throttle: { enabled: false },
         dtrace_probes: {
-            socket_timeout: { fire: function() {} }
+            socket_timeout: { fire: function () {} }
         }
     };
-    
+
     var clients = {
         mahi: { /* mock mahi client */ },
         storinfo: { /* mock storinfo client */ },
         metadataPlacement: { /* mock metadata placement client */ }
     };
-    
+
     try {
         var bucketServer = require('../lib/server');
         server = bucketServer.createServer(serverOptions, clients);
@@ -102,7 +103,7 @@ test('S3 list buckets', function (t) {
         path: path,
         host: client.url.host
     });
-    
+
     client.get({
         path: path,
         headers: headers
@@ -110,13 +111,13 @@ test('S3 list buckets', function (t) {
         // Note: This test may fail due to authentication requirements
         // but we're testing the S3 route detection and path conversion
         t.ok(req, 'request should be created');
-        
+
         if (err && err.statusCode === 401) {
             t.comment('Authentication required (expected for S3 operations)');
         } else if (err && err.statusCode === 500) {
             t.comment('Server error (may be due to missing dependencies)');
         }
-        
+
         // The main goal is to verify S3 routes are being processed
         t.end();
     });
@@ -130,19 +131,19 @@ test('S3 create bucket', function (t) {
         path: path,
         host: client.url.host
     });
-    
+
     client.put({
         path: path,
         headers: headers
     }, function (err, req, res, data) {
         t.ok(req, 'request should be created');
-        
+
         if (err && err.statusCode === 401) {
             t.comment('Authentication required (expected for S3 operations)');
         } else if (err && err.statusCode === 500) {
             t.comment('Server error (may be due to missing dependencies)');
         }
-        
+
         t.end();
     });
 });
@@ -155,13 +156,13 @@ test('S3 list bucket objects', function (t) {
         path: path,
         host: client.url.host
     });
-    
+
     client.get({
         path: path,
         headers: headers
     }, function (err, req, res, data) {
         t.ok(req, 'request should be created');
-        
+
         if (err && err.statusCode === 401) {
             t.comment('Authentication required (expected for S3 operations)');
         } else if (err && err.statusCode === 404) {
@@ -169,7 +170,7 @@ test('S3 list bucket objects', function (t) {
         } else if (err && err.statusCode === 500) {
             t.comment('Server error (may be due to missing dependencies)');
         }
-        
+
         t.end();
     });
 });
@@ -182,13 +183,13 @@ test('S3 head bucket', function (t) {
         path: path,
         host: client.url.host
     });
-    
+
     client.head({
         path: path,
         headers: headers
     }, function (err, req, res) {
         t.ok(req, 'request should be created');
-        
+
         if (err && err.statusCode === 401) {
             t.comment('Authentication required (expected for S3 operations)');
         } else if (err && err.statusCode === 404) {
@@ -196,7 +197,7 @@ test('S3 head bucket', function (t) {
         } else if (err && err.statusCode === 500) {
             t.comment('Server error (may be due to missing dependencies)');
         }
-        
+
         t.end();
     });
 });
@@ -209,13 +210,13 @@ test('S3 delete bucket', function (t) {
         path: path,
         host: client.url.host
     });
-    
+
     client.del({
         path: path,
         headers: headers
     }, function (err, req, res) {
         t.ok(req, 'request should be created');
-        
+
         if (err && err.statusCode === 401) {
             t.comment('Authentication required (expected for S3 operations)');
         } else if (err && err.statusCode === 404) {
@@ -223,7 +224,7 @@ test('S3 delete bucket', function (t) {
         } else if (err && err.statusCode === 500) {
             t.comment('Server error (may be due to missing dependencies)');
         }
-        
+
         t.end();
     });
 });
@@ -241,13 +242,13 @@ test('S3 create object', function (t) {
     });
     headers['content-type'] = 'text/plain';
     headers['content-length'] = Buffer.byteLength(body);
-    
+
     client.put({
         path: path,
         headers: headers
     }, body, function (err, req, res, data) {
         t.ok(req, 'request should be created');
-        
+
         if (err && err.statusCode === 401) {
             t.comment('Authentication required (expected for S3 operations)');
         } else if (err && err.statusCode === 404) {
@@ -255,7 +256,7 @@ test('S3 create object', function (t) {
         } else if (err && err.statusCode === 500) {
             t.comment('Server error (may be due to missing dependencies)');
         }
-        
+
         t.end();
     });
 });
@@ -269,13 +270,13 @@ test('S3 get object', function (t) {
         path: path,
         host: client.url.host
     });
-    
+
     client.get({
         path: path,
         headers: headers
     }, function (err, req, res, data) {
         t.ok(req, 'request should be created');
-        
+
         if (err && err.statusCode === 401) {
             t.comment('Authentication required (expected for S3 operations)');
         } else if (err && err.statusCode === 404) {
@@ -283,7 +284,7 @@ test('S3 get object', function (t) {
         } else if (err && err.statusCode === 500) {
             t.comment('Server error (may be due to missing dependencies)');
         }
-        
+
         t.end();
     });
 });
@@ -297,13 +298,13 @@ test('S3 head object', function (t) {
         path: path,
         host: client.url.host
     });
-    
+
     client.head({
         path: path,
         headers: headers
     }, function (err, req, res) {
         t.ok(req, 'request should be created');
-        
+
         if (err && err.statusCode === 401) {
             t.comment('Authentication required (expected for S3 operations)');
         } else if (err && err.statusCode === 404) {
@@ -311,7 +312,7 @@ test('S3 head object', function (t) {
         } else if (err && err.statusCode === 500) {
             t.comment('Server error (may be due to missing dependencies)');
         }
-        
+
         t.end();
     });
 });
@@ -325,13 +326,13 @@ test('S3 delete object', function (t) {
         path: path,
         host: client.url.host
     });
-    
+
     client.del({
         path: path,
         headers: headers
     }, function (err, req, res) {
         t.ok(req, 'request should be created');
-        
+
         if (err && err.statusCode === 401) {
             t.comment('Authentication required (expected for S3 operations)');
         } else if (err && err.statusCode === 404) {
@@ -339,7 +340,7 @@ test('S3 delete object', function (t) {
         } else if (err && err.statusCode === 500) {
             t.comment('Server error (may be due to missing dependencies)');
         }
-        
+
         t.end();
     });
 });
@@ -349,24 +350,26 @@ test('S3 delete object', function (t) {
 test('Manta paths should not be processed as S3', function (t) {
     var path = '/admin/buckets';
     var headers = {
-        'authorization': 'Signature keyId="test",algorithm="rsa-sha256",signature="test"'
+        'authorization':
+        'Signature keyId="test",algorithm="rsa-sha256",signature="test"'
     };
-    
+
     client.get({
         path: path,
         headers: headers
     }, function (err, req, res, data) {
         t.ok(req, 'request should be created');
-        
+
         // This should be processed as a Manta request, not S3
         // The path pattern /admin/buckets should match Manta routing
-        
+
         if (err && err.statusCode === 401) {
-            t.comment('Authentication required (expected for Manta operations)');
+            t.comment(
+            'Authentication required (expected for Manta operations)');
         } else if (err && err.statusCode === 500) {
             t.comment('Server error (may be due to missing dependencies)');
         }
-        
+
         t.end();
     });
 });
@@ -380,13 +383,13 @@ test('S3 paths with nested objects', function (t) {
         path: path,
         host: client.url.host
     });
-    
+
     client.get({
         path: path,
         headers: headers
     }, function (err, req, res, data) {
         t.ok(req, 'request should be created');
-        
+
         if (err && err.statusCode === 401) {
             t.comment('Authentication required (expected for S3 operations)');
         } else if (err && err.statusCode === 404) {
@@ -394,7 +397,7 @@ test('S3 paths with nested objects', function (t) {
         } else if (err && err.statusCode === 500) {
             t.comment('Server error (may be due to missing dependencies)');
         }
-        
+
         t.end();
     });
 });

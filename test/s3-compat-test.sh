@@ -1,5 +1,5 @@
 #!/bin/bash
-
+# Copyright 2025 Edgecast Cloud LLC.
 # S3 Compatibility Test Script for manta-buckets-api
 # Tests basic S3 functionality using AWS CLI
 #

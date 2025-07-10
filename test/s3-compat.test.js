@@ -5,7 +5,7 @@
  */
 
 /*
- * Copyright 2025 MNX Cloud, Inc.
+ * Copyright 2025 Edgecast Cloud LLC.
  */
 
 var helper = require('./helper.js');

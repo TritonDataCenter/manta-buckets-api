@@ -204,17 +204,23 @@ graph TD
     JJ --> LL[S3 Client Receives Response]
     KK --> LL
     
-    style A fill:#e1f5fe
-    style D fill:#fff3e0
-    style E fill:#fff3e0
-    style L fill:#f3e5f5
-    style N fill:#f3e5f5
-    style R fill:#e8f5e8
-    style X fill:#e8f5e8
-    style CC fill:#fff9c4
-    style JJ fill:#ffebee
-    style KK fill:#ffebee
-    style LL fill:#e8f5e8
+    classDef startNode fill:#E3F2FD,stroke:#1976D2,stroke-width:2px,color:#0D47A1
+    classDef detectNode fill:#FFF3E0,stroke:#F57C00,stroke-width:2px,color:#E65100
+    classDef parseNode fill:#FFF3E0,stroke:#F57C00,stroke-width:2px,color:#E65100
+    classDef middlewareNode fill:#F3E5F5,stroke:#7B1FA2,stroke-width:2px,color:#4A148C
+    classDef routeNode fill:#E8F5E8,stroke:#388E3C,stroke-width:2px,color:#1B5E20
+    classDef backendNode fill:#E8F5E8,stroke:#388E3C,stroke-width:2px,color:#1B5E20
+    classDef convertNode fill:#FFF9C4,stroke:#F57F17,stroke-width:2px,color:#F57F17
+    classDef responseNode fill:#FFEBEE,stroke:#C62828,stroke-width:2px,color:#B71C1C
+    classDef endNode fill:#E8F5E8,stroke:#388E3C,stroke-width:2px,color:#1B5E20
+    
+    class A startNode
+    class D,E detectNode
+    class L,N middlewareNode
+    class R,X routeNode
+    class CC convertNode
+    class JJ,KK responseNode
+    class LL endNode
 ```
 
 ### Supported Operations

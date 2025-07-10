@@ -549,6 +549,132 @@ AWS_SECRET_ACCESS_KEY="your-secret" \
 
 The test suite ensures that standard S3 tools and workflows function correctly with Manta's bucket storage, providing confidence in S3 API compatibility.
 
+### Supported S3 Object Properties
+
+The manta-buckets-api supports the following S3 object properties and metadata:
+
+#### Core Object Properties
+- **Key** - Object name/path (`lib/s3-compat.js:673,744`)
+- **Size** - Object size in bytes (`lib/s3-compat.js:679,749`)
+- **ETag** - Entity tag using Manta object ID (`lib/s3-compat.js:677-678,747-748`)
+- **LastModified** - ISO 8601 timestamp (`lib/s3-compat.js:675-676,745-746`)
+- **StorageClass** - Always "STANDARD" (`lib/s3-compat.js:680,750`)
+
+#### HTTP Headers
+- **Content-Type** - MIME type, defaults to "application/octet-stream" (`lib/s3-compat.js:470`)
+- **Content-Length** - Object size in bytes (`lib/buckets/objects/head.js:89`)
+- **Content-MD5** - MD5 hash for integrity checking (`lib/buckets/objects/head.js:90`)
+- **Last-Modified** - HTTP header for caching (`lib/buckets/objects/head.js:87`)
+
+#### Custom Metadata
+- **x-amz-meta-*** - User-defined metadata headers with 4KB total limit
+  - Conversion: `x-amz-meta-*` ↔ `m-*` (`lib/s3-compat.js:484-487,1291-1298`)
+  - Maximum size: 4KB total (`lib/common.js:89`)
+
+#### S3-Specific Response Headers
+- **x-amz-request-id** - Request identifier (`lib/s3-compat.js:493-494,822-824`)
+- **x-amz-id-2** - Extended request identifier (`lib/s3-compat.js:495,826-829`)
+
+#### Additional Properties
+- **Durability-Level** - Manta-specific durability information (`lib/buckets/objects/head.js:88`)
+- **CORS Headers** - Cross-origin resource sharing headers (`lib/common.js:42-48`)
+- **Cache-Control** - HTTP caching directives (`lib/buckets/buckets.js:198-199`)
+- **Surrogate-Key** - CDN cache invalidation key (`lib/buckets/buckets.js:201-202`)
+
+#### XML Response Format
+Object listings return S3-compatible XML with these properties:
+```xml
+<Contents>
+  <Key>object-name</Key>
+  <LastModified>2023-01-01T00:00:00.000Z</LastModified>
+  <ETag>"etag-value"</ETag>
+  <Size>1024</Size>
+  <StorageClass>STANDARD</StorageClass>
+</Contents>
+```
+
+#### Limitations
+- **StorageClass**: Only "STANDARD" supported (hardcoded)
+- **ETag**: Uses Manta object ID instead of MD5 hash for performance
+- **Metadata Size**: User metadata limited to 4KB total for all `x-amz-meta-*` headers
+- **Custom Headers**: Only `m-*` pattern headers preserved as user metadata
+
+### S3 to Manta Object Property Mapping
+
+The following table shows how S3 object properties are translated to Manta object properties during upload operations:
+
+| **S3 Property** | **S3 Example** | **Manta Property** | **Manta Example** | **Transformation** | **Default Value** |
+|---|---|---|---|---|---|
+| **Object Key** | `my-folder/file.txt` | `name` | `my-folder/file.txt` | Direct mapping | N/A |
+| **Content-Type** | `image/jpeg` | `contentType` | `image/jpeg` | Direct mapping | `application/octet-stream` |
+| **Content-Length** | `1024` | `contentLength` | `1024` | Direct mapping | Calculated from stream |
+| **Content-MD5** | `"d41d8cd98f00b204e9800998ecf8427e"` | `contentMD5` | `"d41d8cd98f00b204e9800998ecf8427e"` | Direct mapping or computed | Computed during upload |
+| **x-amz-meta-author** | `"John Doe"` | `m-author` | `"John Doe"` | Prefix conversion (`x-amz-meta-*` → `m-*`) | N/A |
+| **x-amz-meta-category** | `"documents"` | `m-category` | `"documents"` | Prefix conversion | N/A |
+| **ETag** | `"abc123def456"` | `objectId` (used as ETag) | `"550e8400-e29b-41d4-a716-446655440000"` | Generated UUID v4 | Generated UUID |
+| **LastModified** | `2023-01-01T12:00:00Z` | `mtime` | `2023-01-01T12:00:00Z` | Set during creation | Current timestamp |
+| **StorageClass** | `STANDARD` | N/A (implicit) | N/A | Always "STANDARD" | `STANDARD` |
+| **Cache-Control** | `max-age=3600` | `headers['Cache-Control']` | `max-age=3600` | Direct mapping | N/A |
+| **Surrogate-Key** | `cache-key-123` | `headers['Surrogate-Key']` | `cache-key-123` | Direct mapping | N/A |
+| **durability-level** | `3` | `req._copies` | `3` | Direct mapping | `2` |
+| **role-tag** | `admin,user` | `roles` | `[uuid1, uuid2]` | Converted to role UUIDs | `[]` |
+| **x-amz-decoded-content-length** | `2048` | `contentLength` | `2048` | Used for chunked uploads | N/A |
+
+#### Properties Added by Manta (Not Present in S3)
+
+| **Manta Property** | **Example** | **Purpose** | **How Generated** |
+|---|---|---|---|
+| `sharks` | `["1.stor.domain.com", "2.stor.domain.com"]` | Storage node locations | Computed by storage info service |
+| `type` | `"bucketobject"` | Object type identifier | Fixed value |
+| `objectId` | `"550e8400-e29b-41d4-a716-446655440000"` | Unique object identifier | Generated UUID v4 |
+| `storageLayoutVersion` | `2` | Storage layout version | Current version (default: 2) |
+| `name_hash` | `"d41d8cd98f00b204e9800998ecf8427e"` | MD5 of object name | Computed for metadata placement |
+| `owner` | `"550e8400-e29b-41d4-a716-446655440001"` | Account UUID | From authenticated user |
+| `bucketId` | `"550e8400-e29b-41d4-a716-446655440002"` | Bucket UUID | From bucket lookup |
+
+#### Key Transformation Rules
+
+1. **Metadata Headers**: `x-amz-meta-*` → `m-*` (prefix change)
+2. **ETag Handling**: S3 ETag becomes Manta `objectId` (UUID instead of MD5)
+3. **Size Limits**: Custom metadata limited to 4KB total
+4. **Durability**: S3 doesn't specify, Manta defaults to 2 copies
+5. **Storage Class**: S3 supports multiple classes, Manta always uses "STANDARD"
+
+#### Example: S3 PUT Object Request → Manta Object
+
+**S3 Request:**
+```http
+PUT /my-bucket/documents/report.pdf HTTP/1.1
+Content-Type: application/pdf
+Content-Length: 2048
+Content-MD5: d41d8cd98f00b204e9800998ecf8427e
+x-amz-meta-author: John Doe
+x-amz-meta-department: Engineering
+durability-level: 3
+```
+
+**Resulting Manta Object:**
+```javascript
+{
+  name: "documents/report.pdf",
+  contentType: "application/pdf",
+  contentLength: 2048,
+  contentMD5: "d41d8cd98f00b204e9800998ecf8427e",
+  objectId: "550e8400-e29b-41d4-a716-446655440000",
+  mtime: "2023-01-01T12:00:00.000Z",
+  type: "bucketobject",
+  sharks: ["1.stor.domain.com", "2.stor.domain.com", "3.stor.domain.com"],
+  headers: {
+    "m-author": "John Doe",
+    "m-department": "Engineering"
+  },
+  owner: "550e8400-e29b-41d4-a716-446655440001",
+  bucketId: "550e8400-e29b-41d4-a716-446655440002"
+}
+```
+
+This mapping enables seamless S3 API compatibility while leveraging Manta's distributed storage architecture and metadata system.
+
 ### Implementation Files
 
 - `lib/s3-compat.js` - Core S3 compatibility middleware and translation functions

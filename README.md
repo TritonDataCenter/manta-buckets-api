@@ -204,15 +204,15 @@ graph TD
     JJ --> LL[S3 Client Receives Response]
     KK --> LL
     
-    classDef startNode fill:#E3F2FD,stroke:#1976D2,stroke-width:2px,color:#0D47A1
-    classDef detectNode fill:#FFF3E0,stroke:#F57C00,stroke-width:2px,color:#E65100
-    classDef parseNode fill:#FFF3E0,stroke:#F57C00,stroke-width:2px,color:#E65100
-    classDef middlewareNode fill:#F3E5F5,stroke:#7B1FA2,stroke-width:2px,color:#4A148C
-    classDef routeNode fill:#E8F5E8,stroke:#388E3C,stroke-width:2px,color:#1B5E20
-    classDef backendNode fill:#E8F5E8,stroke:#388E3C,stroke-width:2px,color:#1B5E20
-    classDef convertNode fill:#FFF9C4,stroke:#F57F17,stroke-width:2px,color:#F57F17
-    classDef responseNode fill:#FFEBEE,stroke:#C62828,stroke-width:2px,color:#B71C1C
-    classDef endNode fill:#E8F5E8,stroke:#388E3C,stroke-width:2px,color:#1B5E20
+    classDef startNode fill:#F8FBFF,stroke:#90CAF9,stroke-width:1px,color:#1565C0
+    classDef detectNode fill:#FFFAF0,stroke:#FFCC80,stroke-width:1px,color:#F57C00
+    classDef parseNode fill:#FFFAF0,stroke:#FFCC80,stroke-width:1px,color:#F57C00
+    classDef middlewareNode fill:#FCF8FF,stroke:#CE93D8,stroke-width:1px,color:#8E24AA
+    classDef routeNode fill:#F8FFF8,stroke:#A5D6A7,stroke-width:1px,color:#43A047
+    classDef backendNode fill:#F8FFF8,stroke:#A5D6A7,stroke-width:1px,color:#43A047
+    classDef convertNode fill:#FFFEF7,stroke:#FFF176,stroke-width:1px,color:#FBC02D
+    classDef responseNode fill:#FFF8F8,stroke:#FFAB91,stroke-width:1px,color:#F4511E
+    classDef endNode fill:#F8FFF8,stroke:#A5D6A7,stroke-width:1px,color:#43A047
     
     class A startNode
     class D,E detectNode

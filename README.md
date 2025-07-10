@@ -204,23 +204,20 @@ graph TD
     JJ --> LL[S3 Client Receives Response]
     KK --> LL
     
-    classDef startNode fill:#F8FBFF,stroke:#90CAF9,stroke-width:1px,color:#1565C0
-    classDef detectNode fill:#FFFAF0,stroke:#FFCC80,stroke-width:1px,color:#F57C00
-    classDef parseNode fill:#FFFAF0,stroke:#FFCC80,stroke-width:1px,color:#F57C00
-    classDef middlewareNode fill:#FCF8FF,stroke:#CE93D8,stroke-width:1px,color:#8E24AA
-    classDef routeNode fill:#F8FFF8,stroke:#A5D6A7,stroke-width:1px,color:#43A047
-    classDef backendNode fill:#F8FFF8,stroke:#A5D6A7,stroke-width:1px,color:#43A047
-    classDef convertNode fill:#FFFEF7,stroke:#FFF176,stroke-width:1px,color:#FBC02D
-    classDef responseNode fill:#FFF8F8,stroke:#FFAB91,stroke-width:1px,color:#F4511E
-    classDef endNode fill:#F8FFF8,stroke:#A5D6A7,stroke-width:1px,color:#43A047
+    classDef clientNode fill:#F8FBFF,stroke:#90CAF9,stroke-width:1px,color:#1565C0
+    classDef authNode fill:#FFFAF0,stroke:#FFCC80,stroke-width:1px,color:#F57C00
+    classDef processNode fill:#FCF8FF,stroke:#CE93D8,stroke-width:1px,color:#8E24AA
+    classDef mahiNode fill:#F8FFF8,stroke:#A5D6A7,stroke-width:1px,color:#43A047
+    classDef errorNode fill:#FFF8F8,stroke:#FFAB91,stroke-width:1px,color:#F4511E
+    classDef successNode fill:#F8FFF8,stroke:#A5D6A7,stroke-width:1px,color:#43A047
     
-    class A startNode
-    class D,E detectNode
-    class L,N middlewareNode
-    class R,X routeNode
-    class CC convertNode
-    class JJ,KK responseNode
-    class LL endNode
+    class A clientNode
+    class B,C authNode
+    class D,E authNode
+    class F,G,H,I,J,K,L,M,N,O,P,Q processNode
+    class R,S,T,U,V,W,X,Y,Z,AA,BB,CC,DD,EE,FF,GG mahiNode
+    class HH,II,JJ,KK errorNode
+    class LL successNode
 ```
 
 ### Supported Operations

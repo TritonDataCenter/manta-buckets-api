@@ -2,7 +2,7 @@
     "name": "buckets-api",
     "description": "Manta user-facing API",
     "version": "1.2.3",
-    "author": "MNX Cloud (mnx.io)",
+    "author": "Edgecast Cloud (edgecast.io)",
     "private": true,
     "repository": {
         "type": "git",

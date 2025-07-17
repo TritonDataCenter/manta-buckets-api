@@ -447,17 +447,30 @@ export AWS_ACCESS_KEY_ID="your-manta-access-key"
 export AWS_SECRET_ACCESS_KEY="your-manta-secret-key"
 export AWS_DEFAULT_REGION="us-east-1"
 
+# Sample credentials file 
+
+``` shell
+[default]
+aws_access_key_id = "your-manta-access-key"
+aws_secret_access_key = "your-manta-secret-key"
+region = us-east-1
+```
+
 # Use AWS CLI with custom endpoint
 aws s3 --endpoint-url="https://your-manta-endpoint:8080" \
-       --region="us-east-1" \
-       --no-verify-ssl \
-       ls
+    --region="us-east-1" \
+    --no-verify-ssl  ls
 
+aws s3  ls s3://yourbucketname \
+    --endpoint-url="https://your-manta-endpoint" \
+    --region=us-east-1 --no-verify-ssl
+ 
 # Or use s3api commands
-aws s3api --endpoint-url="https://your-manta-endpoint:8080" \
-          --region="us-east-1" \
-          --no-verify-ssl \
-          list-buckets
+         
+aws --no-verify-ssl s3api list-objects-v2 \
+    --bucket test5  --region us-east-1 \ 
+    --endpoint-url=https://your-manta-endpoint:8080 --output json
+
 ```
 
 #### Supported AWS CLI Commands
@@ -506,6 +519,70 @@ aws s3 sync ./local-dir s3://my-bucket/remote-dir/
 
 # List bucket contents
 aws s3 ls s3://my-bucket/
+```
+### S3 Clients configuration
+
+#### Minio mc 
+
+``` shell
+mc alias set local  https://your-manta-endpoint   AWS_ACCESS_KEY AWS_ACCESS_SECRET_KEY --insecure --api S3v4
+```
+
+Minio mc example alias configuration
+
+``` shell
+{
+	"version": "10",
+	"aliases": {
+	"local": {
+			"url": "https://your-manta-endpoint-bucket",
+			"accessKey": "your-manta-access-key",
+			"secretKey": "your-manta-secret-key",
+			"api": "S3v4",
+			"path": "auto"
+		}
+  }
+}
+
+```
+
+List objects in bucket test5
+
+``` shell
+mc  ls local/test5  --insecure
+[2025-07-17 14:40:52 -04] 1.4KiB STANDARD Jenkinsfile
+[2025-07-15 19:28:02 -04] 1.9KiB STANDARD package.json
+```
+#### s5cmd 
+
+First setup the following environment variables
+
+``` shell
+AWS_ACCESS_KEY_ID=your-manta-access-key
+AWS_SECRET_ACCESS_KEY=your-manta-secret-access-key
+MC_REGION=us-east-1
+S3_ENDPOINT_URL=https://your-manta-endpoint
+AWS_INSECURE_SKIP_VERIFY=true
+AWS_REGION=us-east-1
+```
+List objects in bucket 
+
+``` shell
+$ s5cmd  --no-verify-ssl  ls s3://test5
+2025/07/17 18:40:52              1424  Jenkinsfile
+2025/07/17 18:41:20              1424  Jenkinsfile2
+2025/07/15 23:28:02              1909  package.json
+```
+
+
+ ~/Projects/S3/S3-MANTA/manta-buckets-api/ [MANTA-5471] mc  cp Jenkinsfile  local/test5/Jenkinsfile2   --insecure
+mc: <ERROR> Failed to copy `/Users/carlosneira/Projects/S3/S3-MANTA/manta-buckets-api/Jenkinsfile`. 204 No Content
+ ~/Projects/S3/S3-MANTA/manta-buckets-api/ [MANTA-5471] mc  ls local/test5  --insecure
+[2025-07-17 14:40:52 -04] 1.4KiB STANDARD Jenkinsfile
+[2025-07-17 14:41:20 -04] 1.4KiB STANDARD Jenkinsfile2
+[2025-07-15 19:28:02 -04] 1.9KiB STANDARD package.json
+ ~/Projects/S3/S3-MANTA/manta-buckets-api/ [MANTA-5471] mc  get  local/test5/package.json  /tmp/package.json  --insecure
+.../test5/package.json: 1.86 KiB / 1.86 KiB  ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓  24.65 KiB/s 0s
 ```
 
 ### Testing

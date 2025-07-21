@@ -572,19 +572,20 @@ $ s5cmd  --no-verify-ssl  ls s3://test5
 2025/07/17 18:40:52              1424  Jenkinsfile
 2025/07/17 18:41:20              1424  Jenkinsfile2
 2025/07/15 23:28:02              1909  package.json
-```
 
 
- ~/Projects/S3/S3-MANTA/manta-buckets-api/ [MANTA-5471] mc  cp Jenkinsfile  local/test5/Jenkinsfile2   --insecure
+$ mc  cp Jenkinsfile  local/test5/Jenkinsfile2   --insecure
 mc: <ERROR> Failed to copy `/Users/carlosneira/Projects/S3/S3-MANTA/manta-buckets-api/Jenkinsfile`. 204 No Content
- ~/Projects/S3/S3-MANTA/manta-buckets-api/ [MANTA-5471] mc  ls local/test5  --insecure
+$ mc  ls local/test5  --insecure
 [2025-07-17 14:40:52 -04] 1.4KiB STANDARD Jenkinsfile
 [2025-07-17 14:41:20 -04] 1.4KiB STANDARD Jenkinsfile2
 [2025-07-15 19:28:02 -04] 1.9KiB STANDARD package.json
- ~/Projects/S3/S3-MANTA/manta-buckets-api/ [MANTA-5471] mc  get  local/test5/package.json  /tmp/package.json  --insecure
-.../test5/package.json: 1.86 KiB / 1.86 KiB  ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓  24.65 KiB/s 0s
-```
 
+$ mc  get  local/test5/package.json  /tmp/package.json  --insecure
+.../test5/package.json: 1.86 KiB / 1.86 KiB  ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓  24.65 KiB/s 0s
+$ diff package.json /tmp/package.json
+$
+```
 ### Testing
 
 Comprehensive S3 compatibility testing is provided via the test script `test/s3-compat-test.sh`. This script validates:

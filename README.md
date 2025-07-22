@@ -525,7 +525,8 @@ aws s3 ls s3://my-bucket/
 #### Minio mc 
 
 ``` shell
-mc alias set local  https://your-manta-endpoint   AWS_ACCESS_KEY AWS_ACCESS_SECRET_KEY --insecure --api S3v4
+mc alias set local  https://your-manta-endpoint\
+    AWS_ACCESS_KEY AWS_ACCESS_SECRET_KEY --insecure --api S3v4 --path=off
 ```
 
 Minio mc example alias configuration
@@ -539,7 +540,7 @@ Minio mc example alias configuration
 			"accessKey": "your-manta-access-key",
 			"secretKey": "your-manta-secret-key",
 			"api": "S3v4",
-			"path": "auto"
+			"path": "off"
 		}
   }
 }

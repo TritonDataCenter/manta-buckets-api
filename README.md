@@ -108,6 +108,9 @@ service name of "manta"), and to reduce load on
 ## S3 Compatibility
 
 Manta Buckets API provides S3-compatible endpoints that translate S3 API requests into Manta bucket operations. This compatibility layer enables S3 clients and tools to work with Manta's bucket storage.
+[!NOTE]
+Only Path-Style URL is supported, Virtual-Hosted style is in development.
+  
 
 ### Architecture
 
@@ -587,6 +590,25 @@ $ mc  get  local/test5/package.json  /tmp/package.json  --insecure
 $ diff package.json /tmp/package.json
 $
 ```
+
+#### s3cmd 
+
+A sample configuration to start using s3cmd is the following 
+
+``` sh
+[default]
+access_key = your-access-key
+secret_key = your-secret-key
+host_base = your-manta-endpoint
+host_bucket = your-manta-endpoint
+use_https = True
+signature_v2 = False
+
+```
+The reason that host_base and host_bucket has the same value is to force
+path-style buckets instead of virtual buckets. 
+
+
 ### Testing
 
 Comprehensive S3 compatibility testing is provided via the test script `test/s3-compat-test.sh`. This script validates:

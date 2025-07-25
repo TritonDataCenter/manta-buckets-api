@@ -608,6 +608,13 @@ signature_v2 = False
 The reason that host_base and host_bucket has the same value is to force
 path-style buckets instead of virtual buckets. 
 
+Pushing large objects require at this point to disable multipart-uploads.
+
+``` shell
+$ s3cmd --no-check-certificate put --disable-multipart --multipart-chunk-size=5   somefile.tar.gz   s3://test5/somefile.tar.gz
+```
+
+
 
 ### Testing
 

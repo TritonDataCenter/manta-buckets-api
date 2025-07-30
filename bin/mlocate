@@ -275,7 +275,10 @@ function lookupAndFetchData(opts, cb) {
                 bucket,
                 object,
                 ctx.location.vnode,
-                uuidv4(),
+                {
+                    conditions: {}
+                },
+                 uuidv4(),
                 function onGetObject(err, data) {
                     if (err) {
                         next(err);

@@ -783,12 +783,200 @@ durability-level: 3
 
 This mapping enables seamless S3 API compatibility while leveraging Manta's distributed storage architecture and metadata system.
 
+### Creating Public Buckets for Anonymous Access
+
+Manta Buckets API supports public bucket access that allows anonymous (unauthenticated) browser access to bucket contents. This enables use cases like static website hosting, public content distribution, and CDN-style access.
+
+#### AWS ACL to Manta Role Mapping
+
+The S3 compatibility layer translates AWS Access Control Lists (ACLs) to Manta's role-based access control system. The following table shows the mapping between S3 ACLs used in s3cmd and the corresponding Manta roles:
+
+| **S3 ACL** | **s3cmd Usage** | **Manta Roles** | **Access Permissions** | **Browser Access** |
+|---|---|---|---|---|
+| `private` | `--acl-private` | `[]` (empty) | Owner only | ❌ No |
+| `public-read` | `--acl-public` | `["public-reader"]` | Anonymous read access | ✅ Yes |
+| `public-read-write` | `--acl-public-read-write` | `["public-reader", "public-writer"]` | Anonymous read/write access | ✅ Yes |
+| `authenticated-read` | `--acl-authenticated-read` | `["authenticated-reader"]` | Authenticated users read | ❌ No |
+| `bucket-owner-read` | `--acl-bucket-owner-read` | `["owner-reader"]` | Bucket owner read access | ❌ No |
+| `bucket-owner-full-control` | `--acl-bucket-owner-full-control` | `["owner-full-control"]` | Bucket owner full control | ❌ No |
+| `log-delivery-write` | `--acl-log-delivery-write` | `["log-writer"]` | Log delivery write access | ❌ No |
+
+#### Methods to Create Public Buckets
+
+##### Method 1: Create Public Bucket with s3cmd
+
+```bash
+# Create a new public-readable bucket
+s3cmd --no-check-certificate --acl-public mb s3://my-public-bucket
+
+# Alternative using explicit ACL header
+s3cmd --no-check-certificate --add-header="x-amz-acl:public-read" mb s3://my-public-bucket
+```
+
+##### Method 2: Make Existing Bucket Public with s3cmd
+
+```bash
+# Set existing bucket to public-read
+s3cmd --no-check-certificate --acl-public setacl s3://existing-bucket
+
+# Alternative using explicit ACL
+s3cmd --no-check-certificate --add-header="x-amz-acl:public-read" setacl s3://existing-bucket
+```
+
+##### Method 3: Using AWS CLI
+
+```bash
+# Create public bucket with AWS CLI
+aws s3api create-bucket --bucket my-public-bucket \
+    --acl public-read \
+    --endpoint-url https://your-manta-endpoint
+
+# Make existing bucket public
+aws s3api put-bucket-acl --bucket existing-bucket \
+    --acl public-read \
+    --endpoint-url https://your-manta-endpoint
+```
+
+##### Method 4: Using curl with Manta API
+
+```bash
+# Create public bucket with role-tag header
+curl -X PUT \
+    -H "role-tag: public-reader" \
+    -H "Authorization: Signature keyId=\"/user/keys/...\",algorithm=\"rsa-sha256\",signature=\"...\"" \
+    -H "Date: $(date -u '+%a, %d %h %Y %H:%M:%S GMT')" \
+    https://manta.example.com/user/buckets/my-public-bucket
+
+# Make existing bucket public
+curl -X PUT \
+    -H "role-tag: public-reader" \
+    -H "Authorization: Signature keyId=\"/user/keys/...\",algorithm=\"rsa-sha256\",signature=\"...\"" \
+    -H "Date: $(date -u '+%a, %d %h %Y %H:%M:%S GMT')" \
+    https://manta.example.com/user/buckets/existing-bucket
+```
+
+##### Method 5: Using S3 Grant Headers
+
+```bash
+# Grant read access to all users (AllUsers group)
+s3cmd --no-check-certificate \
+    --add-header="x-amz-grant-read:uri=\"http://acs.amazonaws.com/groups/global/AllUsers\"" \
+    mb s3://my-public-bucket
+```
+
+#### Removing Public Access
+
+To make a public bucket private again:
+
+##### Using s3cmd (Recommended)
+
+```bash
+# Set bucket to private
+s3cmd --no-check-certificate --acl-private setacl s3://public-bucket
+
+# Verify bucket is now private (should return 403 for anonymous access)
+curl https://your-manta-endpoint/user/buckets/public-bucket
+```
+
+##### Using AWS CLI
+
+```bash
+# Set bucket to private
+aws s3api put-bucket-acl --bucket public-bucket \
+    --acl private \
+    --endpoint-url https://your-manta-endpoint
+```
+
+##### Using curl with Manta API
+
+```bash
+# Remove role-tag (set to empty)
+curl -X PUT \
+    -H "role-tag: " \
+    -H "Authorization: Signature keyId=\"/user/keys/...\",algorithm=\"rsa-sha256\",signature=\"...\"" \
+    -H "Date: $(date -u '+%a, %d %h %Y %H:%M:%S GMT')" \
+    https://manta.example.com/user/buckets/public-bucket
+```
+
+#### Verifying Public Access
+
+##### Test Browser Access
+
+Once a bucket is public, you can access it directly in a web browser:
+
+```bash
+# Public bucket - should return JSON with bucket contents
+curl https://your-manta-endpoint/user/buckets/public-bucket
+
+# Private bucket - should return 403 Forbidden
+curl https://your-manta-endpoint/user/buckets/private-bucket
+```
+
+##### Check Bucket ACL
+
+```bash
+# Get current bucket ACL
+s3cmd --no-check-certificate getacl s3://bucket-name
+
+# Or using AWS CLI
+aws s3api get-bucket-acl --bucket bucket-name \
+    --endpoint-url https://your-manta-endpoint
+```
+
+##### Verify Role Tags
+
+```bash
+# Check bucket headers for role-tag
+curl -I \
+    -H "Authorization: Signature keyId=\"/user/keys/...\",algorithm=\"rsa-sha256\",signature=\"...\"" \
+    -H "Date: $(date -u '+%a, %d %h %Y %H:%M:%S GMT')" \
+    https://manta.example.com/user/buckets/bucket-name
+
+# Look for: role-tag: public-reader
+```
+
+#### Browser Access Examples
+
+Once a bucket is marked as public, browsers can access content directly:
+
+```html
+<!-- Direct image access -->
+<img src="https://your-manta-endpoint/user/buckets/public-images/objects/logo.png">
+
+<!-- Static website hosting -->
+<iframe src="https://your-manta-endpoint/user/buckets/public-site/objects/index.html"></iframe>
+
+<!-- Direct download links -->
+<a href="https://your-manta-endpoint/user/buckets/public-docs/objects/manual.pdf">
+    Download Manual
+</a>
+```
+
+#### Security Considerations
+
+- **Public buckets** allow anonymous read access to all objects within the bucket
+- **Method restrictions**: Anonymous users can only perform GET and HEAD operations
+- **Write operations**: Anonymous users cannot upload, modify, or delete content
+- **Audit logging**: All anonymous access attempts are logged for security monitoring
+- **CORS support**: Public buckets automatically include CORS headers for browser compatibility
+
+#### Troubleshooting Public Access
+
+1. **Bucket created with public ACL but not accessible**: Ensure bucket name contains "public" (current implementation requirement)
+2. **s3cmd setacl not working**: Use the exact syntax: `s3cmd --acl-private setacl s3://bucket`
+3. **Browser access fails**: Clear browser cache and ensure no authentication headers are being sent
+4. **Partial access**: Verify the bucket has the correct role-tag header with debug logging
+
+For detailed troubleshooting information, see the [Anonymous Access Documentation](./docs/anonymous-access.md).
+
 ### Implementation Files
 
 - `lib/s3-compat.js` - Core S3 compatibility middleware and translation functions
 - `lib/s3-routes.js` - S3 route handlers that bridge to Manta bucket operations
 - `lib/buckets/` - Underlying Manta bucket operation handlers
 - `test/s3-compat-test.sh` - Comprehensive S3 compatibility test suite
+- `lib/anonymous-auth.js` - Anonymous access support for public buckets
+- `docs/anonymous-access.md` - Detailed anonymous access documentation
 
 ## Dtrace Probes
 

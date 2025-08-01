@@ -24,6 +24,42 @@ API documentation is in [docs/index.md](./docs/index.md).  Some design
 documentation (possibly quite dated) is in [docs/internal](./docs/internal).
 Developer notes are in this README.
 
+## Browser-Friendly URLs
+
+For improved user experience, the buckets API provides automatic URL redirection for web browser users. This feature allows users to access objects using shorter, more intuitive URLs without affecting S3 API functionality.
+
+### URL Shortcut
+
+Web browsers can access objects using the simplified URL pattern:
+
+```
+https://host/username/buckets/bucketname/filename
+```
+
+This automatically redirects to the full Manta path:
+
+```
+https://host/username/buckets/bucketname/objects/filename
+```
+
+### Examples
+
+```bash
+# Browser users can type this shorter URL:
+https://manta.example.com/jdoe/buckets/documents/report.pdf
+
+# Which automatically redirects to:
+https://manta.example.com/jdoe/buckets/documents/objects/report.pdf
+```
+
+### Important Notes
+
+- **Browser-only**: This redirection only applies to web browser requests (detected via `Accept: text/html` headers)
+- **API compatibility**: S3 API calls, s3cmd operations, and direct API access are completely unaffected
+- **Backward compatibility**: All existing URLs continue to work as before
+- **Smart detection**: Redirection won't occur if the URL already contains the `/objects/` segment
+
+This feature makes it easier for users to bookmark, share, and manually type URLs to access their stored objects while maintaining full compatibility with all programmatic access methods.
 
 ## Testing
 

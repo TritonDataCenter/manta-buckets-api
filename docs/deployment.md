@@ -74,5 +74,44 @@ redis-cli -n 1 get "/accesskey/your-access-key-id"
 ```
 
 
+## Roles
 
+Now we are able to share buckets anonymously using --acl-public with s3cmd, for this on manta we
+need to create the public-read role as follows.
+
+```
+[root@headnode (coal) ~]# sdc-login cloudapi
+[Connected to zone 'be0dc4b6-8c96-4637-9f8c-f9d6c5b820fb' pts/6]
+Last login: Tue Jul 15 16:31:41 on pts/3
+ =  J O Y E N T  =
+
+    cloudapi (master-20250326T183907Z-g10c3963)
+    https://github.com/tritondatacenter/sdc-cloudapi.git
+    triton-origin-x86_64-21.4.0@master-20220322T012137Z-g9382491
+
+[root@be0dc4b6-8c96-4637-9f8c-f9d6c5b820fb (coal:cloudapi0) ~]# export SDC_ACCOUNT=your-admin-account
+[root@be0dc4b6-8c96-4637-9f8c-f9d6c5b820fb (coal:cloudapi0) ~]# export SDC_KEY_ID=your-adminkey-fingerprint
+[root@be0dc4b6-8c96-4637-9f8c-f9d6c5b820fb (coal:cloudapi0) ~]# export SDC_KEY=~/.ssh/id_rsa
+[root@be0dc4b6-8c96-4637-9f8c-f9d6c5b820fb (coal:cloudapi0) ~]# export SDC_URL=https://10.88.88.3
+[root@be0dc4b6-8c96-4637-9f8c-f9d6c5b820fb (coal:cloudapi0) ~]# export SDC_TESTING=1
+[root@be0dc4b6-8c96-4637-9f8c-f9d6c5b820fb (coal:cloudapi0) ~]# sdc-policy create --name=read-public --rules='CAN getobject'
+{
+  "name": "read-public",
+  "id": "203c03fd-8271-472c-a5f9-cc4ab0f21e6a",
+  "rules": [
+    "CAN getobject"
+  ]
+}
+[root@be0dc4b6-8c96-4637-9f8c-f9d6c5b820fb (coal:cloudapi0) ~]# sdc-role create  --name=public-read   --policies=read-public
+{
+  "name": "public-read",
+  "id": "c72e37a0-6a49-4660-86c4-1d6655702413",
+  "members": [],
+  "default_members": [],
+  "policies": [
+    "read-public"
+  ]
+}
+
+```
 

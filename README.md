@@ -1149,6 +1149,115 @@ The system translates S3 ACL permissions to Manta roles as follows:
    - Role UUIDs are resolved to check for `public-read` role
    - Access is granted if object has public-read role
 
+#### Anonymous Access Flow
+
+```mermaid
+graph TD
+    A[Anonymous Request] --> B{Authentication Headers?}
+    B -->|Present| C[Normal Authentication Flow]
+    B -->|None| D[Anonymous Access Handler]
+    
+    D --> E{Request Type}
+    E -->|Bucket List| F{Bucket Name = 'public'?}
+    E -->|Object Access| G[Get Object Metadata]
+    
+    F -->|Yes| H[Allow Anonymous Bucket Listing]
+    F -->|No| I[Return 403 Forbidden]
+    
+    G --> J{Object Has Roles?}
+    J -->|No| K[Check Name Heuristics]
+    J -->|Yes| L[Process Object Roles]
+    
+    K --> M{Name Contains 'public'?}
+    M -->|Yes| N[Allow Access]
+    M -->|No| O[Return 403 Forbidden]
+    
+    L --> P[Separate System vs UUID Roles]
+    P --> Q{Has Literal 'public-read'?}
+    Q -->|Yes| R[Allow Access]
+    Q -->|No| S[Resolve UUID Roles via Mahi]
+    
+    S --> T{UUID Resolves to 'public-read'?}
+    T -->|Yes| U[Allow Access]
+    T -->|No| V[Return 403 Forbidden]
+    
+    H --> W[Return Object List]
+    N --> X[Return Object Data]
+    R --> X
+    U --> X
+```
+
+#### S3 ACL Role Processing Flow
+
+```mermaid
+graph TD
+    A[S3 ACL Operation] --> B[S3 Role Translator]
+    B --> C{ACL Type}
+    
+    C -->|private| D[Empty Roles Array]
+    C -->|public-read| E[Add 'public-read' Role]
+    C -->|public-read-write| F[Add 'public-read' + 'public-writer']
+    
+    D --> G[S3 ACL Handler]
+    E --> G
+    F --> G
+    
+    G --> H{Operation Type}
+    H -->|SET ACL| I[Merge with Existing Roles]
+    H -->|GET ACL| J[Read Object Metadata]
+    
+    I --> K[Separate S3 vs Other Roles]
+    K --> L[Remove Existing S3 Public Roles]
+    L --> M[Add New S3 Roles]
+    M --> N[Update Object Metadata]
+    
+    J --> O[Get Role UUIDs from Metadata]
+    O --> P[Separate Literal vs UUID Roles]
+    P --> Q[Process Literal System Roles]
+    P --> R[Resolve UUID Roles via Mahi]
+    
+    Q --> S[Convert to S3 ACL Format]
+    R --> T{Resolution Successful?}
+    T -->|Yes| S
+    T -->|No| U[Use Only Literal Roles]
+    U --> S
+    
+    S --> V[Generate S3 XML Response]
+```
+
+#### Role Type Handling
+
+```mermaid
+graph TD
+    A[Role Processing] --> B{Role Type Detection}
+    
+    B --> C[System Roles<br/>public-read<br/>public-writer<br/>authenticated-reader<br/>owner-reader<br/>owner-full-control<br/>log-writer]
+    B --> D[UUID Roles<br/>Custom user roles<br/>Account-specific roles]
+    
+    C --> E[Store as Literal Strings<br/>No UUID conversion needed]
+    D --> F[Mahi UUID Resolution<br/>Convert to UUIDs for storage]
+    
+    E --> G[Object Metadata]
+    F --> G
+    
+    G --> H[Anonymous Access Check]
+    H --> I[Separate Processing]
+    
+    I --> J[Literal Role Check<br/>Direct string comparison<br/>Fast path for system roles]
+    I --> K[UUID Role Resolution<br/>Mahi lookup for custom roles<br/>Slower path but flexible]
+    
+    J --> L{Contains 'public-read'?}
+    K --> M[Resolve UUIDs to Names]
+    M --> N{Contains 'public-read'?}
+    
+    L -->|Yes| O[Grant Anonymous Access]
+    L -->|No| P[Check UUID Roles]
+    N -->|Yes| O
+    N -->|No| Q[Deny Access]
+    
+    P --> K
+```
+
 #### Technical Components
 
 - **`lib/s3-routes.js`**: Handles ACL set/get operations and role management

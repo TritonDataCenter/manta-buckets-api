@@ -20,17 +20,17 @@ test('S3 ACL to Manta Role Translation', function (t) {
             'x-amz-acl': 'public-read'
         },
         log: {
-            debug: function() {}
+            debug: function () {}
         }
     };
-    
+
     // Mock response object
     var res = {};
-    
+
     // Test the role translator
-    s3Compat.s3RoleTranslator(req, res, function(err) {
+    s3Compat.s3RoleTranslator(req, res, function (err) {
         t.error(err, 'No error in role translation');
-        t.equal(req.headers['role-tag'], 'public-reader', 
+        t.equal(req.headers['role-tag'], 'public-reader',
                 'public-read ACL should map to public-reader role');
         t.end();
     });
@@ -41,20 +41,21 @@ test('S3 Grant Headers to Manta Role Translation', function (t) {
     var req = {
         isS3Request: true,
         headers: {
-            'x-amz-grant-read': 'uri="http://acs.amazonaws.com/groups/global/AllUsers"'
+            'x-amz-grant-read':
+            'uri="http://acs.amazonaws.com/groups/global/AllUsers"'
         },
         log: {
-            debug: function() {}
+            debug: function () {}
         }
     };
-    
+
     // Mock response object
     var res = {};
-    
+
     // Test the role translator
-    s3Compat.s3RoleTranslator(req, res, function(err) {
+    s3Compat.s3RoleTranslator(req, res, function (err) {
         t.error(err, 'No error in role translation');
-        t.equal(req.headers['role-tag'], 'public-reader', 
+        t.equal(req.headers['role-tag'], 'public-reader',
                 'grant-read AllUsers should map to public-reader role');
         t.end();
     });
@@ -68,17 +69,17 @@ test('Non-S3 Request Passes Through', function (t) {
             'x-amz-acl': 'public-read'
         },
         log: {
-            debug: function() {}
+            debug: function () {}
         }
     };
-    
+
     // Mock response object
     var res = {};
-    
+
     // Test the role translator
-    s3Compat.s3RoleTranslator(req, res, function(err) {
+    s3Compat.s3RoleTranslator(req, res, function (err) {
         t.error(err, 'No error in role translation');
-        t.notOk(req.headers['role-tag'], 
+        t.notOk(req.headers['role-tag'],
                 'Non-S3 requests should not have role-tag added');
         t.end();
     });

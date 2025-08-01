@@ -63,7 +63,95 @@ This feature makes it easier for users to bookmark, share, and manually type URL
 
 ## Testing
 
-Coming soon
+### S3 Compatibility Testing
+
+The Manta Buckets API includes comprehensive test scripts for validating S3 compatibility and ACL functionality.
+
+#### S3 Compatibility Test Script
+
+The main S3 compatibility test script validates core S3 operations using AWS CLI:
+
+```bash
+# Run with default configuration
+./test/s3-compat-test.sh
+
+# Run with custom endpoint and credentials  
+S3_ENDPOINT="https://manta.example.com:8080" \
+AWS_ACCESS_KEY_ID="your-key" \
+AWS_SECRET_ACCESS_KEY="your-secret" \
+./test/s3-compat-test.sh
+
+# View available options
+./test/s3-compat-test.sh --help
+```
+
+**Test Coverage:**
+- Bucket operations (create, list, delete)
+- Object operations (upload, download, metadata)
+- Data integrity validation (MD5/SHA256 checksums)
+- Error handling for non-existent resources
+- Authentication and authorization
+
+#### S3cmd ACL Test Script
+
+The ACL-specific test script validates Access Control List operations using s3cmd:
+
+```bash
+# Prerequisites: Install s3cmd
+# Ubuntu/Debian: sudo apt-get install s3cmd
+# CentOS/RHEL: sudo yum install s3cmd  
+# pip: pip install s3cmd
+
+# Run ACL tests with default configuration
+./test/s3cmd-acl-test.sh
+
+# Run with custom endpoint and credentials
+S3_ENDPOINT="https://manta.example.com:8080" \
+AWS_ACCESS_KEY_ID="your-key" \
+AWS_SECRET_ACCESS_KEY="your-secret" \
+./test/s3cmd-acl-test.sh
+
+# View available options
+./test/s3cmd-acl-test.sh --help
+```
+
+**ACL Test Coverage:**
+- s3cmd connectivity and configuration
+- Bucket ACL operations (get, set)
+- Object ACL operations (get, set)
+- Canned ACL testing (private removes public-read role, public-read adds role)
+- ACL policy verification
+- Object listing with ACL information
+
+**Environment Variables:**
+- `AWS_ACCESS_KEY_ID` - Your Manta access key
+- `AWS_SECRET_ACCESS_KEY` - Your Manta secret key  
+- `S3_ENDPOINT` - Manta endpoint URL (default: https://localhost:8080)
+- `AWS_REGION` - AWS region (default: us-east-1)
+
+**Example Output:**
+```
+[2024-01-01 12:00:00] Starting S3cmd ACL Compatibility Tests for manta-buckets-api
+============================================================
+[2024-01-01 12:00:01] Testing: s3cmd Connectivity
+✅ s3cmd connectivity - Successfully connected to S3 endpoint
+[2024-01-01 12:00:02] Testing: Create Bucket with s3cmd  
+✅ Create bucket - s3cmd-acl-test-1234567890 created successfully
+[2024-01-01 12:00:03] Testing: Put Object with Default ACL
+✅ Put object - test-object.txt uploaded successfully
+...
+============================================================
+Tests Passed: 12
+Tests Failed: 0
+🎉 All ACL tests passed! s3cmd ACL compatibility is working correctly.
+```
+
+Both test scripts provide:
+- **Automated setup/cleanup** of test resources
+- **Detailed logging** with timestamps and color-coded output
+- **Comprehensive validation** of responses and data integrity
+- **Error recovery** to continue testing after failures
+- **Summary reporting** with pass/fail statistics
 
 ## Deploying a buckets-api image
 
@@ -826,17 +914,14 @@ Manta Buckets API supports public bucket access that allows anonymous (unauthent
 
 #### AWS ACL to Manta Role Mapping
 
-The S3 compatibility layer translates AWS Access Control Lists (ACLs) to Manta's role-based access control system. The following table shows the mapping between S3 ACLs used in s3cmd and the corresponding Manta roles:
+The S3 compatibility layer translates AWS Access Control Lists (ACLs) to Manta's role-based access control system. Currently, only the `public-read` role is implemented:
 
 | **S3 ACL** | **s3cmd Usage** | **Manta Roles** | **Access Permissions** | **Browser Access** |
 |---|---|---|---|---|
-| `private` | `--acl-private` | `[]` (empty) | Owner only | ❌ No |
-| `public-read` | `--acl-public` | `["public-reader"]` | Anonymous read access | ✅ Yes |
-| `public-read-write` | `--acl-public-read-write` | `["public-reader", "public-writer"]` | Anonymous read/write access | ✅ Yes |
-| `authenticated-read` | `--acl-authenticated-read` | `["authenticated-reader"]` | Authenticated users read | ❌ No |
-| `bucket-owner-read` | `--acl-bucket-owner-read` | `["owner-reader"]` | Bucket owner read access | ❌ No |
-| `bucket-owner-full-control` | `--acl-bucket-owner-full-control` | `["owner-full-control"]` | Bucket owner full control | ❌ No |
-| `log-delivery-write` | `--acl-log-delivery-write` | `["log-writer"]` | Log delivery write access | ❌ No |
+| `private` | `--acl-private` | `[]` (removes public-read role) | Owner only | ❌ No |
+| `public-read` | `--acl-public` | `["public-read"]` | Anonymous read access | ✅ Yes |
+
+**Note:** Other S3 ACL types (`public-read-write`, `authenticated-read`, etc.) are not currently implemented and will be ignored or treated as `private`.
 
 
 ## Anonymous Access (Browser Access)
@@ -1029,6 +1114,8 @@ Before using ACL operations, the following roles must be created in Manta by and
 |-----------|---------|----------------|
 | `public-read` | Allows anonymous read access to objects | `public-read` |
 
+**Note:** This is the only ACL role currently implemented. Setting `private` ACL removes this role if present.
+
 
 ### Setting Object ACLs
 
@@ -1122,8 +1209,10 @@ The system translates S3 ACL permissions to Manta roles as follows:
 
 | S3 ACL | Manta Roles | Description |
 |--------|-------------|-------------|
-| `private` | `[]` (empty) | Only owner can access |
+| `private` | `[]` (removes public-read role) | Only owner can access |
 | `public-read` | `["public-read"]` | Anonymous read access |
+
+**Note:** Only the `public-read` role is currently implemented. Setting `private` removes the `public-read` role if present.
 
 ### Implementation Details
 

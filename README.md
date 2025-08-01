@@ -935,39 +935,168 @@ curl -I \
 # Look for: role-tag: public-reader
 ```
 
-#### Browser Access Examples
+## Anonymous Access (Browser Access)
 
-Once a bucket is marked as public, browsers can access content directly:
+The Manta Buckets API supports anonymous access for public buckets and objects, allowing direct browser access without authentication.
 
-```html
-<!-- Direct image access -->
-<img src="https://your-manta-endpoint/user/buckets/public-images/objects/logo.png">
+### Anonymous Access Rules
 
-<!-- Static website hosting -->
-<iframe src="https://your-manta-endpoint/user/buckets/public-site/objects/index.html"></iframe>
+#### Bucket Access
 
-<!-- Direct download links -->
-<a href="https://your-manta-endpoint/user/buckets/public-docs/objects/manual.pdf">
-    Download Manual
-</a>
+- **Public Buckets**: Only buckets named exactly `"public"` (lowercase) allow anonymous listing
+- **Non-public Buckets**: All other bucket names require authentication for listing operations
+- **Operations**: Anonymous users can only perform GET and HEAD operations (read-only)
+
+```bash
+# ✅ Allowed - bucket named "public"
+curl https://your-manta-endpoint/user/buckets/public/objects
+
+# ❌ Forbidden - bucket not named "public"
+curl https://your-manta-endpoint/user/buckets/my-bucket/objects
+# Returns: {"code":"AuthorizationFailed","message":"Anonymous access not allowed for this bucket"}
 ```
 
-#### Security Considerations
+#### Object Access
 
-- **Public buckets** allow anonymous read access to all objects within the bucket
-- **Method restrictions**: Anonymous users can only perform GET and HEAD operations
-- **Write operations**: Anonymous users cannot upload, modify, or delete content
+Objects can be accessed anonymously in two ways:
+
+1. **Objects in "public" bucket**: All objects in the `"public"` bucket are accessible
+2. **Objects with public-reader role**: Objects with explicit public-reader role in any bucket
+3. **Objects in buckets/objects with "public" in name**: Heuristic-based access for ACL operations
+
+```bash
+# ✅ Allowed - object in "public" bucket
+curl https://your-manta-endpoint/user/buckets/public/objects/image.jpg
+
+# ✅ Allowed - bucket name contains "public"
+curl https://your-manta-endpoint/user/buckets/public-images/objects/logo.png
+
+# ✅ Allowed - object name contains "public"
+curl https://your-manta-endpoint/user/buckets/my-bucket/objects/public-doc.pdf
+
+# ❌ Forbidden - neither bucket nor object name contains "public" and no public-reader role
+curl https://your-manta-endpoint/user/buckets/private-bucket/objects/secret.txt
+# Returns: {"code":"AuthorizationFailed","message":"Anonymous access not allowed for this object"}
+```
+
+### Setting Object ACL for Anonymous Access
+
+To make individual objects in non-public buckets accessible anonymously:
+
+#### Method 1: Upload with Public ACL
+```bash
+# Upload object with public-read ACL
+s3cmd --no-check-certificate --acl-public put local-file.txt s3://my-bucket/public-file.txt
+
+# Using AWS CLI
+aws s3api put-object --bucket my-bucket --key public-file.txt \
+    --body local-file.txt --acl public-read \
+    --endpoint-url https://your-manta-endpoint
+```
+
+#### Method 2: Set ACL on Existing Object
+```bash
+# Make existing object public
+s3cmd --no-check-certificate --acl-public setacl s3://my-bucket/existing-file.txt
+
+# Using AWS CLI
+aws s3api put-object-acl --bucket my-bucket --key existing-file.txt \
+    --acl public-read \
+    --endpoint-url https://your-manta-endpoint
+```
+
+#### Method 3: Use Object Names with "public"
+```bash
+# Objects with "public" in the name are accessible (heuristic approach)
+s3cmd --no-check-certificate put local-file.txt s3://my-bucket/public-document.pdf
+```
+
+### Browser Access Examples
+
+Once buckets or objects are public, browsers can access content directly:
+
+```html
+<!-- ✅ Object in "public" bucket -->
+<img src="https://your-manta-endpoint/user/buckets/public/objects/logo.png">
+
+<!-- ✅ Object in bucket with "public" in name -->
+<img src="https://your-manta-endpoint/user/buckets/public-images/objects/banner.jpg">
+
+<!-- ✅ Object with "public" in name -->
+<a href="https://your-manta-endpoint/user/buckets/docs/objects/public-manual.pdf">
+    Download Public Manual
+</a>
+
+<!-- ✅ Static website hosting from "public" bucket -->
+<iframe src="https://your-manta-endpoint/user/buckets/public/objects/index.html"></iframe>
+```
+
+### Checking Object Access
+
+#### Test Anonymous Access
+```bash
+# Test if object is publicly accessible
+curl -I https://your-manta-endpoint/user/buckets/my-bucket/objects/test-file.txt
+
+# 200 OK = Public access granted
+# 403 Forbidden = Authentication required
+```
+
+#### Check Object ACL
+```bash
+# Check object ACL (requires authentication)
+s3cmd --no-check-certificate getacl s3://my-bucket/test-file.txt
+
+# Using AWS CLI
+aws s3api get-object-acl --bucket my-bucket --key test-file.txt \
+    --endpoint-url https://your-manta-endpoint
+```
+
+### Security Considerations
+
+- **Read-only access**: Anonymous users can only perform GET and HEAD operations
+- **No write operations**: Anonymous users cannot upload, modify, or delete content
+- **Bucket restrictions**: Only buckets named exactly "public" allow anonymous listing
+- **Object-level control**: Individual objects can be made public regardless of bucket name
 - **Audit logging**: All anonymous access attempts are logged for security monitoring
-- **CORS support**: Public buckets automatically include CORS headers for browser compatibility
+- **CORS support**: Public resources automatically include CORS headers for browser compatibility
 
-#### Troubleshooting Public Access
+### Troubleshooting Anonymous Access
 
-1. **Bucket created with public ACL but not accessible**: Ensure bucket name contains "public" (current implementation requirement)
-2. **s3cmd setacl not working**: Use the exact syntax: `s3cmd --acl-private setacl s3://bucket`
-3. **Browser access fails**: Clear browser cache and ensure no authentication headers are being sent
-4. **Partial access**: Verify the bucket has the correct role-tag header with debug logging
+#### Common Issues
 
-For detailed troubleshooting information, see the [Anonymous Access Documentation](./docs/anonymous-access.md).
+1. **"AuthorizationFailed: Anonymous access not allowed for this bucket"**
+   - Solution: Rename bucket to exactly "public" or access objects directly
+
+2. **"AuthorizationFailed: Anonymous access not allowed for this object"** 
+   - Solution: Set object ACL to public-read or include "public" in object/bucket name
+
+3. **"AccountBlocked: undefined is not an active account"**
+   - This was a previous error - should now show proper authorization errors
+
+4. **Object accessible via s3cmd but not browser**
+   - Verify object has public-reader role or is in "public" bucket
+   - Clear browser cache and ensure no authentication headers
+
+5. **s3cmd setacl not working on objects**
+   - ACL operations are currently simulated for objects
+   - Use naming conventions (include "public" in name) as workaround
+
+#### Debug Steps
+
+```bash
+# 1. Test bucket listing (only works for "public" bucket)
+curl https://your-manta-endpoint/user/buckets/public/objects
+
+# 2. Test direct object access
+curl https://your-manta-endpoint/user/buckets/any-bucket/objects/public-file.txt
+
+# 3. Check server logs for detailed error information
+# Look for "Anonymous access" debug messages
+
+# 4. Verify object was uploaded correctly
+s3cmd --no-check-certificate ls s3://my-bucket/
+```
 
 ### Implementation Files
 

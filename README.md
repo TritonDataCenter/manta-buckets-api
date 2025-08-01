@@ -1021,26 +1021,14 @@ S3 ACL operations in Manta work by translating S3 ACL permissions to Manta roles
 
 ### Prerequisites
 
-Before using ACL operations, the following roles must be created in your Manta account:
+Before using ACL operations, the following roles must be created in Manta by and Administrator account.
 
 #### Required Roles
 
 | Role Name | Purpose | S3 ACL Mapping |
 |-----------|---------|----------------|
 | `public-read` | Allows anonymous read access to objects | `public-read` |
-| `public-writer` | Allows public write access (future use) | `public-read-write` |
-| `authenticated-reader` | Allows authenticated users to read | `authenticated-read` |
 
-To create the required roles, use the Manta CLI:
-
-```bash
-# Create the public-read role for anonymous access
-manta-create-role --name public-read --description "Public read access for anonymous users"
-
-# Optional: Create additional roles for more granular control
-manta-create-role --name public-writer --description "Public write access"
-manta-create-role --name authenticated-reader --description "Authenticated user read access"
-```
 
 ### Setting Object ACLs
 
@@ -1136,8 +1124,6 @@ The system translates S3 ACL permissions to Manta roles as follows:
 |--------|-------------|-------------|
 | `private` | `[]` (empty) | Only owner can access |
 | `public-read` | `["public-read"]` | Anonymous read access |
-| `public-read-write` | `["public-read", "public-writer"]` | Anonymous read/write access |
-| `authenticated-read` | `["authenticated-reader"]` | Authenticated users can read |
 
 ### Implementation Details
 

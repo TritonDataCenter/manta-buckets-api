@@ -241,12 +241,13 @@ graph TD
 
 ### Addressing Styles
 
-Both S3 addressing styles are supported:
+Currently only S3 Path-style addressing is supported:
 
 - **Path-style**: `https://domain.com/bucket/object`
 - **Virtual-hosted**: `https://bucket.domain.com/object`
 
-The system automatically detects the addressing style based on the Host header and request path.
+The system automatically detects the addressing style based on the Host header and request path,
+but currently virtual-hosted style is disabled.
 
 ### Response Format Translation
 
@@ -801,139 +802,6 @@ The S3 compatibility layer translates AWS Access Control Lists (ACLs) to Manta's
 | `bucket-owner-full-control` | `--acl-bucket-owner-full-control` | `["owner-full-control"]` | Bucket owner full control | ❌ No |
 | `log-delivery-write` | `--acl-log-delivery-write` | `["log-writer"]` | Log delivery write access | ❌ No |
 
-#### Methods to Create Public Buckets
-
-##### Method 1: Create Public Bucket with s3cmd
-
-```bash
-# Create a new public-readable bucket
-s3cmd --no-check-certificate --acl-public mb s3://my-public-bucket
-
-# Alternative using explicit ACL header
-s3cmd --no-check-certificate --add-header="x-amz-acl:public-read" mb s3://my-public-bucket
-```
-
-##### Method 2: Make Existing Bucket Public with s3cmd
-
-```bash
-# Set existing bucket to public-read
-s3cmd --no-check-certificate --acl-public setacl s3://existing-bucket
-
-# Alternative using explicit ACL
-s3cmd --no-check-certificate --add-header="x-amz-acl:public-read" setacl s3://existing-bucket
-```
-
-##### Method 3: Using AWS CLI
-
-```bash
-# Create public bucket with AWS CLI
-aws s3api create-bucket --bucket my-public-bucket \
-    --acl public-read \
-    --endpoint-url https://your-manta-endpoint
-
-# Make existing bucket public
-aws s3api put-bucket-acl --bucket existing-bucket \
-    --acl public-read \
-    --endpoint-url https://your-manta-endpoint
-```
-
-##### Method 4: Using curl with Manta API
-
-```bash
-# Create public bucket with role-tag header
-curl -X PUT \
-    -H "role-tag: public-reader" \
-    -H "Authorization: Signature keyId=\"/user/keys/...\",algorithm=\"rsa-sha256\",signature=\"...\"" \
-    -H "Date: $(date -u '+%a, %d %h %Y %H:%M:%S GMT')" \
-    https://manta.example.com/user/buckets/my-public-bucket
-
-# Make existing bucket public
-curl -X PUT \
-    -H "role-tag: public-reader" \
-    -H "Authorization: Signature keyId=\"/user/keys/...\",algorithm=\"rsa-sha256\",signature=\"...\"" \
-    -H "Date: $(date -u '+%a, %d %h %Y %H:%M:%S GMT')" \
-    https://manta.example.com/user/buckets/existing-bucket
-```
-
-##### Method 5: Using S3 Grant Headers
-
-```bash
-# Grant read access to all users (AllUsers group)
-s3cmd --no-check-certificate \
-    --add-header="x-amz-grant-read:uri=\"http://acs.amazonaws.com/groups/global/AllUsers\"" \
-    mb s3://my-public-bucket
-```
-
-#### Removing Public Access
-
-To make a public bucket private again:
-
-##### Using s3cmd (Recommended)
-
-```bash
-# Set bucket to private
-s3cmd --no-check-certificate --acl-private setacl s3://public-bucket
-
-# Verify bucket is now private (should return 403 for anonymous access)
-curl https://your-manta-endpoint/user/buckets/public-bucket
-```
-
-##### Using AWS CLI
-
-```bash
-# Set bucket to private
-aws s3api put-bucket-acl --bucket public-bucket \
-    --acl private \
-    --endpoint-url https://your-manta-endpoint
-```
-
-##### Using curl with Manta API
-
-```bash
-# Remove role-tag (set to empty)
-curl -X PUT \
-    -H "role-tag: " \
-    -H "Authorization: Signature keyId=\"/user/keys/...\",algorithm=\"rsa-sha256\",signature=\"...\"" \
-    -H "Date: $(date -u '+%a, %d %h %Y %H:%M:%S GMT')" \
-    https://manta.example.com/user/buckets/public-bucket
-```
-
-#### Verifying Public Access
-
-##### Test Browser Access
-
-Once a bucket is public, you can access it directly in a web browser:
-
-```bash
-# Public bucket - should return JSON with bucket contents
-curl https://your-manta-endpoint/user/buckets/public-bucket
-
-# Private bucket - should return 403 Forbidden
-curl https://your-manta-endpoint/user/buckets/private-bucket
-```
-
-##### Check Bucket ACL
-
-```bash
-# Get current bucket ACL
-s3cmd --no-check-certificate getacl s3://bucket-name
-
-# Or using AWS CLI
-aws s3api get-bucket-acl --bucket bucket-name \
-    --endpoint-url https://your-manta-endpoint
-```
-
-##### Verify Role Tags
-
-```bash
-# Check bucket headers for role-tag
-curl -I \
-    -H "Authorization: Signature keyId=\"/user/keys/...\",algorithm=\"rsa-sha256\",signature=\"...\"" \
-    -H "Date: $(date -u '+%a, %d %h %Y %H:%M:%S GMT')" \
-    https://manta.example.com/user/buckets/bucket-name
-
-# Look for: role-tag: public-reader
-```
 
 ## Anonymous Access (Browser Access)
 
@@ -1106,6 +974,205 @@ s3cmd --no-check-certificate ls s3://my-bucket/
 - `test/s3-compat-test.sh` - Comprehensive S3 compatibility test suite
 - `lib/anonymous-auth.js` - Anonymous access support for public buckets
 - `docs/anonymous-access.md` - Detailed anonymous access documentation
+
+## S3 Access Control Lists (ACL) and Anonymous Access
+
+The Manta Buckets API supports S3-compatible Access Control Lists (ACL) operations and anonymous access for public objects. This enables fine-grained access control using standard S3 commands and tools.
+
+### Overview
+
+S3 ACL operations in Manta work by translating S3 ACL permissions to Manta roles, which are stored in object metadata. The system supports both setting and retrieving ACLs using standard S3 tools like `s3cmd`, AWS CLI, or any S3-compatible client.
+
+### Prerequisites
+
+Before using ACL operations, the following roles must be created in your Manta account:
+
+#### Required Roles
+
+| Role Name | Purpose | S3 ACL Mapping |
+|-----------|---------|----------------|
+| `public-read` | Allows anonymous read access to objects | `public-read` |
+| `public-writer` | Allows public write access (future use) | `public-read-write` |
+| `authenticated-reader` | Allows authenticated users to read | `authenticated-read` |
+
+To create the required roles, use the Manta CLI:
+
+```bash
+# Create the public-read role for anonymous access
+manta-create-role --name public-read --description "Public read access for anonymous users"
+
+# Optional: Create additional roles for more granular control
+manta-create-role --name public-writer --description "Public write access"
+manta-create-role --name authenticated-reader --description "Authenticated user read access"
+```
+
+### Setting Object ACLs
+
+Use standard S3 tools to set ACLs on objects:
+
+#### Making an Object Public
+
+```bash
+# Using s3cmd
+s3cmd --no-check-certificate --acl-public setacl s3://bucket-name/object-name
+
+# Using AWS CLI
+aws s3api put-object-acl --bucket bucket-name --key object-name --acl public-read --endpoint-url https://your-manta-endpoint
+
+# Using curl with S3 API
+curl -X PUT "https://your-manta-endpoint/bucket-name/object-name?acl" \
+  -H "Authorization: AWS4-HMAC-SHA256 ..." \
+  -d '<?xml version="1.0" encoding="UTF-8"?>
+<AccessControlPolicy>
+  <Owner><ID>owner-id</ID></Owner>
+  <AccessControlList>
+    <Grant>
+      <Grantee xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:type="CanonicalUser">
+        <ID>owner-id</ID>
+      </Grantee>
+      <Permission>FULL_CONTROL</Permission>
+    </Grant>
+    <Grant>
+      <Grantee xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:type="Group">
+        <URI>http://acs.amazonaws.com/groups/global/AllUsers</URI>
+      </Grantee>
+      <Permission>READ</Permission>
+    </Grant>
+  </AccessControlList>
+</AccessControlPolicy>'
+```
+
+#### Making an Object Private
+
+```bash
+# Using s3cmd
+s3cmd --no-check-certificate --acl-private setacl s3://bucket-name/object-name
+
+# Using AWS CLI
+aws s3api put-object-acl --bucket bucket-name --key object-name --acl private --endpoint-url https://your-manta-endpoint
+```
+
+### Retrieving Object ACLs
+
+Check the current ACL settings for an object:
+
+```bash
+# Using s3cmd
+s3cmd --no-check-certificate getacl s3://bucket-name/object-name
+
+# Using AWS CLI
+aws s3api get-object-acl --bucket bucket-name --key object-name --endpoint-url https://your-manta-endpoint
+```
+
+### Anonymous Access
+
+Objects with `public-read` ACL can be accessed anonymously through HTTP GET requests without authentication.
+
+#### Anonymous Object Access
+
+Once an object is made public, it can be accessed directly via HTTP:
+
+```bash
+# Direct HTTP access (no authentication required)
+curl http://your-manta-endpoint/account-name/buckets/bucket-name/objects/object-name
+
+# Browser access
+open http://your-manta-endpoint/account-name/buckets/bucket-name/objects/object-name
+```
+
+#### Anonymous Bucket Listing
+
+For bucket listing without authentication, only buckets named exactly `"public"` (lowercase) allow anonymous access:
+
+```bash
+# This works for anonymous access
+curl http://your-manta-endpoint/account-name/buckets/public/objects
+
+# This requires authentication
+curl http://your-manta-endpoint/account-name/buckets/my-bucket/objects
+```
+
+### S3 ACL to Manta Role Mapping
+
+The system translates S3 ACL permissions to Manta roles as follows:
+
+| S3 ACL | Manta Roles | Description |
+|--------|-------------|-------------|
+| `private` | `[]` (empty) | Only owner can access |
+| `public-read` | `["public-read"]` | Anonymous read access |
+| `public-read-write` | `["public-read", "public-writer"]` | Anonymous read/write access |
+| `authenticated-read` | `["authenticated-reader"]` | Authenticated users can read |
+
+### Implementation Details
+
+#### How ACL Operations Work
+
+1. **Setting ACLs**: 
+   - Client sends PUT request with `?acl` query parameter
+   - System parses XML ACL body to extract permissions
+   - S3 permissions are translated to Manta role names
+   - Role names are resolved to UUIDs using Mahi
+   - Object metadata is updated with role UUIDs
+
+2. **Getting ACLs**:
+   - Client sends GET request with `?acl` query parameter
+   - System retrieves object metadata with role UUIDs
+   - Role UUIDs are resolved back to role names using Mahi
+   - Role names are converted to S3 ACL format
+   - XML ACL response is generated
+
+3. **Anonymous Access**:
+   - Requests without authentication headers are detected
+   - Object metadata is checked for role UUIDs
+   - Role UUIDs are resolved to check for `public-read` role
+   - Access is granted if object has public-read role
+
+#### Technical Components
+
+- **`lib/s3-routes.js`**: Handles ACL set/get operations and role management
+- **`lib/s3-compat.js`**: S3 to Manta role translation and XML parsing
+- **`lib/anonymous-auth.js`**: Anonymous access validation and role resolution
+- **Mahi Integration**: Role name ↔ UUID resolution for account roles
+
+### Troubleshooting
+
+#### Common Issues
+
+1. **"Role tag 'public-read' is invalid"**
+   - The `public-read` role doesn't exist in your account
+   - Create the role using `manta-create-role --name public-read`
+
+2. **Object still requires authentication after setting public-read**
+   - Check that the role was properly set: `s3cmd getacl s3://bucket/object`
+   - Verify role exists: `manta-list-roles`
+   - Check server logs for role resolution errors
+
+3. **Anonymous access returns 403 Forbidden**
+   - Ensure object has `public-read` role set
+   - For buckets, only buckets named `"public"` allow anonymous listing
+   - Check that the request doesn't include authentication headers
+
+#### Debugging
+
+Enable debug logging to troubleshoot ACL operations:
+
+```bash
+# Set LOG_LEVEL=debug to see detailed ACL processing
+LOG_LEVEL=debug node bin/buckets-api
+
+# Look for these log messages:
+# - "S3_DEBUG: PUT Object ACL operation detected"
+# - "parseS3ACLFromXML: parsing XML ACL body"
+# - "updateObjectRoles: resolved role names to UUIDs"
+# - "validateAnonymousObjectAccess: resolved role UUIDs to names"
+```
+
+### Security Considerations
+
+- **Public access**: Objects with `public-read` ACL are accessible to anyone on the internet
+- **Role management**: Only account administrators should create/manage roles
+- **Anonymous listing**: Limited to buckets named exactly `"public"` to prevent accidental exposure
+- **Authentication bypass**: Anonymous access bypasses all authentication - ensure objects are intended to be public
 
 ## Dtrace Probes
 

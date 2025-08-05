@@ -923,6 +923,157 @@ The S3 compatibility layer translates AWS Access Control Lists (ACLs) to Manta's
 
 **Note:** Other S3 ACL types (`public-read-write`, `authenticated-read`, etc.) are not currently implemented and will be ignored or treated as `private`.
 
+### S3 Multipart Upload Support
+
+The Manta Buckets API provides full S3 multipart upload compatibility, enabling large file uploads through the standard AWS S3 multipart upload API. This allows S3 clients to upload large objects efficiently by breaking them into smaller parts that can be uploaded in parallel or resumably.
+
+#### Multipart Upload Architecture
+
+The multipart upload implementation consists of three main operations that correspond directly to AWS S3's multipart upload API:
+
+1. **Initiate Multipart Upload** (`POST /{bucket}/{key}?uploads`)
+2. **Upload Part** (`PUT /{bucket}/{key}?partNumber=N&uploadId=ID`)
+3. **Complete Multipart Upload** (`POST /{bucket}/{key}?uploadId=ID`)
+4. **Abort Multipart Upload** (`DELETE /{bucket}/{key}?uploadId=ID`)
+
+#### Implementation Details
+
+**Upload Record Management:**
+- Each multipart upload creates a unique upload ID and maintains state in buckets-mdapi
+- Upload records are stored as special objects with the prefix `.mpu-uploads/` 
+- Part information is tracked with ETags and sizes for validation during completion
+
+**Part Size Calculation:**
+- Unlike traditional S3 implementations that estimate part sizes, Manta queries buckets-mdapi for actual uploaded part sizes
+- This ensures accurate total object size calculation regardless of client-estimated part sizes
+- Supports variable part sizes as per S3 specification (5MB minimum, except last part)
+
+**Storage Integration:**
+- Parts are stored as individual objects in Manta's distributed storage system
+- Final object assembly queries each part's actual metadata from buckets-mdapi
+- Complete multipart upload creates the final object by concatenating all parts
+
+#### s3cmd Multipart Upload Examples
+
+**Basic Multipart Upload:**
+```bash
+# Configure s3cmd for Manta endpoint
+cat > ~/.s3cfg << EOF
+[default]
+access_key = YOUR_ACCESS_KEY
+secret_key = YOUR_SECRET_KEY
+host_base = manta.example.com:8080
+host_bucket = manta.example.com:8080
+use_https = True
+check_ssl_certificate = False
+signature_v2 = False
+EOF
+
+# Upload large file using multipart (automatically triggered for files >15MB)
+s3cmd put large-file.zip s3://my-bucket/large-file.zip
+
+# Force multipart upload for smaller files
+s3cmd put small-file.txt s3://my-bucket/small-file.txt --multipart-chunk-size-mb=5
+
+# Monitor multipart upload progress
+s3cmd put very-large-file.tar.gz s3://my-bucket/very-large-file.tar.gz --progress
+```
+
+**Advanced Multipart Operations:**
+```bash
+# List in-progress multipart uploads
+s3cmd multipart s3://my-bucket
+
+# Abort specific multipart upload
+s3cmd abortmp s3://my-bucket/file.zip UPLOAD_ID
+
+# List parts of specific upload
+s3cmd listmp s3://my-bucket/file.zip UPLOAD_ID
+```
+
+#### Multipart Upload Flow
+
+```mermaid
+sequenceDiagram
+    participant Client as S3 Client
+    participant API as Buckets API
+    participant MDAPI as Buckets-MDAPI
+    participant Storage as Manta Storage
+
+    Note over Client,Storage: 1. Initiate Multipart Upload
+    Client->>API: POST /bucket/object?uploads
+    API->>MDAPI: Create upload record (.mpu-uploads/{id})
+    MDAPI->>API: Upload ID returned
+    API->>Client: Upload ID response
+
+    Note over Client,Storage: 2. Upload Parts (parallel)
+    loop For each part
+        Client->>API: PUT /bucket/object?partNumber=N&uploadId=ID
+        API->>Storage: Store part as individual object
+        API->>MDAPI: Update part metadata
+        API->>Client: ETag response
+    end
+
+    Note over Client,Storage: 3. Complete Multipart Upload
+    Client->>API: POST /bucket/object?uploadId=ID<br/>(with part ETags)
+    API->>MDAPI: Query actual part sizes
+    MDAPI->>API: Return part metadata
+    API->>MDAPI: Create final object metadata
+    API->>Client: Object created response
+
+    Note over Client,Storage: 4. Cleanup (automatic)
+    API->>MDAPI: Remove upload record
+    API->>MDAPI: Mark parts for cleanup
+```
+
+#### Supported Multipart Operations
+
+| **Operation** | **HTTP Method** | **Endpoint** | **Description** |
+|---|---|---|---|
+| **Initiate** | `POST` | `/{bucket}/{key}?uploads` | Start multipart upload, get upload ID |
+| **Upload Part** | `PUT` | `/{bucket}/{key}?partNumber=N&uploadId=ID` | Upload individual part |
+| **Complete** | `POST` | `/{bucket}/{key}?uploadId=ID` | Assemble parts into final object |
+| **Abort** | `DELETE` | `/{bucket}/{key}?uploadId=ID` | Cancel upload and cleanup parts |
+| **List Parts** | `GET` | `/{bucket}/{key}?uploadId=ID` | List uploaded parts for upload ID |
+| **List Uploads** | `GET` | `/{bucket}?uploads` | List in-progress multipart uploads |
+
+#### Key Features
+
+**AWS S3 Compatibility:**
+- Fully compatible with AWS S3 multipart upload API
+- Supports all standard S3 clients and SDKs
+- Proper ETag handling and part validation
+- Standard S3 error responses and status codes
+
+**Robust Part Management:**
+- Actual size calculation from buckets-mdapi metadata
+- Support for variable part sizes (5MB minimum, except last part)
+- Automatic cleanup of incomplete uploads
+- Part ordering and validation during completion
+
+**Performance Optimizations:**
+- Parallel part uploads supported
+- Efficient metadata queries for part size calculation
+- Distributed storage leveraging Manta's architecture
+- Minimal memory overhead for large uploads
+
+#### Error Handling
+
+Common multipart upload errors and their handling:
+
+- **Invalid Upload ID**: Returns `NoSuchUpload` error
+- **Invalid Part Number**: Returns `InvalidPartNumber` error (must be 1-10000)
+- **Part Too Small**: Returns `EntityTooSmall` error (5MB minimum, except last part)
+- **Missing Parts**: Returns `InvalidPartOrder` error during completion
+- **ETag Mismatch**: Returns `InvalidPart` error if part ETags don't match
+
+#### Implementation Files
+
+- **Main Handler**: `lib/s3-multipart.js` - Core multipart upload logic
+- **S3 Routing**: `lib/s3-routes.js` - Route multipart operations
+- **Request Parsing**: `lib/s3-compat.js` - Detect and parse multipart requests
+- **Storage Client**: `lib/shark_client.js` - Interface with Manta storage
+
 
 ## Anonymous Access (Browser Access)
 

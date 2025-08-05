@@ -4,6 +4,7 @@
 # Tests S3 ACL functionality using s3cmd
 #
 # Based on s3-compat-test.sh but focuses on ACL operations
+# Supported ACL types: --acl-private and --acl-public only
 
 set -euo pipefail  # Exit on error, undefined vars, pipe failures
 
@@ -261,8 +262,9 @@ test_setacl_object() {
 test_canned_acls() {
     log "Testing: Various Canned ACLs"
     
-    # Test different canned ACL types that s3cmd supports
-    local acl_types=("private" "public-read" "public-read-write")
+    # Test different canned ACL types that are supported
+    # Note: Only --acl-private and --acl-public are supported
+    local acl_types=("private" "public")
     
     for acl in "${acl_types[@]}"; do
         test_put_object_with_canned_acl "$acl"
@@ -272,14 +274,14 @@ test_canned_acls() {
 test_acl_bucket_policy() {
     log "Testing: Bucket ACL Policy Operations"
     
-    # Try to set bucket to public-read
+    # Try to set bucket to public (using supported --acl-public)
     set +e  # Temporarily disable exit on error
-    result=$(s3cmd_exec setacl "s3://$TEST_BUCKET" --acl-public-read 2>&1)
+    result=$(s3cmd_exec setacl "s3://$TEST_BUCKET" --acl-public 2>&1)
     local exit_code=$?
     set -e  # Re-enable exit on error
     
     if [ $exit_code -eq 0 ]; then
-        success "Bucket ACL policy - Successfully set public-read ACL on bucket"
+        success "Bucket ACL policy - Successfully set public ACL on bucket"
         
         # Verify the ACL was set by getting bucket info
         set +e
@@ -299,7 +301,7 @@ test_acl_bucket_policy() {
         s3cmd_exec setacl "s3://$TEST_BUCKET" --acl-private 2>/dev/null || true
         set -e
     else
-        error "Bucket ACL policy - Failed to set public-read ACL: $result"
+        error "Bucket ACL policy - Failed to set public ACL: $result"
     fi
 }
 

@@ -1067,9 +1067,82 @@ Common multipart upload errors and their handling:
 - **Missing Parts**: Returns `InvalidPartOrder` error during completion
 - **ETag Mismatch**: Returns `InvalidPart` error if part ETags don't match
 
+#### Durability Level Propagation
+
+One of the key challenges with S3 multipart uploads is preserving the `durability-level` header throughout the upload process. Unlike regular S3 PUT operations where the durability level is specified with each request, S3 multipart uploads only send the durability-level header during the **initiate** phase - not during individual part uploads.
+
+**The Problem:**
+```bash
+# During multipart initiate - durability-level header is present
+POST /bucket/object?uploads
+durability-level: 1
+
+# During part uploads - durability-level header is NOT present  
+PUT /bucket/object?partNumber=1&uploadId=abc123
+# No durability-level header
+```
+
+**The Solution:**
+Manta Buckets API implements a temporary object storage mechanism to preserve durability settings across the entire multipart upload workflow:
+
+**1. During Multipart Initiate:**
+- Extracts `durability-level` header from the initiate request
+- Creates a temporary object: `.mpu-uploads/{uploadId}.durability`
+- Stores durability information in **object metadata headers** (not content):
+  - `x-durability-level`: The durability level value
+  - `x-upload-id`: The multipart upload ID  
+  - `x-created`: Creation timestamp
+
+**2. During Part Uploads:**
+- Each part upload retrieves the temporary durability object
+- Reads durability level from object metadata headers
+- Sets `durability-level` header on the part creation request
+- Ensures each part is stored with the correct number of replicas
+
+**3. Multi-Instance Support:**
+- Temporary objects are stored in buckets-mdapi, accessible by all buckets-api instances
+- No in-memory caching that would be instance-specific
+- Enables horizontal scaling with consistent durability behavior
+
+**Implementation Details:**
+
+```javascript
+// During initiate - store durability level
+var durabilityKey = '.mpu-uploads/' + uploadId + '.durability';
+var headers = {
+    'x-durability-level': durabilityLevel.toString(),
+    'x-upload-id': uploadId,
+    'x-created': new Date().toISOString()
+};
+client.createObject(owner, bucketId, durabilityKey, objectId, 
+                   contentLength, contentMD5, 'application/json', 
+                   headers, [], {}, vnode, {}, requestId, callback);
+
+// During part upload - retrieve durability level  
+client.getObject(owner, bucketId, durabilityKey, vnode, {}, requestId,
+                function(err, result) {
+    if (result.headers && result.headers['x-durability-level']) {
+        partReq.headers['durability-level'] = 
+            result.headers['x-durability-level'];
+    }
+});
+```
+
+**Why Metadata Instead of Content:**
+- **Reliability**: Object metadata is always returned by buckets-mdapi `getObject()` calls
+- **Performance**: Metadata is smaller and faster to retrieve than object content
+- **Efficiency**: No need to parse JSON content - direct header access
+
+**Temporary Object Lifecycle:**
+1. **Created**: During multipart upload initiation
+2. **Read**: During each part upload to get durability level
+3. **Cleaned up**: Automatically removed when multipart upload completes or is aborted
+
+This approach ensures that multipart uploads maintain consistent durability behavior across all parts, regardless of which buckets-api instance handles each request, while being compatible with standard S3 client expectations.
+
 #### Implementation Files
 
-- **Main Handler**: `lib/s3-multipart.js` - Core multipart upload logic
+- **Main Handler**: `lib/s3-multipart.js` - Core multipart upload logic and durability object management
 - **S3 Routing**: `lib/s3-routes.js` - Route multipart operations
 - **Request Parsing**: `lib/s3-compat.js` - Detect and parse multipart requests
 - **Storage Client**: `lib/shark_client.js` - Interface with Manta storage

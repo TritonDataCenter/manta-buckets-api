@@ -364,6 +364,170 @@ test_delete_object() {
     fi
 }
 
+test_conditional_headers() {
+    log "Testing: Conditional Headers (If-Match, If-None-Match, If-Modified-Since, If-Unmodified-Since)"
+    
+    local conditional_test_bucket="conditional-test-$(date +%s)"
+    local conditional_test_object="conditional-test.txt"
+    local conditional_content="Test content for conditional headers - $(date +%s)"
+    
+    # Create test bucket
+    set +e
+    aws_s3api create-bucket --bucket "$conditional_test_bucket" 2>/dev/null
+    local create_exit_code=$?
+    set -e
+    
+    if [ $create_exit_code -ne 0 ]; then
+        error "Conditional headers test - Failed to create test bucket"
+        return 1
+    fi
+    
+    # Create test file
+    echo "$conditional_content" > "$conditional_test_object"
+    
+    # Upload object to get ETag and Last-Modified
+    set +e
+    put_result=$(aws_s3api put-object --bucket "$conditional_test_bucket" --key "$conditional_test_object" --body "$conditional_test_object" 2>&1)
+    local put_exit_code=$?
+    set -e
+    
+    if [ $put_exit_code -ne 0 ]; then
+        error "Conditional headers test - Failed to upload test object: $put_result"
+        aws_s3api delete-bucket --bucket "$conditional_test_bucket" 2>/dev/null || true
+        return 1
+    fi
+    
+    # Extract ETag from put response
+    local etag=$(echo "$put_result" | grep -o '"ETag": "[^"]*"' | cut -d'"' -f4)
+    log "  Object ETag: $etag"
+    
+    # Get object metadata to extract Last-Modified
+    set +e
+    head_result=$(aws_s3api head-object --bucket "$conditional_test_bucket" --key "$conditional_test_object" 2>&1)
+    local head_exit_code=$?
+    set -e
+    
+    if [ $head_exit_code -ne 0 ]; then
+        error "Conditional headers test - Failed to get object metadata: $head_result"
+        aws_s3api delete-bucket --bucket "$conditional_test_bucket" 2>/dev/null || true
+        return 1
+    fi
+    
+    # Test If-Match (should succeed)
+    log "  Testing If-Match header (should succeed)..."
+    set +e
+    if aws_s3api head-object --bucket "$conditional_test_bucket" --key "$conditional_test_object" --if-match "$etag" 2>/dev/null; then
+        success "Conditional headers - If-Match with correct ETag succeeds"
+    else
+        error "Conditional headers - If-Match with correct ETag failed"
+    fi
+    set -e
+    
+    # Test If-Match with wrong ETag (should fail with 412)
+    log "  Testing If-Match header with wrong ETag (should fail)..."
+    set +e
+    aws_s3api head-object --bucket "$conditional_test_bucket" --key "$conditional_test_object" --if-match "\"wrong-etag\"" 2>/dev/null
+    local wrong_match_exit_code=$?
+    set -e
+    
+    if [ $wrong_match_exit_code -ne 0 ]; then
+        success "Conditional headers - If-Match with wrong ETag properly fails"
+    else
+        error "Conditional headers - If-Match with wrong ETag should fail but didn't"
+    fi
+    
+    # Test If-None-Match with wrong ETag (should succeed)
+    log "  Testing If-None-Match header with different ETag (should succeed)..."
+    set +e
+    if aws_s3api head-object --bucket "$conditional_test_bucket" --key "$conditional_test_object" --if-none-match "\"different-etag\"" 2>/dev/null; then
+        success "Conditional headers - If-None-Match with different ETag succeeds"
+    else
+        error "Conditional headers - If-None-Match with different ETag failed"
+    fi
+    set -e
+    
+    # Test If-None-Match with same ETag (should fail with 304)
+    log "  Testing If-None-Match header with same ETag (should fail)..."
+    set +e
+    aws_s3api head-object --bucket "$conditional_test_bucket" --key "$conditional_test_object" --if-none-match "$etag" 2>/dev/null
+    local same_none_match_exit_code=$?
+    set -e
+    
+    if [ $same_none_match_exit_code -ne 0 ]; then
+        success "Conditional headers - If-None-Match with same ETag properly fails"
+    else
+        error "Conditional headers - If-None-Match with same ETag should fail but didn't"
+    fi
+    
+    # Test If-Modified-Since with past date (should succeed)
+    log "  Testing If-Modified-Since header with past date (should succeed)..."
+    local past_date="Wed, 01 Jan 2020 00:00:00 GMT"
+    set +e
+    if aws_s3api head-object --bucket "$conditional_test_bucket" --key "$conditional_test_object" --if-modified-since "$past_date" 2>/dev/null; then
+        success "Conditional headers - If-Modified-Since with past date succeeds"
+    else
+        error "Conditional headers - If-Modified-Since with past date failed"
+    fi
+    set -e
+    
+    # Test If-Unmodified-Since with future date (should succeed)
+    log "  Testing If-Unmodified-Since header with future date (should succeed)..."
+    local future_date="Wed, 01 Jan 2030 00:00:00 GMT"
+    set +e
+    if aws_s3api head-object --bucket "$conditional_test_bucket" --key "$conditional_test_object" --if-unmodified-since "$future_date" 2>/dev/null; then
+        success "Conditional headers - If-Unmodified-Since with future date succeeds"
+    else
+        error "Conditional headers - If-Unmodified-Since with future date failed"
+    fi
+    set -e
+    
+    # Test If-Unmodified-Since with past date (should fail with 412)
+    log "  Testing If-Unmodified-Since header with past date (should fail)..."
+    set +e
+    aws_s3api head-object --bucket "$conditional_test_bucket" --key "$conditional_test_object" --if-unmodified-since "$past_date" 2>/dev/null
+    local past_unmodified_exit_code=$?
+    set -e
+    
+    if [ $past_unmodified_exit_code -ne 0 ]; then
+        success "Conditional headers - If-Unmodified-Since with past date properly fails"
+    else
+        error "Conditional headers - If-Unmodified-Since with past date should fail but didn't"
+    fi
+    
+    # Test conditional headers with GET operations
+    log "  Testing conditional headers with GET operations..."
+    local download_file="conditional-download.txt"
+    
+    # Test If-Match with GET (should succeed)
+    set +e
+    if aws_s3api get-object --bucket "$conditional_test_bucket" --key "$conditional_test_object" --if-match "$etag" "$download_file" 2>/dev/null; then
+        success "Conditional headers - GET with If-Match succeeds"
+        rm -f "$download_file"
+    else
+        error "Conditional headers - GET with If-Match failed"
+    fi
+    set -e
+    
+    # Test If-None-Match with GET (should fail with 304)
+    set +e
+    aws_s3api get-object --bucket "$conditional_test_bucket" --key "$conditional_test_object" --if-none-match "$etag" "$download_file" 2>/dev/null
+    local get_none_match_exit_code=$?
+    set -e
+    
+    if [ $get_none_match_exit_code -ne 0 ]; then
+        success "Conditional headers - GET with If-None-Match (same ETag) properly fails"
+    else
+        error "Conditional headers - GET with If-None-Match (same ETag) should fail but didn't"
+    fi
+    
+    # Cleanup
+    set +e
+    aws_s3api delete-object --bucket "$conditional_test_bucket" --key "$conditional_test_object" 2>/dev/null || true
+    aws_s3api delete-bucket --bucket "$conditional_test_bucket" 2>/dev/null || true
+    rm -f "$conditional_test_object" "$download_file"
+    set -e
+}
+
 test_delete_bucket() {
     log "Testing: Delete Bucket"
     
@@ -428,6 +592,7 @@ run_tests() {
     test_get_object || true
     test_object_checksum_integrity || true
     test_list_bucket_objects_with_content || true
+    test_conditional_headers || true
     test_delete_object || true
     test_delete_bucket || true
     

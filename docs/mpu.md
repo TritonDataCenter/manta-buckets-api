@@ -11,6 +11,7 @@ This document describes the architecture and implementation of S3 Multipart Uplo
 - [Complete Upload Process](#complete-upload-process)
 - [Object Streaming and Storage](#object-streaming-and-storage)
 - [buckets-mdapi Integration](#buckets-mdapi-integration)
+- [Distributed Locking](#distributed-locking)
 - [Error Handling and Cleanup](#error-handling-and-cleanup)
 - [Performance Considerations](#performance-considerations)
 - [Implementation Files](#implementation-files)
@@ -410,6 +411,256 @@ partETags.forEach(function(etag, index) {
         partVnodeLocation, {}, requestId, partCleanupCallback);
 });
 ```
+
+## Distributed Locking
+
+### Purpose and Need
+
+The distributed locking system prevents **data corruption** during multipart upload completion in production environments where multiple `manta-buckets-api` instances handle concurrent requests.
+
+#### Race Condition Scenarios
+
+Without distributed locking, concurrent completion requests for the same upload ID could:
+
+- Read the same part list simultaneously
+- Both start assembling the final object  
+- Create corrupted or inconsistent final objects
+- Cause undefined behavior in the distributed storage system
+
+#### Why Traditional Locking Isn't Sufficient
+
+- **Multiple API Instances**: Production deployments run multiple `manta-buckets-api` instances
+- **Client Retries**: S3 clients may retry completion requests on timeout
+- **Network Partitions**: Temporary failures can lead to duplicate completion attempts
+- **Process Isolation**: In-memory locks don't coordinate across process boundaries
+
+### Architecture
+
+#### Lock Storage Strategy
+
+The distributed locking system uses `buckets-mdapi` objects as coordination primitives:
+
+```javascript
+Lock Object Path: .mpu-locks/{uploadId}.lock
+Lock Headers: {
+  'x-lock-instance': 'requestId-timestamp',
+  'x-lock-hostname': 'api-instance-hostname', 
+  'x-lock-expires': '2025-01-01T12:00:00.000Z',
+  'x-lock-operation': 'complete-multipart'
+}
+Lock Content: JSON metadata with acquisition details
+```
+
+#### Atomic Operations
+
+The system leverages `buckets-mdapi`'s atomic compare-and-swap semantics:
+
+1. **Lock Creation**: `createObject` atomically creates lock object
+   - Returns `ObjectExistsError` if lock already exists
+   - Only one instance can successfully create the lock
+   
+2. **Ownership Verification**: Check `x-lock-instance` header matches
+   - Prevents accidental release by wrong instance
+   - Validates ownership before critical operations
+
+3. **Lock Release**: `deleteObject` atomically removes lock
+   - Includes ownership verification before deletion
+   - Safe cleanup even with concurrent operations
+
+### Implementation Flow
+
+#### Lock Acquisition Process
+
+```mermaid
+sequenceDiagram
+    participant Client as S3 Client
+    participant API1 as API Instance 1
+    participant API2 as API Instance 2  
+    participant MDAPI as buckets-mdapi
+    
+    Note over Client,MDAPI: Concurrent Completion Requests
+    
+    Client->>API1: POST /bucket/object?uploadId=123
+    Client->>API2: POST /bucket/object?uploadId=123
+    
+    Note over API1,API2: Both attempt lock acquisition
+    
+    API1->>MDAPI: createObject(.mpu-locks/123.lock)
+    API2->>MDAPI: createObject(.mpu-locks/123.lock)
+    
+    MDAPI-->>API1: Success (lock created)
+    MDAPI-->>API2: ObjectExistsError (lock exists)
+    
+    Note over API1: Proceeds with completion
+    Note over API2: Waits and retries
+    
+    API1->>API1: Assemble multipart upload
+    API1->>MDAPI: deleteObject(.mpu-locks/123.lock)
+    API1-->>Client: Completion success
+    
+    API2->>MDAPI: createObject(.mpu-locks/123.lock)
+    MDAPI-->>API2: Success (previous lock released)
+    API2->>API2: Upload already completed
+    API2-->>Client: Completion success (idempotent)
+```
+
+#### Lock Algorithm
+
+```javascript
+DistributedLockManager.prototype.acquireLock = function(uploadId, callback) {
+    var self = this;
+    var lockKey = '.mpu-locks/' + uploadId + '.lock';
+    var instanceId = self.req.getId() + '-' + Date.now();
+    var maxRetries = 150; // 75 seconds max wait
+    var retryInterval = 500; // 500ms between attempts
+    
+    function attemptLock() {
+        // Step 1: Try atomic lock creation
+        client.createObject(owner, bucketId, lockKey, lockObjectId,
+            lockContent, headers, [], {}, vnodeLocation, {},
+            function(createErr, result) {
+                
+                if (!createErr) {
+                    // Success: Lock acquired
+                    return callback(null, {
+                        lockKey: lockKey,
+                        instanceId: instanceId,
+                        objectId: lockObjectId
+                    });
+                }
+                
+                if (createErr.name !== 'ObjectExistsError') {
+                    return callback(createErr);
+                }
+                
+                // Step 2: Lock exists, check if expired
+                client.getObject(owner, bucketId, lockKey, vnodeLocation,
+                    function(getErr, existingLock) {
+                        
+                        if (getErr) return callback(getErr);
+                        
+                        var expires = new Date(existingLock.headers['x-lock-expires']);
+                        var now = new Date();
+                        
+                        if (now > expires) {
+                            // Step 3: Lock expired, attempt takeover
+                            return attemptLockTakeover();
+                        }
+                        
+                        // Step 4: Lock active, retry after backoff
+                        if (currentRetry++ < maxRetries) {
+                            setTimeout(attemptLock, retryInterval);
+                        } else {
+                            callback(new Error('Lock acquisition timeout'));
+                        }
+                    });
+            });
+    }
+    
+    attemptLock();
+};
+```
+
+### Lock Lifecycle Management
+
+#### Lock Parameters
+
+```javascript
+var DistributedLockManager = {
+    lockTimeout: 90000,    // 90 seconds lease duration
+    retryInterval: 500,    // 500ms between acquisition attempts  
+    maxRetries: 150,       // 75 second maximum wait time
+    renewalThreshold: 30   // Renew when 30 seconds remaining
+};
+```
+
+#### Lease-Based Expiration
+
+- **Prevents Deadlocks**: Crashed instances can't hold locks indefinitely
+- **Automatic Recovery**: Expired locks are automatically available for takeover
+- **Conservative Timing**: 90-second lease provides buffer for assembly operations
+- **Renewal Support**: Long-running operations can extend lock duration
+
+#### Instance Identification
+
+```javascript
+var instanceId = req.getId() + '-' + Date.now();
+// Example: "86856bf0-4270-4e66-b2c7-8160872657a1-1756732031871"
+
+var lockData = {
+    instanceId: instanceId,
+    hostname: os.hostname(),
+    processId: process.pid,
+    acquired: new Date().toISOString(),
+    expires: new Date(Date.now() + lockTimeout).toISOString(),
+    operation: 'complete-multipart'
+};
+```
+
+### Safety Guarantees
+
+#### Ownership Verification
+
+```javascript
+// Before releasing lock, verify ownership
+var actualInstanceId = currentLock.headers['x-lock-instance'];
+if (actualInstanceId !== expectedInstanceId) {
+    var ownershipErr = new Error('Lock not owned by this instance');
+    ownershipErr.name = 'LockOwnershipError';
+    return callback(ownershipErr);
+}
+```
+
+#### Error Recovery
+
+- **Lock Release Failures**: Non-critical - lease expiration provides cleanup
+- **Network Partitions**: Retry logic handles temporary connectivity issues
+- **Process Crashes**: Lease expiration ensures locks don't persist indefinitely
+- **Concurrent Access**: Atomic operations prevent race conditions
+
+#### Observability
+
+```javascript
+// Comprehensive logging for debugging
+req.log.info({
+    uploadId: uploadId,
+    lockKey: lockInfo.lockKey,
+    instanceId: lockInfo.instanceId,
+    hostname: lockData.hostname,
+    acquired: lockData.acquired
+}, 'S3_MPU_LOCK: Successfully acquired distributed lock');
+
+req.log.warn({
+    lockKey: lockKey,
+    expectedOwner: instanceId,
+    actualOwner: actualInstanceId,
+    actualHostname: currentLock.headers['x-lock-hostname']
+}, 'S3_MPU_LOCK: Attempted to release lock owned by different instance');
+```
+
+### Production Benefits
+
+#### Data Integrity
+- **Prevents Corruption**: Ensures only one instance assembles final object
+- **Atomic Completion**: Complete operation is serialized across instances
+- **Consistent State**: Upload records and parts cleaned up atomically
+
+#### High Availability
+- **Instance Failures**: Lease expiration enables automatic recovery
+- **Network Issues**: Retry logic handles temporary failures gracefully
+- **Load Balancing**: Works across any number of API instances
+
+#### Performance
+- **Non-blocking**: Other operations continue while lock acquisition retries
+- **Memory Efficient**: No in-memory coordination required
+- **Scalable**: Leverages existing `buckets-mdapi` distribution
+
+#### Operational Excellence
+- **Comprehensive Logging**: Full visibility into lock operations
+- **Error Handling**: Graceful degradation on lock failures
+- **Monitoring**: Lock acquisition times and failure rates observable
+
+The distributed locking system ensures that Manta's multipart upload implementation maintains data integrity and consistency in production environments while providing the scalability and reliability required for enterprise storage workloads.
 
 ## Error Handling and Cleanup
 

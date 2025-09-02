@@ -12,7 +12,8 @@
     "maxRequestAge": 600,
     "enableMPU": true,
     "multipartUpload": {
-        "prefixDirLen": 1
+        "prefixDirLen": 1,
+        "useNativeV2Commit": true
     },
     "numWorkers": 4,
     "port": 8080,

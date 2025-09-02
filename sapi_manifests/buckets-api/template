@@ -25,6 +25,11 @@
   },
   "maxObjectCopies": 6,
   "maxRequestAge": 600,
+  "enableMPU": true,
+  "multipartUpload": {
+      "prefixDirLen": 1,
+      "useNativeV2Commit": true
+  },
   "numWorkers": 4,
   "port": 80,
   "auth": {

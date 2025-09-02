@@ -199,6 +199,202 @@ Each part is stored with complete metadata in buckets-mdapi:
 
 ## Complete Upload Process
 
+### Two Assembly Methods
+
+Manta's multipart upload implementation supports two assembly methods for optimal performance:
+
+1. **Native Mako v2 Commit** (preferred): Uses nginx-based assembly at storage node level
+2. **Streaming Assembly** (fallback): Traditional streaming through API layer
+
+### Deterministic Shark Pre-allocation
+
+#### Why Deterministic Allocation is Required
+
+Traditional multipart uploads suffered from **distributed part placement** - each part was allocated to different sharks dynamically, making **native v2 commit impossible**. The v2 commit endpoint requires all parts to be located on the same set of storage nodes for efficient assembly.
+
+#### Architecture Overview
+
+```mermaid
+graph TB
+    subgraph "Traditional MPU (Problem)"
+        TPART1[Part 1 → Sharks A,B]
+        TPART2[Part 2 → Sharks C,D] 
+        TPART3[Part 3 → Sharks E,F]
+        TPART4[Part 4 → Sharks A,C]
+        TFAIL[❌ v2 Commit Fails<br/>Parts scattered across nodes]
+    end
+    
+    subgraph "Deterministic MPU (Solution)"
+        DPART1[Part 1 → Sharks 1,2]
+        DPART2[Part 2 → Sharks 1,2]
+        DPART3[Part 3 → Sharks 1,2] 
+        DPART4[Part 4 → Sharks 1,2]
+        DSUCCESS[✅ v2 Commit Works<br/>All parts on same nodes]
+    end
+    
+    classDef problem fill:#ffebee
+    classDef solution fill:#e8f5e8
+    classDef success fill:#c8e6c8
+    classDef failure fill:#ffcdd2
+    
+    class TPART1,TPART2,TPART3,TPART4 problem
+    class DPART1,DPART2,DPART3,DPART4 solution  
+    class DSUCCESS success
+    class TFAIL failure
+```
+
+#### Implementation: dcSharkMap Access
+
+```javascript
+// Get ALL available storage nodes instead of filtered subset
+var storinfo = req.storinfo;
+var isOperator = req.caller.account.isOperator;
+var sharkMap = isOperator ? storinfo.operatorDcSharkMap : storinfo.dcSharkMap;
+
+// Extract all sharks from all datacenters
+var allSharks = [];
+Object.keys(sharkMap).forEach(function (datacenter) {
+    var dcSharks = sharkMap[datacenter];
+    if (Array.isArray(dcSharks)) {
+        allSharks = allSharks.concat(dcSharks);
+    }
+});
+
+// Sort ALL sharks by name for deterministic selection
+var sortedSharks = allSharks.slice().sort(function (a, b) {
+    return a.manta_storage_id.localeCompare(b.manta_storage_id);
+});
+
+// Take first N sharks based on durability level
+var selectedSharks = sortedSharks.slice(0, durabilityLevel);
+
+// All parts will use these identical sharks
+req.preAllocatedSharks = selectedSharks;
+```
+
+#### Why storinfo.choose() Wasn't Sufficient
+
+The `storinfo.choose()` method is designed for **load balancing** and returns different shark subsets on each call:
+
+- **Purpose**: Distributes load across storage nodes
+- **Behavior**: Returns random/rotating subsets based on utilization
+- **Result**: Different sharks for each MPU part → v2 commit impossible
+
+We needed access to the **complete storage topology** (`dcSharkMap`) to implement **consistent selection**.
+
+#### Shark Selection Algorithm
+
+```javascript
+// Deterministic selection ensuring identical results across all parts
+function selectDeterministicSharks(allSharks, durabilityLevel) {
+    // 1. Sort by storage node ID (ascending alphabetical order)
+    var sortedSharks = allSharks.slice().sort(function (a, b) {
+        return a.manta_storage_id.localeCompare(b.manta_storage_id);
+    });
+    
+    // 2. Take first N sharks (always same result)
+    return sortedSharks.slice(0, durabilityLevel);
+    
+    // Example result for durability=2:
+    // ["1.stor.coal.joyent.us", "2.stor.coal.joyent.us"] 
+    // ^ Always identical across all parts
+}
+```
+
+### Native Mako v2 Commit Process
+
+#### Why v2 Commit is Preferred
+
+**Performance Benefits:**
+- **10-100x faster**: Assembly happens at storage node level
+- **No data streaming**: Eliminates API layer bottleneck  
+- **Storage-native operations**: Uses optimized nginx assembly
+- **Reduced latency**: Single HTTP request vs complex streaming
+
+**Architecture Benefits:**
+- **Storage efficiency**: Parts assembled in-place without data movement
+- **Memory efficiency**: No streaming through API memory buffers
+- **Network efficiency**: Eliminates redundant data transfers
+
+#### v2 Commit Implementation Flow
+
+```mermaid
+sequenceDiagram
+    participant Client as S3 Client
+    participant API as Buckets API
+    participant NGINX as Storage Node nginx
+    participant STORAGE as Physical Storage
+    
+    Note over Client,STORAGE: Phase 1: Upload Parts (Deterministic Sharks)
+    loop For each part
+        Client->>API: PUT part (with deterministic allocation)
+        API->>STORAGE: Store part on sharks [1,2]
+        API-->>Client: Part ETag
+    end
+    
+    Note over Client,STORAGE: Phase 2: v2 Commit Assembly
+    Client->>API: POST complete upload
+    API->>API: Build v2 commit request
+    
+    rect rgb(200,250,200)
+        Note over API,NGINX: Native v2 Assembly (Fast Path)
+        API->>NGINX: POST /mpu/v2/commit
+        Note over NGINX: { parts: [paths], nbytes: total }
+        NGINX->>NGINX: Assemble parts in-place
+        NGINX->>NGINX: Compute content MD5
+        NGINX-->>API: HTTP 204 + x-joyent-computed-content-md5
+    end
+    
+    API->>API: Create final object metadata
+    API-->>Client: Assembly complete
+```
+
+#### v2 Commit Request Format
+
+```javascript
+var v2CommitBody = {
+    version: 2,
+    nbytes: 1073741824,                    // Total file size
+    owner: "owner-uuid",
+    bucketId: "bucket-uuid", 
+    objectId: "final-object-uuid",
+    objectHash: "md5-hash-of-object-name",
+    uploadId: "mpu-upload-id",
+    parts: [
+        {
+            partNumber: 1,
+            path: "/manta/v2/owner/bucket/prefix/objectId,nameHash",
+            etag: "\"part-etag\"",           // Part verification
+            size: 15728640
+        }
+        // ... more parts
+    ]
+};
+
+// Sent to: POST /mpu/v2/commit on target storage node
+```
+
+#### Response Handling
+
+```javascript
+// Success: HTTP 204 with custom header
+{
+    statusCode: 204,
+    headers: {
+        "x-joyent-computed-content-md5": "zVc8+qzgfnlJvAxGAokE/w=="
+    }
+}
+
+// Extract ETag from Manta-specific header
+var etag = res.headers.etag || 
+           res.headers.md5 || 
+           res.headers['x-joyent-computed-content-md5'];
+```
+
+### Streaming Assembly Process (Fallback)
+
+When v2 commit is unavailable or fails, the system falls back to traditional streaming assembly:
+
 ### Size Calculation Strategy
 
 The completion process implements **actual size calculation** rather than size estimation:

@@ -582,6 +582,8 @@ export AWS_DEFAULT_REGION="us-east-1"
 aws_access_key_id = "your-manta-access-key"
 aws_secret_access_key = "your-manta-secret-key"
 region = us-east-1
+s3=
+         addressing_style = path
 ```
 
 # Use AWS CLI with custom endpoint
@@ -653,6 +655,8 @@ aws s3 ls s3://my-bucket/
 #### Minio mc 
 
 ``` shell
+export S3_ENDPOINT_URL=https://your-manta-endpoint
+export MC_REGION=us-east-1
 mc alias set local  https://your-manta-endpoint\
     AWS_ACCESS_KEY AWS_ACCESS_SECRET_KEY --insecure --api S3v4 --path=off
 ```
@@ -668,7 +672,7 @@ Minio mc example alias configuration
 			"accessKey": "your-manta-access-key",
 			"secretKey": "your-manta-secret-key",
 			"api": "S3v4",
-			"path": "off"
+			"path": "on"
 		}
   }
 }
@@ -682,40 +686,6 @@ mc  ls local/test5  --insecure
 [2025-07-17 14:40:52 -04] 1.4KiB STANDARD Jenkinsfile
 [2025-07-15 19:28:02 -04] 1.9KiB STANDARD package.json
 ```
-#### s5cmd 
-
-First setup the following environment variables
-
-``` shell
-AWS_ACCESS_KEY_ID=your-manta-access-key
-AWS_SECRET_ACCESS_KEY=your-manta-secret-access-key
-MC_REGION=us-east-1
-S3_ENDPOINT_URL=https://your-manta-endpoint
-AWS_INSECURE_SKIP_VERIFY=true
-AWS_REGION=us-east-1
-```
-List objects in bucket 
-
-``` shell
-$ s5cmd  --no-verify-ssl  ls s3://test5
-2025/07/17 18:40:52              1424  Jenkinsfile
-2025/07/17 18:41:20              1424  Jenkinsfile2
-2025/07/15 23:28:02              1909  package.json
-
-
-$ mc  cp Jenkinsfile  local/test5/Jenkinsfile2   --insecure
-mc: <ERROR> Failed to copy `/Users/carlosneira/Projects/S3/S3-MANTA/manta-buckets-api/Jenkinsfile`. 204 No Content
-$ mc  ls local/test5  --insecure
-[2025-07-17 14:40:52 -04] 1.4KiB STANDARD Jenkinsfile
-[2025-07-17 14:41:20 -04] 1.4KiB STANDARD Jenkinsfile2
-[2025-07-15 19:28:02 -04] 1.9KiB STANDARD package.json
-
-$ mc  get  local/test5/package.json  /tmp/package.json  --insecure
-.../test5/package.json: 1.86 KiB / 1.86 KiB  ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓  24.65 KiB/s 0s
-$ diff package.json /tmp/package.json
-$
-```
-
 #### s3cmd 
 
 A sample configuration to start using s3cmd is the following 
@@ -733,13 +703,10 @@ signature_v2 = False
 The reason that host_base and host_bucket has the same value is to force
 path-style buckets instead of virtual buckets. 
 
-Pushing large objects require at this point to disable multipart-uploads.
 
-``` shell
-$ s3cmd --no-check-certificate put --disable-multipart --multipart-chunk-size=5   somefile.tar.gz   s3://test5/somefile.tar.gz
-```
-
-
+[!NOTE]
+The only supported clients today are awscli and s3cmd as testing
+is done using this clients.
 
 ### Testing
 
@@ -787,32 +754,32 @@ The test suite ensures that standard S3 tools and workflows function correctly w
 The manta-buckets-api supports the following S3 object properties and metadata:
 
 #### Core Object Properties
-- **Key** - Object name/path (`lib/s3-compat.js:673,744`)
-- **Size** - Object size in bytes (`lib/s3-compat.js:679,749`)
-- **ETag** - Entity tag using Manta object ID (`lib/s3-compat.js:677-678,747-748`)
-- **LastModified** - ISO 8601 timestamp (`lib/s3-compat.js:675-676,745-746`)
-- **StorageClass** - Always "STANDARD" (`lib/s3-compat.js:680,750`)
+- **Key** - Object name/path 
+- **Size** - Object size in bytes
+- **ETag** - Entity tag using Manta object ID
+- **LastModified** - ISO 8601 timestamp
+- **StorageClass** - Always "STANDARD"
 
 #### HTTP Headers
-- **Content-Type** - MIME type, defaults to "application/octet-stream" (`lib/s3-compat.js:470`)
-- **Content-Length** - Object size in bytes (`lib/buckets/objects/head.js:89`)
-- **Content-MD5** - MD5 hash for integrity checking (`lib/buckets/objects/head.js:90`)
-- **Last-Modified** - HTTP header for caching (`lib/buckets/objects/head.js:87`)
+- **Content-Type** - MIME type, defaults to "application/octet-stream"
+- **Content-Length** - Object size in bytes 
+- **Content-MD5** - MD5 hash for integrity checking 
+- **Last-Modified** - HTTP header for caching
 
 #### Custom Metadata
 - **x-amz-meta-*** - User-defined metadata headers with 4KB total limit
-  - Conversion: `x-amz-meta-*` ↔ `m-*` (`lib/s3-compat.js:484-487,1291-1298`)
-  - Maximum size: 4KB total (`lib/common.js:89`)
+  - Conversion: `x-amz-meta-*` ↔ `m-*` 
+  - Maximum size: 4KB total 
 
 #### S3-Specific Response Headers
-- **x-amz-request-id** - Request identifier (`lib/s3-compat.js:493-494,822-824`)
-- **x-amz-id-2** - Extended request identifier (`lib/s3-compat.js:495,826-829`)
+- **x-amz-request-id** - Request identifier
+- **x-amz-id-2** - Extended request identifier
 
 #### Additional Properties
-- **Durability-Level** - Manta-specific durability information (`lib/buckets/objects/head.js:88`)
-- **CORS Headers** - Cross-origin resource sharing headers (`lib/common.js:42-48`)
-- **Cache-Control** - HTTP caching directives (`lib/buckets/buckets.js:198-199`)
-- **Surrogate-Key** - CDN cache invalidation key (`lib/buckets/buckets.js:201-202`)
+- **Durability-Level** - Manta-specific durability information 
+- **CORS Headers** - Cross-origin resource sharing headers 
+- **Cache-Control** - HTTP caching directives 
+- **Surrogate-Key** - CDN cache invalidation key 
 
 #### XML Response Format
 Object listings return S3-compatible XML with these properties:
@@ -1223,27 +1190,6 @@ aws s3api put-object-acl --bucket my-bucket --key existing-file.txt \
 # Objects with "public" in the name are accessible (heuristic approach)
 s3cmd --no-check-certificate put local-file.txt s3://my-bucket/public-document.pdf
 ```
-
-### Browser Access Examples
-
-Once buckets or objects are public, browsers can access content directly:
-
-```html
-<!-- ✅ Object in "public" bucket -->
-<img src="https://your-manta-endpoint/user/buckets/public/objects/logo.png">
-
-<!-- ✅ Object in bucket with "public" in name -->
-<img src="https://your-manta-endpoint/user/buckets/public-images/objects/banner.jpg">
-
-<!-- ✅ Object with "public" in name -->
-<a href="https://your-manta-endpoint/user/buckets/docs/objects/public-manual.pdf">
-    Download Public Manual
-</a>
-
-<!-- ✅ Static website hosting from "public" bucket -->
-<iframe src="https://your-manta-endpoint/user/buckets/public/objects/index.html"></iframe>
-```
-
 ### Checking Object Access
 
 #### Test Anonymous Access

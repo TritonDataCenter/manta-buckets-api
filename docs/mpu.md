@@ -961,4 +961,36 @@ All error responses maintain S3 API compatibility:
   - S3 SigV4 authentication integration
   - Permission validation for multipart operations
 
-This comprehensive design enables Manta to provide S3-compatible multipart upload functionality while leveraging its distributed storage architecture and metadata system for superior accuracy and performance compared to traditional estimation-based approaches.
+## Dependencies
+
+### Required Components for Native v2 Commit
+
+The native Mako v2 commit functionality requires specific infrastructure components to be deployed and configured:
+
+#### Mako (Storage Node Service)
+- **Purpose**: Manta's storage node daemon that manages object storage operations
+- **Role in MPU**: Provides the storage-layer infrastructure for multipart object assembly
+- **Requirements**: 
+  - Must be running on all storage nodes in the Manta deployment
+  - Handles physical file storage and retrieval operations
+  - Manages storage node health and capacity reporting
+
+#### Nginx MPU Module
+- **Purpose**: Custom nginx module that provides native multipart upload assembly capabilities
+- **Role in MPU**: Enables high-performance assembly of multipart uploads at the storage layer
+- **Requirements**:
+  - Must be compiled into nginx on all storage nodes
+  - Provides the `/mpu/v2/commit` endpoint used by the buckets API
+  - Handles in-place assembly of part files into final objects
+  - Computes and returns content MD5 checksums via `x-joyent-computed-content-md5` header
+
+#### Configuration Requirements
+- **Endpoint Availability**: The `/mpu/v2/commit` endpoint must be accessible on all storage nodes
+- **Performance Settings**: Nginx must be configured with appropriate timeouts and buffer sizes for large file assembly
+- **Error Handling**: Proper error response formats for assembly failures and validation errors
+
+#### Fallback Behavior
+If native v2 commit is unavailable or fails:
+- **Automatic Fallback**: The system automatically falls back to streaming assembly
+- **Compatibility**: Ensures multipart uploads work even without v2 commit support
+- **Performance Impact**: Streaming assembly is significantly slower (10-100x) but maintains functionality

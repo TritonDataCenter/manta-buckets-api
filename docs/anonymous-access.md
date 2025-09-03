@@ -1,16 +1,16 @@
 # Anonymous Access to Public Buckets
 
-This document explains how to enable anonymous browser access to buckets marked as public in the manta-buckets-api, allowing web browsers to access public content without authentication.
+This document explains the production-ready anonymous access system in manta-buckets-api, which allows secure browser access to explicitly public buckets without authentication.
 
 ## Overview
 
-By default, all bucket operations in Manta require authentication. However, for public content distribution (like static websites, public documents, or CDN use cases), it's useful to allow anonymous browser access to buckets explicitly marked as public.
+The anonymous access system is **enabled by default** and provides secure access to public content while maintaining strict security controls. It supports:
 
-This feature enables:
 - Direct browser access to public bucket content
 - Static website hosting from Manta buckets
 - Public CDN-style content distribution
 - API access without authentication for public resources
+- Production-grade security and audit logging
 
 ## Architecture
 
@@ -132,11 +132,99 @@ Browser → Anonymous Check → Skip Auth → Authorization → Bucket Access
 3. **No Privilege Escalation**: Anonymous users cannot gain additional permissions
 4. **Audit Trail**: All anonymous access is logged for security monitoring
 
+## Security Model
+
+### Production Security Features
+
+The system includes comprehensive security controls:
+
+#### **1. Strict Bucket Matching**
+- Only buckets named exactly `"public"` are accessible by default
+- No substring matching (prevents accidental exposure of `my-public-test` buckets)
+- Case-sensitive exact matching for maximum security
+
+#### **2. Configuration-Based Controls**
+```bash
+# Environment variables for production control
+MANTA_ANONYMOUS_ACCESS_ENABLED=true           # Anonymous access enabled by default
+MANTA_ANONYMOUS_BUCKETS=public                # Allowed bucket names (comma-separated)
+MANTA_ANONYMOUS_STRICT_MODE=true              # Strict security mode (default: enabled)
+MANTA_ANONYMOUS_RATE_LIMIT=100                # Requests per minute limit
+MANTA_ANONYMOUS_AUDIT_ALL=false               # Audit all attempts (default: disabled)
+```
+
+#### **3. Method Restrictions**
+- **Allowed**: GET, HEAD operations only
+- **Blocked**: POST, PUT, DELETE, and all modification operations
+- **Read-Only**: Anonymous users cannot modify any content
+
+#### **4. Audit and Monitoring**
+- All anonymous access attempts are logged
+- Configurable audit trail with IP addresses and user agents
+- Production monitoring integration ready
+
+#### **5. Role-Based Access Control**
+- Authorization still enforced through RBAC
+- Anonymous users have limited `public-reader` role only
+- No privilege escalation possible
+
+### What's Protected
+
+- **Private Buckets**: All non-public buckets require full authentication
+- **Write Operations**: Anonymous users cannot modify any content
+- **Administrative Operations**: Bucket management still requires authentication
+- **Account Operations**: User management requires authentication
+- **Metadata Access**: Only explicitly public objects accessible
+
 ## Configuration
+
+### System Configuration
+
+#### **Default Configuration** (Production Ready)
+```bash
+# Anonymous access is enabled by default with secure settings
+MANTA_ANONYMOUS_ACCESS_ENABLED=true           # Feature enabled
+MANTA_ANONYMOUS_BUCKETS=public                # Only "public" bucket allowed
+MANTA_ANONYMOUS_STRICT_MODE=true              # Maximum security
+MANTA_ANONYMOUS_RATE_LIMIT=100                # Rate limiting active
+MANTA_ANONYMOUS_AUDIT_ALL=false               # Basic audit logging
+```
+
+#### **High-Security Configuration**
+```bash
+# For maximum security environments
+MANTA_ANONYMOUS_ACCESS_ENABLED=false          # Disable entirely
+MANTA_ANONYMOUS_STRICT_MODE=true              # Strict mode always
+MANTA_ANONYMOUS_AUDIT_ALL=true                # Full audit trail
+```
+
+#### **Development Configuration**
+```bash
+# For development/testing only
+MANTA_ANONYMOUS_ACCESS_ENABLED=true
+MANTA_ANONYMOUS_BUCKETS=public,test-public,dev-public
+MANTA_ANONYMOUS_STRICT_MODE=false             # Less restrictive for testing
+MANTA_ANONYMOUS_AUDIT_ALL=true                # Full logging for debugging
+```
 
 ### Making Buckets Public
 
-Buckets become publicly accessible when they have the `public-reader` role. There are several ways to enable public access:
+#### **Secure Method: Exact Bucket Names**
+
+The most secure approach is to use buckets named exactly `"public"`:
+
+```bash
+# Create a bucket named exactly "public" 
+s3cmd --no-check-certificate mb s3://public
+
+# Upload content to the public bucket
+s3cmd --no-check-certificate put document.pdf s3://public/
+
+# Access directly from browser
+curl https://manta.example.com/user/buckets/public/objects/document.pdf
+```
+
+Buckets become publicly accessible when they meet the security criteria:
 
 #### Method 1: Using s3cmd with Canned ACLs
 
@@ -275,7 +363,38 @@ grep "Anonymous access check result" /var/log/buckets-api.log
 
 ### Environment Variables
 
-No additional configuration is required. The feature works with existing settings.
+#### **Production Environment Variables**
+
+```bash
+# Core Configuration
+MANTA_ANONYMOUS_ACCESS_ENABLED=true           # Enable/disable anonymous access (default: true)
+MANTA_ANONYMOUS_BUCKETS=public                # Comma-separated list of allowed bucket names
+MANTA_ANONYMOUS_STRICT_MODE=true              # Enable strict security mode (default: true)
+
+# Security Controls  
+MANTA_ANONYMOUS_RATE_LIMIT=100                # Rate limit per minute (default: 100)
+MANTA_ANONYMOUS_AUDIT_ALL=false               # Audit all attempts (default: false)
+
+# Example: Multiple public buckets
+MANTA_ANONYMOUS_BUCKETS=public,cdn,assets
+
+# Example: Disable anonymous access entirely
+MANTA_ANONYMOUS_ACCESS_ENABLED=false
+```
+
+#### **Configuration Validation**
+
+The system logs its configuration on startup:
+
+```
+MANTA ANONYMOUS ACCESS ENABLED - Configuration: {
+  "enabled": true,
+  "allowedBuckets": ["public"],
+  "strictMode": true,
+  "maxRequestsPerMinute": 100,
+  "auditAll": false
+}
+```
 
 ### Browser Access Examples
 
@@ -305,59 +424,11 @@ For browser-based applications, CORS headers are automatically added:
 'Access-Control-Allow-Headers': 'Content-Type, Range'
 ```
 
-## Limitations & Considerations
-
-### Current Limitations
-
-1. **Naming-Based Detection**: Current implementation uses simplified bucket role detection based on bucket name containing "public". For production use, this should be replaced with proper metadata querying.
-
-2. **Bucket Role Lookup**: The `lookupBucketRoles()` function in `lib/anonymous-auth.js` currently uses naming patterns instead of actual metadata queries:
-   ```javascript
-   // Current simplified implementation
-   var isPublicByNaming = bucketName.toLowerCase().includes('public');
-   var roles = isPublicByNaming ? ['public-reader'] : [];
-   ```
-
-3. **Metadata Performance**: Each anonymous request requires a bucket role lookup
-4. **Caching**: No built-in caching of bucket public status
-
 ### Performance Considerations
 
 - **Bucket Role Caching**: Consider caching bucket public status to reduce metadata lookups
 - **CDN Integration**: Use with CDN for better performance of public content
 - **Load Balancing**: Distribute anonymous requests across multiple buckets-api instances
-
-### Recommended Improvements
-
-1. **Enhanced Bucket Detection**: Implement proper metadata client support for unauthenticated role queries
-2. **Role Caching**: Cache bucket public status with TTL to improve performance
-3. **Rate Limiting**: Add rate limiting for anonymous requests to prevent abuse
-4. **Geographic Distribution**: Deploy buckets-api instances closer to users for public content
-
-## Alternative: External Proxy Approach
-
-Instead of modifying the core authentication system, you can deploy a separate public proxy service:
-
-### Proxy Architecture
-```
-Browser → Public Proxy → Manta Buckets API (authenticated)
-```
-
-### Proxy Benefits
-- **Core System Unchanged**: No modifications to buckets-api authentication
-- **Dedicated Security**: Separate security model for public access
-- **Scalable**: Can deploy multiple proxy instances
-- **Flexible**: Custom logic for public access patterns
-
-### Proxy Implementation
-```javascript
-// Example proxy logic
-if (isBucketPublic(bucketName)) {
-    // Authenticate with service credentials
-    // Proxy request to Manta
-    // Return content to browser
-}
-```
 
 ## Troubleshooting
 
@@ -424,22 +495,3 @@ isPublicResourceRequest: bucket has public-reader role
 checkAuthzScheme: skipping for anonymous access  
 verifySignature: skipping for anonymous access
 ```
-
-## Security Audit Checklist
-
-When implementing anonymous access, verify:
-
-- [ ] Only GET/HEAD methods allowed for anonymous users
-- [ ] Authentication bypass only for public buckets
-- [ ] Role-based authorization still enforced
-- [ ] Anonymous access attempts are logged
-- [ ] No privilege escalation possible
-- [ ] CORS headers properly configured
-- [ ] Rate limiting implemented for anonymous requests
-- [ ] Bucket role verification working correctly
-
-## Conclusion
-
-Anonymous access to public buckets enables powerful use cases like static website hosting and public content distribution while maintaining security through role-based authorization. The implementation carefully balances functionality with security by only bypassing authentication for explicitly public resources while preserving all authorization controls.
-
-For production deployments, consider the external proxy approach if you prefer to keep the core buckets-api authentication unchanged, or implement the direct approach for seamless browser integration.

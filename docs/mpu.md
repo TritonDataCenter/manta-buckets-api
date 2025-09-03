@@ -238,7 +238,7 @@ graph TB
     classDef failure fill:#ffcdd2
     
     class TPART1,TPART2,TPART3,TPART4 problem
-    class DPART1,DPART2,DPART3,DPART4 solution  
+    class DPART1,DPART2,DPART3,DPART4 solution
     class DSUCCESS success
     class TFAIL failure
 ```

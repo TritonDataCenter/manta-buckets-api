@@ -1,6 +1,8 @@
 # Multipart Upload (MPU) Design
 
-This document describes the architecture and implementation of S3 Multipart Upload support in Manta Buckets API, with detailed coverage of the role of buckets-mdapi and how objects are streamed and stored.
+This document describes the architecture and implementation of S3 Multipart Upload support in Manta Buckets API, using native v2 commit for optimal performance and simplified architecture.
+
+> **Architecture Update (2025)**: This implementation has been simplified to use **native v2 commit exclusively**. The previous streaming assembly fallback through buckets-mdapi has been removed to reduce complexity and improve performance. All multipart uploads now use nginx-based assembly at the storage layer.
 
 ## Table of Contents
 
@@ -199,12 +201,12 @@ Each part is stored with complete metadata in buckets-mdapi:
 
 ## Complete Upload Process
 
-### Two Assembly Methods
+### Single Assembly Method
 
-Manta's multipart upload implementation supports two assembly methods for optimal performance:
+Manta's multipart upload implementation uses **Native Mako v2 Commit exclusively** for optimal performance:
 
-1. **Native Mako v2 Commit** (preferred): Uses nginx-based assembly at storage node level
-2. **Streaming Assembly** (fallback): Traditional streaming through API layer
+1. **Native Mako v2 Commit** (only): Uses nginx-based assembly at storage node level
+2. **No Fallback**: Streaming assembly has been removed for simplicity and performance
 
 ### Deterministic Shark Pre-allocation
 
@@ -337,9 +339,10 @@ sequenceDiagram
     API->>API: Build v2 commit request
     
     rect rgb(200,250,200)
-        Note over API,NGINX: Native v2 Assembly (Fast Path)
+        Note over API,NGINX: Native v2 Assembly (Only Method)
         API->>NGINX: POST /mpu/v2/commit
         Note over NGINX: { parts: [paths], nbytes: total }
+        NGINX->>NGINX: Create directories if needed (auto)
         NGINX->>NGINX: Assemble parts in-place
         NGINX->>NGINX: Compute content MD5
         NGINX-->>API: HTTP 204 + x-joyent-computed-content-md5
@@ -391,104 +394,119 @@ var etag = res.headers.etag ||
            res.headers['x-joyent-computed-content-md5'];
 ```
 
-### Streaming Assembly Process (Fallback)
+### Space Validation Process
 
-When v2 commit is unavailable or fails, the system falls back to traditional streaming assembly:
-
-### Size Calculation Strategy
-
-The completion process implements **actual size calculation** rather than size estimation:
+Before v2 commit is attempted, the system validates available storage space to prevent failures:
 
 ```javascript
-function calculateActualTotalSize(req, uploadId, partETags, callback) {
-    var totalSize = 0;
+function validateSharkSpaceForV2Commit(req, partPaths, finalSizeBytes, callback) {
+    var finalSizeMB = Math.ceil(finalSizeBytes / 1048576);
     
-    // Query buckets-mdapi for each part's actual metadata
-    vasync.forEachParallel({
-        func: function(partETag, next) {
-            var partNumber = partETags.indexOf(partETag) + 1;
-            var partObjectName = uploadId + '/part.' + partNumber;
-            
-            // Query actual part metadata from buckets-mdapi
-            client.getObject(owner, bucketId, partObjectName, ..., 
-                function(getErr, result) {
-                    totalSize += result.content_length || 0;
-                    next();
-                });
-        },
-        inputs: partETags
-    }, function(err) {
-        callback(null, totalSize);  // Return actual total size
+    // Get shark information from pre-allocated sharks
+    var samplePart = partPaths[0];
+    var sharkMap = req.storinfo.dcSharkMap;
+    
+    // Check each pre-allocated shark's current available space
+    var insufficientSharks = [];
+    samplePart.sharks.forEach(function (shark) {
+        var sharkId = shark.manta_storage_id;
+        var availableMB = currentSharkSpaces[sharkId] || 0;
+        
+        if (availableMB < finalSizeMB) {
+            insufficientSharks.push({
+                shark: sharkId,
+                availableMB: availableMB,
+                requiredMB: finalSizeMB,
+                deficitMB: finalSizeMB - availableMB
+            });
+        }
     });
+    
+    if (insufficientSharks.length > 0) {
+        var error = new StorinfoNotEnoughSpaceError(finalSizeMB, 
+            'Insufficient space for v2 commit');
+        return callback(error);
+    }
+    
+    callback(); // Success - proceed with v2 commit
 }
 ```
 
-### Assembly Process
+### Size Calculation Strategy
 
-The assembly process streams parts directly to final storage without intermediate buffering:
+The completion process implements **actual size calculation** rather than size estimation by querying part metadata from buckets-mdapi.
+
+### V2 Commit Assembly Process
+
+The v2 commit process handles assembly entirely at the storage layer using nginx:
 
 ```mermaid
 sequenceDiagram
     participant Client as S3 Client
     participant API as MPU Handler
-    participant MDAPI as buckets-mdapi
-    participant SHARKS as Final Storage
+    participant NGINX as Storage Node
+    participant STORAGE as Physical Files
     
     Client->>API: POST /bucket/object?uploadId=ID (with part ETags)
     
-    Note over API: Phase 1: Size Calculation
-    API->>MDAPI: Query metadata for each part
-    MDAPI-->>API: Return actual part sizes
-    API->>API: Calculate total size from actual parts
+    Note over API: Phase 1: Space Validation
+    API->>API: Check available space on pre-allocated sharks
+    API->>API: Calculate total size from part metadata
     
-    Note over API: Phase 2: Shark Allocation  
-    API->>API: Allocate sharks for final object
+    Note over API: Phase 2: v2 Commit Request  
+    API->>API: Build v2 commit body with part paths
     
-    Note over API: Phase 3: Streaming Assembly
-    loop For each part (in order)
-        API->>MDAPI: Get part storage location
-        API->>SHARKS: Stream part data to final sharks
-    end
+    Note over API: Phase 3: Native Assembly
+    API->>NGINX: POST /mpu/v2/commit
+    NGINX->>NGINX: Create directories if needed (with trailing slash)
+    NGINX->>STORAGE: Assemble parts in-place
+    NGINX->>NGINX: Compute final MD5 hash
+    NGINX-->>API: HTTP 204 + computed MD5
     
     Note over API: Phase 4: Final Metadata
-    API->>MDAPI: Create final object metadata
-    API->>MDAPI: Cleanup upload record and parts
+    API->>API: Create final object metadata with actual MD5
     API-->>Client: Complete response with final ETag
 ```
 
-## Object Streaming and Storage
+## Object Assembly and Storage
 
-### Memory-Efficient Streaming
+### Native v2 Commit Assembly
 
-The implementation prioritizes memory efficiency by streaming parts directly rather than buffering:
+The implementation uses nginx-based assembly at the storage layer for optimal performance:
 
 ```javascript
-function streamPartsToFinalSharks(req, partPaths, finalSharks, finalObjectId, callback) {
-    var totalBytes = 0;
-    var md5Hash = crypto.createHash('md5');
-    
-    // Stream each part in sequence to final sharks
-    vasync.forEachPipeline({
-        func: function(partPath, next) {
-            // Create readable stream from part's shark locations
-            var partStream = createPartReadStream(partPath);
-            
-            // Stream directly to final sharks while updating hash
-            partStream.on('data', function(chunk) {
-                totalBytes += chunk.length;
-                md5Hash.update(chunk);
+function tryV2CommitOnSharks(req, sharks, commitBody, owner, callback) {
+    // Execute v2 commit on all target sharks in parallel for replication
+    vasync.forEachParallel({
+        func: function (shark, next) {
+            var client = sharkClient.getClient({
+                shark: shark,
+                log: req.log
             });
-            
-            streamToSharks(partStream, finalSharks, finalObjectId, next);
+
+            var opts = {
+                objectId: commitBody.objectId,
+                owner: owner,
+                requestId: req.getId(),
+                path: '/mpu/v2/commit',
+                headers: { 'content-type': 'application/json' }
+            };
+
+            // Send v2 commit request to nginx on storage node
+            client.post(opts, commitBody, function (postErr, postReq, res) {
+                if (postErr || !res || res.statusCode !== 204) {
+                    return next(postErr || new Error('v2 commit failed'));
+                }
+
+                // Extract computed MD5 from nginx response
+                var etag = res.headers.etag ||
+                           res.headers['x-joyent-computed-content-md5'];
+
+                next(null, { etag: etag, shark: shark.manta_storage_id });
+            });
         },
-        inputs: partPaths
-    }, function(err) {
-        callback(null, {
-            totalBytes: totalBytes,
-            md5: md5Hash.digest('base64'),
-            sharks: finalSharks
-        });
-    });
+        inputs: sharks
+    }, callback);
 }
 ```
 
@@ -926,8 +944,12 @@ All error responses maintain S3 API compatibility:
 
 - **`lib/s3-multipart.js`**: Main multipart upload implementation
   - S3 API handlers for initiate, upload part, complete, abort
-  - Upload record management and size calculation
-  - Streaming assembly and cleanup logic
+  - Upload record management and cleanup logic
+
+- **`lib/s3-multipart-v2.js`**: Native v2 commit implementation  
+  - v2 commit request building and execution
+  - Space validation before assembly
+  - nginx integration for native assembly
 
 - **`lib/s3-compat.js`**: S3 request detection and parsing
   - Multipart operation detection from query parameters
@@ -989,8 +1011,9 @@ The native Mako v2 commit functionality requires specific infrastructure compone
 - **Performance Settings**: Nginx must be configured with appropriate timeouts and buffer sizes for large file assembly
 - **Error Handling**: Proper error response formats for assembly failures and validation errors
 
-#### Fallback Behavior
+#### Error Behavior
 If native v2 commit is unavailable or fails:
-- **Automatic Fallback**: The system automatically falls back to streaming assembly
-- **Compatibility**: Ensures multipart uploads work even without v2 commit support
-- **Performance Impact**: Streaming assembly is significantly slower (10-100x) but maintains functionality
+- **No Fallback**: The system returns an error immediately (no streaming assembly)
+- **Space Validation**: Pre-flight space checks prevent most failures
+- **Directory Creation**: nginx automatically creates required directory structure
+- **Simplified Architecture**: Single assembly method reduces complexity and maintenance

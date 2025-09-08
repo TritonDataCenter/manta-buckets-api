@@ -93,7 +93,7 @@ def make_temp_file(size_bytes: int) -> Tuple[str, int]:
     return path, size_bytes
 
 
-def list_parts_all(s3, bucket: str, key: str, upload_id: str) -> Dict[int, str]:
+def list_parts_all(s3, bucket: str, key: str, upload_id: str) -> Dict[int, dict]:
     parts = {}
     marker = None
     while True:
@@ -102,7 +102,10 @@ def list_parts_all(s3, bucket: str, key: str, upload_id: str) -> Dict[int, str]:
             kw["PartNumberMarker"] = marker
         resp = s3.list_parts(**kw)
         for p in resp.get("Parts", []) or []:
-            parts[p["PartNumber"]] = p["ETag"]
+            parts[p["PartNumber"]] = {
+                "ETag": p["ETag"],
+                "Size": p.get("Size", 0)
+            }
         if not resp.get("IsTruncated"):
             break
         marker = resp.get("NextPartNumberMarker")
@@ -195,9 +198,12 @@ def main():
         print(f"[info] Existing parts after interruption: {sorted(existing.keys()) or 'none'}")
         assert 1 in existing, "Part 1 missing after resume; ListParts failed?"
 
+        # Calculate bytes already uploaded from actual part sizes (not local chunk)
+        sent = sum(part_info["Size"] for part_info in existing.values())
+        print(f"[info] Resume position calculated from ListParts: {human(sent)} ({sent} bytes)")
+
         # Upload remaining parts
         with open(tmp_path, "rb") as fh:
-            sent = len(chunk)  # bytes already uploaded in part 1
             part_number = 2
             while sent < total_size:
                 to_send = min(part_size, total_size - sent)
@@ -214,12 +220,12 @@ def main():
                     UploadId=upload_id, Body=buf
                 )
                 print(f"[ok  ] Uploaded part {part_number} ({human(len(buf))}, ETag={up['ETag']})")
-                existing[part_number] = up["ETag"]
+                existing[part_number] = {"ETag": up["ETag"], "Size": len(buf)}
                 sent += len(buf)
                 part_number += 1
 
         # Complete
-        parts_list = [{"ETag": existing[pn], "PartNumber": pn} for pn in sorted(existing)]
+        parts_list = [{"ETag": existing[pn]["ETag"], "PartNumber": pn} for pn in sorted(existing)]
         s3.complete_multipart_upload(
             Bucket=args.bucket,
             Key=key,

@@ -635,9 +635,10 @@ test_multipart_upload_basic() {
             echo "$list_result"
             echo "=== END DEBUG ==="
             
-            # Extract ETag for specific part using json tool
+            # Extract ETag and Size for specific part using json tool
             part_etag=$(echo "$list_result" | json Parts | json -a -c "this.PartNumber === $part_number" ETag)
-            echo "DEBUG: part $part_number json tool result: '$part_etag'"
+            part_size=$(echo "$list_result" | json Parts | json -a -c "this.PartNumber === $part_number" Size)
+            echo "DEBUG: part $part_number json tool result: ETag='$part_etag', Size='$part_size'"
         else
             echo "DEBUG: list-parts failed with exit code $list_exit_code"
             echo "DEBUG: list-parts error: $list_result"
@@ -661,7 +662,7 @@ test_multipart_upload_basic() {
         # differences on the server side.
         log "  Part $part_number: Using list-parts ETag '$part_etag' (content MD5 format)"
         
-        uploaded_parts+=("ETag=$part_etag,PartNumber=$part_number")
+        uploaded_parts+=("ETag=$part_etag,PartNumber=$part_number,Size=$part_size")
         
         bytes_uploaded=$((bytes_uploaded + current_part_size))
         part_number=$((part_number + 1))
@@ -680,6 +681,7 @@ test_multipart_upload_basic() {
         local part_info="${uploaded_parts[$i]}"
         local etag=$(echo "$part_info" | cut -d',' -f1 | cut -d'=' -f2)
         local part_num=$(echo "$part_info" | cut -d',' -f2 | cut -d'=' -f2)
+        local part_size=$(echo "$part_info" | cut -d',' -f3 | cut -d'=' -f2)
         # Ensure ETag is properly quoted - remove any existing quotes first
         etag=$(echo "$etag" | sed 's/^"//;s/"$//')
         if [ -n "$etag" ]; then
@@ -816,10 +818,11 @@ test_multipart_upload_resume() {
         echo "$list_result"
         echo "=== END DEBUG ==="
         
-        # Extract ETag from list-parts response - simplified robust approach
+        # Extract ETag and Size from list-parts response - simplified robust approach
         # Try the most straightforward jq approach first
         part1_etag=$(echo "$list_result" | jq -r '.Parts[0].ETag' 2>/dev/null)
-        echo "DEBUG: part1 jq direct array access result: '$part1_etag'"
+        part1_size=$(echo "$list_result" | jq -r '.Parts[0].Size' 2>/dev/null)
+        echo "DEBUG: part1 jq direct array access result: ETag='$part1_etag', Size='$part1_size'"
         
         # If jq fails completely, use a robust sed approach that handles escaped quotes
         if [ -z "$part1_etag" ] || [ "$part1_etag" = "null" ]; then
@@ -882,10 +885,10 @@ test_multipart_upload_resume() {
         error "MPU resume test - ListParts missing size information (required for resume)"
     fi
     
-    # Continue with remaining parts
-    local bytes_uploaded=$part_size
+    # Continue with remaining parts - use actual size from list-parts for resume position
+    local bytes_uploaded=$part1_size
     local part_number=2
-    local uploaded_parts=("ETag=$part1_etag,PartNumber=1")
+    local uploaded_parts=("ETag=$part1_etag,PartNumber=1,Size=$part1_size")
     
     while [ $bytes_uploaded -lt $total_size ]; do
         local remaining=$((total_size - bytes_uploaded))
@@ -925,16 +928,17 @@ test_multipart_upload_resume() {
         echo "=== END DEBUG ==="
         
         if [ $list_exit_code -eq 0 ]; then
-            # Extract ETag for specific part using json tool
+            # Extract ETag and Size for specific part using json tool
             part_etag=$(echo "$list_result" | json Parts | json -a -c "this.PartNumber === $part_number" ETag)
-            echo "DEBUG: part $part_number json tool result: '$part_etag'"
+            part_size=$(echo "$list_result" | json Parts | json -a -c "this.PartNumber === $part_number" Size)
+            echo "DEBUG: part $part_number json tool result: ETag='$part_etag', Size='$part_size'"
         else
             log "  Warning: list-parts failed, using placeholder ETag"
             part_etag="placeholder-etag-$part_number"
         fi
         
         log "  Part $part_number ETag: '$part_etag'"
-        uploaded_parts+=("ETag=$part_etag,PartNumber=$part_number")
+        uploaded_parts+=("ETag=$part_etag,PartNumber=$part_number,Size=$part_size")
         
         bytes_uploaded=$((bytes_uploaded + current_part_size))
         part_number=$((part_number + 1))
@@ -953,6 +957,7 @@ test_multipart_upload_resume() {
         local part_info="${uploaded_parts[$i]}"
         local etag=$(echo "$part_info" | cut -d',' -f1 | cut -d'=' -f2)
         local part_num=$(echo "$part_info" | cut -d',' -f2 | cut -d'=' -f2)
+        local part_size=$(echo "$part_info" | cut -d',' -f3 | cut -d'=' -f2)
         # Ensure ETag is properly quoted - remove any existing quotes first
         etag=$(echo "$etag" | sed 's/^"//;s/"$//')
         if [ -n "$etag" ]; then

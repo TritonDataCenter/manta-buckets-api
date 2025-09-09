@@ -13,6 +13,7 @@ AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID:-"AKIA123456789EXAMPLE"}
 AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY:-"wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"}
 S3_ENDPOINT=${S3_ENDPOINT:-"https://localhost:8080"}
 AWS_REGION=${AWS_REGION:-"us-east-1"}
+AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION:-"us-east-1"}
 
 # Test configuration
 TEST_BUCKET="s3cmd-compat-test-$(date +%s)"
@@ -58,7 +59,6 @@ s3cmd_wrapper() {
           --host-bucket="${S3_ENDPOINT#https://}" \
           --access_key="$AWS_ACCESS_KEY_ID" \
           --secret_key="$AWS_SECRET_ACCESS_KEY" \
-          --no-ssl \
           --no-check-certificate \
           --no-mime-magic \
           --no-preserve \
@@ -72,7 +72,7 @@ setup() {
     # Export AWS credentials
     export AWS_ACCESS_KEY_ID="$AWS_ACCESS_KEY_ID"
     export AWS_SECRET_ACCESS_KEY="$AWS_SECRET_ACCESS_KEY"
-    export AWS_DEFAULT_REGION="$AWS_REGION"
+    export AWS_DEFAULT_REGION="$AWS_DEFAULT_REGION"
     
     # Create temp directory
     mkdir -p "$TEMP_DIR"
@@ -216,13 +216,11 @@ test_s3cmd_delete_object() {
     if [ $exit_code -eq 0 ]; then
         success "S3cmd delete object - $TEST_OBJECT deleted successfully"
         
-        # Verify object is gone
         set +e
-        s3cmd_wrapper ls "s3://$TEST_BUCKET/$TEST_OBJECT" 2>/dev/null
-        local verify_exit_code=$?
+        local ls_output=$(s3cmd_wrapper ls "s3://$TEST_BUCKET/$TEST_OBJECT" 2>/dev/null)
         set -e
         
-        if [ $verify_exit_code -ne 0 ]; then
+        if [ -z "$ls_output" ] || ! echo "$ls_output" | grep -q "$TEST_OBJECT"; then
             success "S3cmd delete object - Object no longer exists after deletion"
         else
             error "S3cmd delete object - Object still exists after deletion"
@@ -328,11 +326,11 @@ test_s3cmd_multipart_upload_resume() {
     dd if=/dev/urandom of="$mpu_object" bs=1024 count=$((total_size / 1024)) 2>/dev/null
     local original_md5=$(md5sum "$mpu_object" | cut -d' ' -f1)
     
-    # Start upload with s3cmd (simulate interruption by using timeout)
+    # Start upload with s3cmd (simulate interruption by using background process)
     log "  Starting upload with s3cmd..."
     set +e
-    # Try a normal upload but interrupt it after a short time
-    timeout 3 s3cmd_wrapper put "$mpu_object" "s3://$mpu_bucket/" --multipart-chunk-size-mb=5 2>&1 &
+    # Start upload in background and kill it after short time to simulate interruption
+    s3cmd_wrapper put "$mpu_object" "s3://$mpu_bucket/" --multipart-chunk-size-mb=5 2>&1 &
     local upload_pid=$!
     sleep 2
     kill $upload_pid 2>/dev/null || true

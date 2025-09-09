@@ -155,7 +155,8 @@ function createMockRouteRequest(method, path, query) {
 helper.test('S3 route parsing - list buckets', function (t) {
     var route = parseS3Route('GET', '/', {});
 
-    t.equal(route.operation, 'ListBuckets', 'should detect list buckets operation');
+    t.equal(route.operation, 'ListBuckets',
+            'should detect list buckets operation');
     t.equal(route.bucket, null, 'should have no bucket for root');
     t.equal(route.object, null, 'should have no object for root');
     t.end();
@@ -192,9 +193,12 @@ helper.test('S3 route parsing - bucket operations', function (t) {
     testCases.forEach(function (testCase) {
         var route = parseS3Route(testCase.method, testCase.path, {});
 
-        t.equal(route.operation, testCase.expected, 'should detect ' + testCase.description);
-        t.equal(route.bucket, 'my-bucket', 'should extract bucket name for ' + testCase.description);
-        t.equal(route.object, null, 'should have no object for ' + testCase.description);
+        t.equal(route.operation, testCase.expected,
+                'should detect ' + testCase.description);
+        t.equal(route.bucket, 'my-bucket',
+                'should extract bucket name for ' + testCase.description);
+        t.equal(route.object, null,
+                'should have no object for ' + testCase.description);
     });
 
     t.end();
@@ -231,9 +235,12 @@ helper.test('S3 route parsing - object operations', function (t) {
     testCases.forEach(function (testCase) {
         var route = parseS3Route(testCase.method, testCase.path, {});
 
-        t.equal(route.operation, testCase.expected, 'should detect ' + testCase.description);
-        t.equal(route.bucket, 'my-bucket', 'should extract bucket name for ' + testCase.description);
-        t.equal(route.object, 'my-object.txt', 'should extract object name for ' + testCase.description);
+        t.equal(route.operation, testCase.expected,
+                'should detect ' + testCase.description);
+        t.equal(route.bucket, 'my-bucket',
+                'should extract bucket name for ' + testCase.description);
+        t.equal(route.object, 'my-object.txt',
+                'should extract object name for ' + testCase.description);
     });
 
     t.end();
@@ -279,18 +286,26 @@ helper.test('S3 route parsing - multipart upload operations', function (t) {
     ];
 
     testCases.forEach(function (testCase) {
-        var route = parseS3Route(testCase.method, testCase.path, testCase.query);
+        var route = parseS3Route(testCase.method, testCase.path,
+                                  testCase.query);
 
-        t.equal(route.operation, testCase.expected, 'should detect ' + testCase.description);
-        t.equal(route.bucket, 'my-bucket', 'should extract bucket name for ' + testCase.description);
-        t.equal(route.object, 'large-file.bin', 'should extract object name for ' + testCase.description);
-        t.ok(route.multipart, 'should mark as multipart operation for ' + testCase.description);
+        t.equal(route.operation, testCase.expected,
+                'should detect ' + testCase.description);
+        t.equal(route.bucket, 'my-bucket',
+                'should extract bucket name for ' + testCase.description);
+        t.equal(route.object, 'large-file.bin',
+                'should extract object name for ' + testCase.description);
+        t.ok(route.multipart,
+             'should mark as multipart operation for ' + testCase.description);
 
         if (testCase.query.uploadId) {
-            t.equal(route.uploadId, testCase.query.uploadId, 'should extract upload ID for ' + testCase.description);
+            t.equal(route.uploadId, testCase.query.uploadId,
+                    'should extract upload ID for ' + testCase.description);
         }
         if (testCase.query.partNumber) {
-            t.equal(route.partNumber, parseInt(testCase.query.partNumber, 10), 'should extract part number for ' + testCase.description);
+            t.equal(route.partNumber,
+                    parseInt(testCase.query.partNumber, 10),
+                    'should extract part number for ' + testCase.description);
         }
     });
 
@@ -324,9 +339,14 @@ helper.test('S3 route parsing - nested object paths', function (t) {
     testCases.forEach(function (testCase) {
         var route = parseS3Route('GET', testCase.path, {});
 
-        t.equal(route.bucket, 'my-bucket', 'should extract bucket name for ' + testCase.description);
-        t.equal(route.object, testCase.expectedObject, 'should extract nested object path for ' + testCase.description);
-        t.equal(route.operation, 'GetBucketObject', 'should detect get object operation for ' + testCase.description);
+        t.equal(route.bucket, 'my-bucket',
+                'should extract bucket name for ' + testCase.description);
+        t.equal(route.object, testCase.expectedObject,
+                'should extract nested object path for ' +
+                testCase.description);
+        t.equal(route.operation, 'GetBucketObject',
+                'should detect get object operation for ' +
+                testCase.description);
     });
 
     t.end();
@@ -364,8 +384,11 @@ helper.test('S3 route parsing - special characters in paths', function (t) {
     testCases.forEach(function (testCase) {
         var route = parseS3Route('GET', testCase.path, {});
 
-        t.equal(route.bucket, 'my-bucket', 'should extract bucket name for ' + testCase.description);
-        t.equal(route.object, testCase.expectedObject, 'should preserve special characters for ' + testCase.description);
+        t.equal(route.bucket, 'my-bucket',
+                'should extract bucket name for ' + testCase.description);
+        t.equal(route.object, testCase.expectedObject,
+                'should preserve special characters for ' +
+                testCase.description);
     });
 
     t.end();
@@ -391,15 +414,17 @@ helper.test('S3 route parsing - query parameter handling', function (t) {
         {
             query: { versioning: '' },
             description: 'versioning parameter',
-            operation: 'ListBucketObjects' // Would be different in real implementation
+            operation: 'ListBucketObjects'
         }
     ];
 
     testCases.forEach(function (testCase) {
         var route = parseS3Route('GET', '/my-bucket', testCase.query);
 
-        t.equal(route.operation, testCase.operation, 'should detect correct operation for ' + testCase.description);
-        t.equal(route.bucket, 'my-bucket', 'should extract bucket name for ' + testCase.description);
+        t.equal(route.operation, testCase.operation,
+                'should detect correct operation for ' + testCase.description);
+        t.equal(route.bucket, 'my-bucket',
+                'should extract bucket name for ' + testCase.description);
     });
 
     t.end();
@@ -448,22 +473,27 @@ helper.test('S3 route parsing - edge cases', function (t) {
     ];
 
     testCases.forEach(function (testCase) {
-        var route = parseS3Route(testCase.method, testCase.path, testCase.query);
+        var route = parseS3Route(testCase.method, testCase.path,
+                                  testCase.query);
 
-        t.equal(route.operation, testCase.expectedOperation, 'should detect operation for ' + testCase.description);
+        t.equal(route.operation, testCase.expectedOperation,
+                'should detect operation for ' + testCase.description);
 
         if (testCase.expectedBucket !== undefined) {
-            t.equal(route.bucket, testCase.expectedBucket, 'should extract bucket for ' + testCase.description);
+            t.equal(route.bucket, testCase.expectedBucket,
+                    'should extract bucket for ' + testCase.description);
         }
         if (testCase.expectedObject !== undefined) {
-            t.equal(route.object, testCase.expectedObject, 'should extract object for ' + testCase.description);
+            t.equal(route.object, testCase.expectedObject,
+                    'should extract object for ' + testCase.description);
         }
     });
 
     t.end();
 });
 
-helper.test('S3 route parsing - multipart upload query variations', function (t) {
+helper.test('S3 route parsing - multipart upload query variations',
+            function (t) {
     var testCases = [
         {
             query: { uploads: '' },
@@ -501,21 +531,28 @@ helper.test('S3 route parsing - multipart upload query variations', function (t)
 
     testCases.forEach(function (testCase) {
         var method = testCase.query.partNumber ? 'PUT' :
-                    testCase.expectedOperation === 'InitiateMultipartUpload' ? 'POST' : 'GET';
+                    testCase.expectedOperation === 'InitiateMultipartUpload' ?
+            'POST' : 'GET';
         var route = parseS3Route(method, '/bucket/object', testCase.query);
 
         if (testCase.expectedOperation) {
-            t.equal(route.operation, testCase.expectedOperation, 'should detect operation for ' + testCase.description);
+            t.equal(route.operation,
+                    testCase.expectedOperation, 'should detect operation for ' +
+                    testCase.description);
         }
         if (testCase.expectedPartNumber) {
-            t.equal(route.partNumber, testCase.expectedPartNumber, 'should parse part number for ' + testCase.description);
+            t.equal(route.partNumber,
+                    testCase.expectedPartNumber,
+                    'should parse part number for ' + testCase.description);
         }
         if (testCase.expectedUploadId) {
-            t.equal(route.uploadId, testCase.expectedUploadId, 'should extract upload ID for ' + testCase.description);
+            t.equal(route.uploadId, testCase.expectedUploadId,
+                    'should extract upload ID for ' + testCase.description);
         }
 
         if (route.multipart) {
-            t.ok(route.multipart, 'should mark as multipart for ' + testCase.description);
+            t.ok(route.multipart, 'should mark as multipart for ' +
+                 testCase.description);
         }
     });
 

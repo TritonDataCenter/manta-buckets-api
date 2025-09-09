@@ -88,8 +88,13 @@ function createMockRequest(options) {
 // Mock response object
 function createMockResponse() {
     return {
-        setHeader: function (name, value) { this._headers = this._headers || {}; this._headers[name] = value; },
-        getHeader: function (name) { return (this._headers && this._headers[name]); },
+        setHeader: function (name, value) {
+            this._headers = this._headers || {};
+            this._headers[name] = value;
+        },
+        getHeader: function (name) {
+            return (this._headers && this._headers[name]);
+        },
         writeHead: function (statusCode) { this._statusCode = statusCode; },
         end: function (data) { this._data = data; }
     };
@@ -107,7 +112,8 @@ helper.test('Upload ID generation should create valid UUID', function (t) {
     t.notEqual(uploadId1, uploadId2, 'should generate unique IDs');
 
     // Verify UUID format
-    var uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    var uuidRegex =
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
     t.ok(uuidRegex.test(uploadId1), 'should generate valid UUID format');
     t.ok(uuidRegex.test(uploadId2), 'should generate valid UUID format');
 
@@ -123,18 +129,21 @@ helper.test('Part size validation - minimum 5MB enforcement', function (t) {
     function validatePartSize(size, isLastPart) {
         var minSize = 5 * 1024 * 1024; // 5MB
         if (!isLastPart && size < minSize) {
-            return new Error('EntityTooSmall');
+            return (new Error('EntityTooSmall'));
         }
-        return null;
+        return (null);
     }
 
     t.equal(validatePartSize(validSize, false), null, 'should accept 5MB part');
-    t.equal(validatePartSize(largeSize, false), null, 'should accept large part');
-    t.equal(validatePartSize(invalidSize, true), null, 'should accept small last part');
+    t.equal(validatePartSize(largeSize, false), null,
+            'should accept large part');
+    t.equal(validatePartSize(invalidSize, true), null,
+            'should accept small last part');
 
     var error = validatePartSize(invalidSize, false);
     t.ok(error, 'should reject small non-final part');
-    t.equal(error.message, 'EntityTooSmall', 'should return EntityTooSmall error');
+    t.equal(error.message, 'EntityTooSmall',
+            'should return EntityTooSmall error');
 
     t.end();
 });
@@ -146,7 +155,8 @@ helper.test('ETag validation - multiple format support', function (t) {
     var expectedUUIDETag = partMeta.id;
     var quotedETag = '"' + expectedHexETag + '"';
 
-    // Test ETag validation logic (simulating the fixed logic from s3-multipart.js)
+    // Test ETag validation logic
+    // (simulating the fixed logic from s3-multipart.js)
     function validateETag(expectedETag, partMetadata, request) {
         var storedHexMD5 = partMetadata.hexMD5;
         var storedUUID = partMetadata.id;
@@ -164,14 +174,16 @@ helper.test('ETag validation - multiple format support', function (t) {
             matchedFormat = 'uuid';
         }
         // 3. Try base64 MD5 comparison
-        else if (partMetadata.contentMD5 && expectedETag === partMetadata.contentMD5) {
+        else if (partMetadata.contentMD5 &&
+                 expectedETag === partMetadata.contentMD5) {
             etagMatches = true;
             matchedFormat = 'base64-md5';
         }
         // 4. Try removing quotes from expectedETag
         else if (expectedETag && expectedETag.length > 2) {
             var unquotedETag = expectedETag.replace(/^"|"$/g, '');
-            if (unquotedETag !== expectedETag && unquotedETag === storedHexMD5) {
+            if (unquotedETag !== expectedETag &&
+                unquotedETag === storedHexMD5) {
                 etagMatches = true;
                 matchedFormat = 'unquoted-hex-md5';
             }
@@ -200,12 +212,14 @@ helper.test('ETag validation - multiple format support', function (t) {
     // Test quoted ETag (should work by unquoting)
     var result4 = validateETag(quotedETag, partMeta, testReq);
     t.ok(result4.matches, 'should match quoted ETag');
-    t.equal(result4.format, 'unquoted-hex-md5', 'should identify unquoted-hex-md5 format');
+    t.equal(result4.format, 'unquoted-hex-md5',
+            'should identify unquoted-hex-md5 format');
 
     // Test invalid ETag (should fail)
     var result5 = validateETag('invalid-etag-123', partMeta, testReq);
     t.notOk(result5.matches, 'should not match invalid ETag');
-    t.equal(result5.format, null, 'should not identify format for invalid ETag');
+    t.equal(result5.format, null,
+            'should not identify format for invalid ETag');
 
     t.end();
 });
@@ -217,8 +231,7 @@ helper.test('Durability level extraction and validation', function (t) {
             req.header('durability-level') ||
             req.header('x-durability-level') ||
             '2', // default
-            10
-        );
+            10);
 
         var maxObjectCopies = req.config.maxObjectCopies || 3;
         var minCopies = 1;
@@ -253,13 +266,15 @@ helper.test('Durability level extraction and validation', function (t) {
     // Test invalid durability level (too high)
     var req4 = createMockRequest({ headers: { 'durability-level': '5' } });
     var result4 = extractDurabilityLevel(req4);
-    t.equal(result4.error, 'InvalidDurabilityLevelError', 'should error for too high level');
+    t.equal(result4.error, 'InvalidDurabilityLevelError',
+            'should error for too high level');
     t.equal(result4.max, 3, 'should indicate maximum allowed');
 
     // Test invalid durability level (too low)
     var req5 = createMockRequest({ headers: { 'durability-level': '0' } });
     var result5 = extractDurabilityLevel(req5);
-    t.equal(result5.error, 'InvalidDurabilityLevelError', 'should error for too low level');
+    t.equal(result5.error, 'InvalidDurabilityLevelError',
+            'should error for too low level');
     t.equal(result5.min, 1, 'should indicate minimum allowed');
 
     t.end();
@@ -292,7 +307,8 @@ helper.test('MultiError unwrapping logic', function (t) {
     };
     var result2 = unwrapMultiError(multiError1);
     t.equal(result2, innerError, 'should unwrap first error from errors array');
-    t.equal(result2.restCode, 'EntityTooSmall', 'should preserve error properties');
+    t.equal(result2.restCode, 'EntityTooSmall',
+            'should preserve error properties');
 
     // Test MultiError with _errors array
     var multiError2 = {
@@ -301,7 +317,8 @@ helper.test('MultiError unwrapping logic', function (t) {
         message: 'Multiple errors occurred'
     };
     var result3 = unwrapMultiError(multiError2);
-    t.equal(result3, innerError, 'should unwrap first error from _errors array');
+    t.equal(result3, innerError,
+            'should unwrap first error from _errors array');
 
     // Test MultiError with empty arrays (should pass through)
     var multiError3 = {
@@ -310,7 +327,8 @@ helper.test('MultiError unwrapping logic', function (t) {
         message: 'No errors'
     };
     var result4 = unwrapMultiError(multiError3);
-    t.equal(result4, multiError3, 'should pass through MultiError with empty errors');
+    t.equal(result4, multiError3,
+            'should pass through MultiError with empty errors');
 
     t.end();
 });
@@ -325,12 +343,16 @@ helper.test('Upload record creation and retrieval', function (t) {
     t.ok(uploadRecord.objectPath, 'should have object path');
     t.equal(uploadRecord.state, 'created', 'should have created state');
     t.ok(uploadRecord.creationTimeMs, 'should have creation timestamp');
-    t.equal(typeof (uploadRecord.creationTimeMs), 'number', 'creation time should be number');
+    t.equal(typeof (uploadRecord.creationTimeMs), 'number',
+            'creation time should be number');
 
     // Test headers preservation
     t.ok(uploadRecord.headers, 'should have headers object');
-    t.equal(uploadRecord.headers['durability-level'], '2', 'should preserve durability header');
-    t.equal(uploadRecord.headers['content-type'], 'application/octet-stream', 'should preserve content-type');
+    t.equal(uploadRecord.headers['durability-level'], '2',
+            'should preserve durability header');
+    t.equal(uploadRecord.headers['content-type'],
+            'application/octet-stream',
+            'should preserve content-type');
 
     t.end();
 });
@@ -350,10 +372,12 @@ helper.test('Part metadata structure and properties', function (t) {
     // Verify MD5 consistency
     var expectedBase64 = partMeta.contentMD5;
     var expectedHex = Buffer.from(expectedBase64, 'base64').toString('hex');
-    t.equal(partMeta.hexMD5, expectedHex, 'hex MD5 should match base64 conversion');
+    t.equal(partMeta.hexMD5, expectedHex,
+            'hex MD5 should match base64 conversion');
 
     // Verify UUID format
-    var uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    var uuidRegex =
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
     t.ok(uuidRegex.test(partMeta.id), 'should have valid UUID');
 
     t.end();
@@ -387,7 +411,8 @@ helper.test('S3 multipart upload request parsing', function (t) {
     });
     req1.method = 'POST';
     var op1 = parseMultipartOperation(req1);
-    t.equal(op1, 'InitiateMultipartUpload', 'should detect initiate multipart upload');
+    t.equal(op1, 'InitiateMultipartUpload',
+            'should detect initiate multipart upload');
 
     // Test upload part
     var req2 = createMockRequest({
@@ -403,7 +428,8 @@ helper.test('S3 multipart upload request parsing', function (t) {
     });
     req3.method = 'POST';
     var op3 = parseMultipartOperation(req3);
-    t.equal(op3, 'CompleteMultipartUpload', 'should detect complete multipart upload');
+    t.equal(op3, 'CompleteMultipartUpload',
+            'should detect complete multipart upload');
 
     // Test abort multipart upload
     var req4 = createMockRequest({
@@ -411,7 +437,8 @@ helper.test('S3 multipart upload request parsing', function (t) {
     });
     req4.method = 'DELETE';
     var op4 = parseMultipartOperation(req4);
-    t.equal(op4, 'AbortMultipartUpload', 'should detect abort multipart upload');
+    t.equal(op4, 'AbortMultipartUpload',
+            'should detect abort multipart upload');
 
     // Test list parts
     var req5 = createMockRequest({
@@ -438,7 +465,8 @@ helper.test('Part validation for complete multipart upload', function (t) {
         for (var j = 0; j < partsFromXML.length; j++) {
             var expectedPartNumber = j + 1;
             if (partsFromXML[j].partNumber !== expectedPartNumber) {
-                return ({ error: 'InvalidPartError', missing: expectedPartNumber });
+                return ({ error: 'InvalidPartError',
+                    missing: expectedPartNumber });
             }
         }
 
@@ -461,7 +489,8 @@ helper.test('Part validation for complete multipart upload', function (t) {
         { partNumber: 2, etag: 'etag2' }
     ];
     var result2 = validatePartsForComplete(invalidOrderParts);
-    t.equal(result2.error, 'InvalidPartOrderError', 'should detect invalid part order');
+    t.equal(result2.error, 'InvalidPartOrderError',
+            'should detect invalid part order');
 
     // Test missing parts
     var missingParts = [

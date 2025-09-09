@@ -36,7 +36,8 @@ function createMockAWSChunkedDecoder() {
                         break; // Need more data
                     }
 
-                    var chunkSizeLine = self._buffer.slice(0, crlfIndex).toString('ascii');
+                    var chunkSizeLine = self._buffer.slice(0, crlfIndex)
+                                                     .toString('ascii');
                     self._buffer = self._buffer.slice(crlfIndex + 2);
 
                     // Parse chunk size (hex) and optional signature
@@ -56,7 +57,8 @@ function createMockAWSChunkedDecoder() {
                 if (self._state === 'reading-chunk-data') {
                     var bytesNeeded = self._chunkSize - self._chunkBytesRead;
                     if (bytesNeeded > 0 && self._buffer.length > 0) {
-                        var dataToRead = Math.min(bytesNeeded, self._buffer.length);
+                        var dataToRead = Math.min(bytesNeeded,
+                                                  self._buffer.length);
                         var chunkData = self._buffer.slice(0, dataToRead);
                         self._buffer = self._buffer.slice(dataToRead);
 
@@ -121,7 +123,7 @@ function createAWSChunkedData(dataChunks) {
     // Final chunk
     chunks.push(Buffer.from('0\r\n\r\n', 'ascii'));
 
-    return Buffer.concat(chunks);
+    return (Buffer.concat(chunks));
 }
 
 ///--- AWS Chunked Decoder Tests
@@ -142,7 +144,8 @@ helper.test('AWS chunked decoder - single chunk', function (t) {
     decoder.on('end', function () {
         var finalData = Buffer.concat(outputChunks);
 
-        t.equal(totalBytes, testData.length, 'should output correct number of bytes');
+        t.equal(totalBytes, testData.length,
+                'should output correct number of bytes');
         t.ok(finalData.equals(testData), 'should output original data');
         t.end();
     });
@@ -176,8 +179,10 @@ helper.test('AWS chunked decoder - multiple chunks', function (t) {
     decoder.on('end', function () {
         var finalData = Buffer.concat(outputChunks);
 
-        t.equal(totalBytes, expectedData.length, 'should output correct total bytes');
-        t.ok(finalData.equals(expectedData), 'should reconstruct original data correctly');
+        t.equal(totalBytes, expectedData.length,
+                'should output correct total bytes');
+        t.ok(finalData.equals(expectedData),
+             'should reconstruct original data correctly');
         t.end();
     });
 
@@ -192,7 +197,9 @@ helper.test('AWS chunked decoder - multiple chunks', function (t) {
 
 helper.test('AWS chunked decoder - streaming input', function (t) {
     var decoder = createMockAWSChunkedDecoder();
-    var testData = Buffer.from('This is streaming test data for AWS chunked encoding', 'utf8');
+    var testData = Buffer.from(
+        'This is streaming test data for AWS chunked encoding',
+        'utf8');
     var chunkedData = createAWSChunkedData([testData]);
 
     var outputChunks = [];
@@ -207,7 +214,8 @@ helper.test('AWS chunked decoder - streaming input', function (t) {
         var reconstructed = Buffer.concat(outputChunks);
 
         t.equal(bytesReceived, testData.length, 'should receive all bytes');
-        t.ok(reconstructed.equals(testData), 'should reconstruct data correctly');
+        t.ok(reconstructed.equals(testData),
+             'should reconstruct data correctly');
         t.end();
     });
 
@@ -265,12 +273,17 @@ helper.test('AWS chunked decoder - large data integrity', function (t) {
     decoder.on('end', function () {
         var reconstructed = Buffer.concat(outputChunks);
         var outputMD5 = md5Hash.digest('hex');
-        var expectedMD5 = crypto.createHash('md5').update(testData).digest('hex');
+        var expectedMD5 = crypto.createHash('md5')
+                                 .update(testData)
+                                 .digest('hex');
 
         t.equal(totalBytesReceived, partSize, 'should receive all bytes');
-        t.equal(reconstructed.length, partSize, 'reconstructed data should have correct length');
-        t.equal(outputMD5, expectedMD5, 'MD5 hashes should match - no data corruption');
-        t.ok(reconstructed.equals(testData), 'reconstructed data should match original');
+        t.equal(reconstructed.length, partSize,
+                'reconstructed data should have correct length');
+        t.equal(outputMD5, expectedMD5,
+                'MD5 hashes should match - no data corruption');
+        t.ok(reconstructed.equals(testData),
+             'reconstructed data should match original');
 
         t.end();
     });
@@ -300,8 +313,10 @@ helper.test('AWS chunked decoder - empty chunk handling', function (t) {
     decoder.on('end', function () {
         var reconstructed = Buffer.concat(outputChunks);
 
-        t.equal(reconstructed.length, dataChunk.length, 'should only output non-empty data');
-        t.ok(reconstructed.equals(dataChunk), 'should match non-empty chunk data');
+        t.equal(reconstructed.length, dataChunk.length,
+                'should only output non-empty data');
+        t.ok(reconstructed.equals(dataChunk),
+             'should match non-empty chunk data');
         t.end();
     });
 
@@ -314,9 +329,11 @@ helper.test('AWS chunked decoder - empty chunk handling', function (t) {
     decoder.end();
 });
 
-helper.test('AWS chunked decoder - malformed input error handling', function (t) {
+helper.test('AWS chunked decoder - malformed input error handling',
+           function (t) {
     var decoder = createMockAWSChunkedDecoder();
-    var malformedData = Buffer.from('zzz\r\nInvalid hex chunk size\r\n', 'ascii');
+    var malformedData = Buffer.from('zzz\r\nInvalid hex chunk size\r\n',
+                                    'ascii');
 
     var errorReceived = false;
 
@@ -337,7 +354,8 @@ helper.test('AWS chunked decoder - malformed input error handling', function (t)
     decoder.end();
 });
 
-helper.test('AWS chunked decoder - partial chunk boundary handling', function (t) {
+helper.test('AWS chunked decoder - partial chunk boundary handling',
+           function (t) {
     var decoder = createMockAWSChunkedDecoder();
     var testData = Buffer.from('Test data for boundary handling', 'utf8');
     var chunkedData = createAWSChunkedData([testData]);
@@ -350,7 +368,8 @@ helper.test('AWS chunked decoder - partial chunk boundary handling', function (t
 
     decoder.on('end', function () {
         var reconstructed = Buffer.concat(outputChunks);
-        t.ok(reconstructed.equals(testData), 'should handle partial boundaries correctly');
+        t.ok(reconstructed.equals(testData),
+             'should handle partial boundaries correctly');
         t.end();
     });
 
@@ -397,9 +416,11 @@ helper.test('AWS chunked decoder - memory efficiency test', function (t) {
     decoder.on('end', function () {
         var reconstructed = Buffer.concat(outputChunks);
 
-        t.equal(reconstructed.length, expectedData.length, 'should process all data');
+        t.equal(reconstructed.length, expectedData.length,
+                'should process all data');
         t.ok(chunksReceived > 0, 'should receive data in chunks');
-        t.ok(reconstructed.equals(expectedData), 'should reconstruct data correctly');
+        t.ok(reconstructed.equals(expectedData),
+             'should reconstruct data correctly');
 
         // Check internal buffer isn't holding onto too much data
         t.ok(decoder._buffer.length === 0, 'internal buffer should be cleared');
@@ -420,7 +441,8 @@ helper.test('AWS chunked decoder - state management', function (t) {
     var decoder = createMockAWSChunkedDecoder();
 
     // Test state transitions through the decoding process
-    t.equal(decoder._state, 'reading-chunk-size', 'should start in reading-chunk-size state');
+    t.equal(decoder._state, 'reading-chunk-size',
+            'should start in reading-chunk-size state');
     t.equal(decoder._chunkSize, -1, 'should initialize chunk size to -1');
     t.equal(decoder._chunkBytesRead, 0, 'should initialize bytes read to 0');
     t.equal(decoder._totalBytesRead, 0, 'should initialize total bytes to 0');
@@ -429,7 +451,8 @@ helper.test('AWS chunked decoder - state management', function (t) {
     var chunkedData = createAWSChunkedData([testData]);
 
     decoder.on('end', function () {
-        t.equal(decoder._totalBytesRead, testData.length, 'should track total bytes correctly');
+        t.equal(decoder._totalBytesRead, testData.length,
+                'should track total bytes correctly');
         t.end();
     });
 

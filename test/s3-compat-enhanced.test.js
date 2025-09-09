@@ -32,7 +32,9 @@ function createEnhancedMockRequest(options) {
         query: options.query || {},
         headers: options.headers || {},
         log: helper.createLogger('test'),
-        getId: function () { return options.requestId || 'test-req-' + Date.now(); },
+        getId: function () {
+            return (options.requestId || 'test-req-' + Date.now());
+        },
         s3Request: options.s3Request || null,
         isS3Request: options.isS3Request || false
     };
@@ -48,7 +50,7 @@ function createEnhancedMockResponse() {
             headers[key.toLowerCase()] = value;
         },
         getHeader: function (key) {
-            return headers[key.toLowerCase()];
+            return (headers[key.toLowerCase()]);
         },
         writeHead: function (statusCode, reasonPhrase) {
             this.statusCode = statusCode;
@@ -82,11 +84,15 @@ helper.test('MultiError unwrapping in error conversion', function (t) {
     var s3ErrorXML = s3Compat.convertErrorToS3(multiError, s3Request);
 
     t.ok(s3ErrorXML, 'should generate S3 error XML');
-    t.ok(s3ErrorXML.indexOf('<?xml version="1.0"') === 0, 'should start with XML declaration');
+    t.ok(s3ErrorXML.indexOf('<?xml version="1.0"') === 0,
+         'should start with XML declaration');
     t.ok(s3ErrorXML.indexOf('<Error>') > 0, 'should contain Error element');
-    t.ok(s3ErrorXML.indexOf('<Code>EntityTooSmall</Code>') > 0, 'should contain unwrapped error code');
-    t.ok(s3ErrorXML.indexOf('<Message>Part too small</Message>') > 0, 'should contain error message');
-    t.ok(s3ErrorXML.indexOf('<BucketName>test-bucket</BucketName>') > 0, 'should contain bucket name');
+    t.ok(s3ErrorXML.indexOf('<Code>EntityTooSmall</Code>') > 0,
+         'should contain unwrapped error code');
+    t.ok(s3ErrorXML.indexOf('<Message>Part too small</Message>') > 0,
+         'should contain error message');
+    t.ok(s3ErrorXML.indexOf('<BucketName>test-bucket</BucketName>') > 0,
+         'should contain bucket name');
 
     t.end();
 });
@@ -95,37 +101,64 @@ helper.test('S3 error conversion with various error types', function (t) {
     var testCases = [
         {
             name: 'NoSuchBucket error',
-            error: { message: 'Bucket not found', restCode: 'NoSuchBucket', statusCode: 404 },
+            error: {
+                message: 'Bucket not found',
+                restCode: 'NoSuchBucket',
+                statusCode: 404
+            },
             s3Request: { bucket: 'missing-bucket' },
             expectedCode: 'NoSuchBucket'
         },
         {
             name: 'NoSuchKey error',
-            error: { message: 'Object not found', restCode: 'NoSuchKey', statusCode: 404 },
+            error: {
+                message: 'Object not found',
+                restCode: 'NoSuchKey',
+                statusCode: 404
+            },
             s3Request: { bucket: 'test-bucket', object: 'missing-object' },
             expectedCode: 'NoSuchKey'
         },
         {
             name: 'InvalidPartOrderError',
-            error: { message: 'Part order invalid', restCode: 'InvalidPartOrderError', statusCode: 400 },
-            s3Request: { bucket: 'test-bucket', object: 'test-object', uploadId: 'test-123' },
+            error: {
+                message: 'Part order invalid',
+                restCode: 'InvalidPartOrderError',
+                statusCode: 400
+            },
+            s3Request: {
+                bucket: 'test-bucket',
+                object: 'test-object',
+                uploadId: 'test-123'
+            },
             expectedCode: 'InvalidPartOrderError'
         },
         {
             name: 'EntityTooSmall error',
-            error: { message: 'Part size too small', restCode: 'EntityTooSmall', statusCode: 400 },
-            s3Request: { bucket: 'test-bucket', object: 'test-object', partNumber: 1 },
+            error: {
+                message: 'Part size too small',
+                restCode: 'EntityTooSmall',
+                statusCode: 400
+            },
+            s3Request: {
+                bucket: 'test-bucket',
+                object: 'test-object',
+                partNumber: 1
+            },
             expectedCode: 'EntityTooSmall'
         }
     ];
 
     testCases.forEach(function (testCase) {
-        var s3ErrorXML = s3Compat.convertErrorToS3(testCase.error, testCase.s3Request);
+        var s3ErrorXML = s3Compat.convertErrorToS3(testCase.error,
+                                                   testCase.s3Request);
 
         t.ok(s3ErrorXML, testCase.name + ' should generate XML');
-        t.ok(s3ErrorXML.indexOf('<Code>' + testCase.expectedCode + '</Code>') > 0,
+        t.ok(s3ErrorXML.indexOf('<Code>' + testCase.expectedCode +
+                                '</Code>') > 0,
              testCase.name + ' should contain correct error code');
-        t.ok(s3ErrorXML.indexOf('<Message>' + testCase.error.message + '</Message>') > 0,
+        t.ok(s3ErrorXML.indexOf('<Message>' + testCase.error.message +
+                                '</Message>') > 0,
              testCase.name + ' should contain error message');
     });
 
@@ -133,7 +166,8 @@ helper.test('S3 error conversion with various error types', function (t) {
 });
 
 helper.test('Empty response operations handling', function (t) {
-    // Test operations that should return empty responses (like AbortMultipartUpload)
+    // Test operations that should return empty responses
+    // (like AbortMultipartUpload)
     var emptyResponseOperations = [
         'AbortMultipartUpload',
         'DeleteObject',
@@ -147,9 +181,13 @@ helper.test('Empty response operations handling', function (t) {
 
         // This should not throw an error about invalid XML
         try {
-            var result = s3Compat.convertMantaToS3Response(emptyData, operation, s3Request);
-            // For empty response operations, we expect either empty string or simple XML
-            t.ok(typeof (result) === 'string', operation + ' should return string response');
+            var result = s3Compat.convertMantaToS3Response(emptyData,
+                                                           operation,
+                                                           s3Request);
+            // For empty response operations, we expect either empty string
+            // or simple XML
+            t.ok(typeof (result) === 'string',
+                 operation + ' should return string response');
         } catch (err) {
             t.fail(operation + ' should not throw error: ' + err.message);
         }
@@ -197,28 +235,43 @@ helper.test('S3 header translation with edge cases', function (t) {
     t.ok(nextCalled, 'should call next');
 
     // Check metadata header translation
-    t.equal(req.headers['m-user-id'], 'user123', 'should translate x-amz-meta-user-id');
-    t.equal(req.headers['m-document-type'], 'pdf', 'should translate x-amz-meta-document-type');
-    t.equal(req.headers['m-version'], '1.0', 'should translate x-amz-meta-version');
-    t.equal(req.headers['m-file-name'], 'my file.pdf', 'should preserve special characters');
-    t.equal(req.headers['m-description'], 'A test file with special chars: !@#$%',
-           'should preserve special characters in description');
+    t.equal(req.headers['m-user-id'], 'user123',
+            'should translate x-amz-meta-user-id');
+    t.equal(req.headers['m-document-type'], 'pdf',
+            'should translate x-amz-meta-document-type');
+    t.equal(req.headers['m-version'], '1.0',
+            'should translate x-amz-meta-version');
+    t.equal(req.headers['m-file-name'], 'my file.pdf',
+            'should preserve special characters');
+    t.equal(req.headers['m-description'],
+            'A test file with special chars: !@#$%',
+            'should preserve special characters in description');
 
     // Check case normalization
-    t.equal(req.headers['m-upper'], 'UPPERCASE', 'should handle uppercase headers');
-    t.equal(req.headers['m-mixed'], 'MixedCase', 'should handle mixed case headers');
+    t.equal(req.headers['m-upper'], 'UPPERCASE',
+            'should handle uppercase headers');
+    t.equal(req.headers['m-mixed'], 'MixedCase',
+            'should handle mixed case headers');
 
     // Check non-metadata headers are preserved
-    t.equal(req.headers['content-type'], 'application/pdf', 'should preserve content-type');
-    t.equal(req.headers['content-length'], '1024', 'should preserve content-length');
-    t.equal(req.headers['authorization'], 'AWS test:signature', 'should preserve authorization');
-    t.equal(req.headers['x-amz-date'], '20250101T000000Z', 'should preserve x-amz-date');
-    t.equal(req.headers['x-amz-content-sha256'], 'abc123', 'should preserve x-amz-content-sha256');
+    t.equal(req.headers['content-type'], 'application/pdf',
+            'should preserve content-type');
+    t.equal(req.headers['content-length'], '1024',
+            'should preserve content-length');
+    t.equal(req.headers['authorization'], 'AWS test:signature',
+            'should preserve authorization');
+    t.equal(req.headers['x-amz-date'], '20250101T000000Z',
+            'should preserve x-amz-date');
+    t.equal(req.headers['x-amz-content-sha256'], 'abc123',
+            'should preserve x-amz-content-sha256');
 
     // Check original metadata headers are removed
-    t.notOk(req.headers['x-amz-meta-user-id'], 'should remove original x-amz-meta-user-id');
-    t.notOk(req.headers['x-amz-meta-document-type'], 'should remove original x-amz-meta-document-type');
-    t.notOk(req.headers['X-Amz-Meta-UPPER'], 'should remove original X-Amz-Meta-UPPER');
+    t.notOk(req.headers['x-amz-meta-user-id'],
+            'should remove original x-amz-meta-user-id');
+    t.notOk(req.headers['x-amz-meta-document-type'],
+            'should remove original x-amz-meta-document-type');
+    t.notOk(req.headers['X-Amz-Meta-UPPER'],
+            'should remove original X-Amz-Meta-UPPER');
 
     t.end();
 });
@@ -293,7 +346,10 @@ helper.test('Complex S3 request parsing scenarios', function (t) {
             name: 'Object with query parameters',
             method: 'GET',
             path: '/my-bucket/file.txt',
-            query: { 'response-content-type': 'text/plain', 'response-content-disposition': 'attachment' },
+            query: {
+                'response-content-type': 'text/plain',
+                'response-content-disposition': 'attachment'
+            },
             expected: {
                 isS3Request: true,
                 operation: 'GetBucketObject',
@@ -337,43 +393,70 @@ helper.test('Complex S3 request parsing scenarios', function (t) {
 helper.test('S3 response XML generation edge cases', function (t) {
     // Test ListBuckets with empty bucket list
     var emptyBuckets = [];
-    var listBucketsXML = s3Compat.convertMantaToS3Response(emptyBuckets, 'ListBuckets', {});
-    t.ok(listBucketsXML.indexOf('<Buckets></Buckets>') > 0, 'should handle empty bucket list');
+    var listBucketsXML = s3Compat.convertMantaToS3Response(emptyBuckets,
+                                                           'ListBuckets',
+                                                           {});
+    t.ok(listBucketsXML.indexOf('<Buckets></Buckets>') > 0,
+         'should handle empty bucket list');
 
     // Test ListBucketObjects with empty object list
     var emptyObjects = [];
-    var listObjectsXML = s3Compat.convertMantaToS3Response(emptyObjects, 'ListBucketObjects', {
+    var listObjectsXML = s3Compat.convertMantaToS3Response(emptyObjects,
+                                                           'ListBucketObjects',
+                                                           {
         bucket: 'empty-bucket'
     });
-    t.ok(listObjectsXML.indexOf('<Name>empty-bucket</Name>') > 0, 'should include bucket name');
-    t.ok(listObjectsXML.indexOf('<Contents>') < 0, 'should not include empty Contents elements');
+    t.ok(listObjectsXML.indexOf('<Name>empty-bucket</Name>') > 0,
+         'should include bucket name');
+    t.ok(listObjectsXML.indexOf('<Contents>') < 0,
+         'should not include empty Contents elements');
 
     // Test InitiateMultipartUpload response
     var uploadData = { uploadId: 'test-upload-123' };
-    var initiateXML = s3Compat.convertMantaToS3Response(uploadData, 'InitiateMultipartUpload', {
+    var initiateXML = s3Compat.convertMantaToS3Response(uploadData,
+                   'InitiateMultipartUpload', {
         bucket: 'test-bucket',
         object: 'test-object.bin'
     });
-    t.ok(initiateXML.indexOf('<UploadId>test-upload-123</UploadId>') > 0, 'should include upload ID');
-    t.ok(initiateXML.indexOf('<Bucket>test-bucket</Bucket>') > 0, 'should include bucket name');
-    t.ok(initiateXML.indexOf('<Key>test-object.bin</Key>') > 0, 'should include object key');
+    t.ok(initiateXML.indexOf('<UploadId>test-upload-123</UploadId>') > 0,
+         'should include upload ID');
+    t.ok(initiateXML.indexOf('<Bucket>test-bucket</Bucket>') > 0,
+         'should include bucket name');
+    t.ok(initiateXML.indexOf('<Key>test-object.bin</Key>') > 0,
+         'should include object key');
 
     // Test ListParts response
     var partsData = {
         parts: [
-            { partNumber: 1, etag: 'etag1', size: 5242880, lastModified: '2025-01-01T00:00:00.000Z' },
-            { partNumber: 2, etag: 'etag2', size: 5242880, lastModified: '2025-01-01T00:01:00.000Z' }
+            {
+                partNumber: 1,
+                etag: 'etag1',
+                size: 5242880,
+                lastModified: '2025-01-01T00:00:00.000Z'
+            },
+            {
+                partNumber: 2,
+                etag: 'etag2',
+                size: 5242880,
+                lastModified: '2025-01-01T00:01:00.000Z'
+            }
         ],
         uploadId: 'test-upload-456'
     };
-    var listPartsXML = s3Compat.convertMantaToS3Response(partsData, 'ListParts', {
+    var listPartsXML = s3Compat.convertMantaToS3Response(partsData,
+                                                         'ListParts',
+                                                         {
         bucket: 'test-bucket',
         object: 'test-object.bin'
     });
-    t.ok(listPartsXML.indexOf('<PartNumber>1</PartNumber>') > 0, 'should include part 1');
-    t.ok(listPartsXML.indexOf('<PartNumber>2</PartNumber>') > 0, 'should include part 2');
-    t.ok(listPartsXML.indexOf('<ETag>etag1</ETag>') > 0, 'should include part 1 ETag');
-    t.ok(listPartsXML.indexOf('<Size>5242880</Size>') > 0, 'should include part sizes');
+    t.ok(listPartsXML.indexOf('<PartNumber>1</PartNumber>') > 0,
+         'should include part 1');
+    t.ok(listPartsXML.indexOf('<PartNumber>2</PartNumber>') > 0,
+         'should include part 2');
+    t.ok(listPartsXML.indexOf('<ETag>etag1</ETag>') > 0,
+         'should include part 1 ETag');
+    t.ok(listPartsXML.indexOf('<Size>5242880</Size>') > 0,
+         'should include part sizes');
 
     t.end();
 });
@@ -382,9 +465,13 @@ helper.test('Path conversion with special characters', function (t) {
     var testCases = [
         {
             name: 'URL encoded characters',
-            s3Request: { bucket: 'my-bucket', object: 'file%20with%20spaces.txt' },
+            s3Request: {
+                bucket: 'my-bucket',
+                object: 'file%20with%20spaces.txt'
+            },
             user: 'testuser',
-            expected: '/testuser/buckets/my-bucket/objects/file%20with%20spaces.txt'
+            expected:
+                '/testuser/buckets/my-bucket/objects/file%20with%20spaces.txt'
         },
         {
             name: 'Unicode characters',
@@ -394,15 +481,23 @@ helper.test('Path conversion with special characters', function (t) {
         },
         {
             name: 'Special punctuation',
-            s3Request: { bucket: 'my-bucket', object: 'file-name_v1.2.3.tar.gz' },
+            s3Request: {
+                bucket: 'my-bucket',
+                object: 'file-name_v1.2.3.tar.gz'
+            },
             user: 'testuser',
-            expected: '/testuser/buckets/my-bucket/objects/file-name_v1.2.3.tar.gz'
+            expected:
+                '/testuser/buckets/my-bucket/objects/file-name_v1.2.3.tar.gz'
         },
         {
             name: 'Path with slashes',
-            s3Request: { bucket: 'my-bucket', object: 'folder/subfolder/file.txt' },
+            s3Request: {
+                bucket: 'my-bucket',
+                object: 'folder/subfolder/file.txt'
+            },
             user: 'testuser',
-            expected: '/testuser/buckets/my-bucket/objects/folder/subfolder/file.txt'
+            expected:
+                '/testuser/buckets/my-bucket/objects/folder/subfolder/file.txt'
         }
     ];
 
@@ -410,8 +505,10 @@ helper.test('Path conversion with special characters', function (t) {
         testCase.s3Request.isS3Request = true;
         testCase.s3Request.operation = 'GetBucketObject';
 
-        var mantaPath = s3Compat.convertS3ToMantaPath(testCase.s3Request, testCase.user);
-        t.equal(mantaPath, testCase.expected, testCase.name + ' - should convert path correctly');
+        var mantaPath = s3Compat.convertS3ToMantaPath(testCase.s3Request,
+                                                      testCase.user);
+        t.equal(mantaPath, testCase.expected,
+                testCase.name + ' - should convert path correctly');
     });
 
     t.end();

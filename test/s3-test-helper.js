@@ -31,16 +31,16 @@ function test(name, testFn) {
     var caller = module.parent;
     if (caller && caller.exports) {
         // Wrap the test function to add missing assertion methods
-        caller.exports[name] = function(t) {
+        caller.exports[name] = function (t) {
             // Add missing nodeunit assertion methods
-            t.notOk = t.notOk || function(value, message) {
+            t.notOk = t.notOk || function (value, message) {
                 t.ok(!value, message);
             };
-            
-            t.end = t.end || function() {
+
+            t.end = t.end || function () {
                 t.done();
             };
-            
+
             // Call the original test function
             testFn(t);
         };

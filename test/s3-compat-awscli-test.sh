@@ -664,7 +664,15 @@ test_multipart_upload_basic() {
         
         uploaded_parts+=("ETag=$part_etag,PartNumber=$part_number,Size=$part_size")
         
-        bytes_uploaded=$((bytes_uploaded + current_part_size))
+        # Use actual part size from server instead of calculated size
+        echo "DEBUG: Basic MPU Part $part_number - calculated size: $current_part_size, server size: '$part_size'"
+        if [ -n "$part_size" ] && [ "$part_size" -gt 0 ] 2>/dev/null; then
+            bytes_uploaded=$((bytes_uploaded + part_size))
+            echo "DEBUG: Using server size $part_size for bytes_uploaded calculation"
+        else
+            bytes_uploaded=$((bytes_uploaded + current_part_size))
+            echo "DEBUG: Server size empty/zero, falling back to calculated size $current_part_size"
+        fi
         part_number=$((part_number + 1))
         rm -f "$part_file"
     done
@@ -940,7 +948,8 @@ test_multipart_upload_resume() {
         log "  Part $part_number ETag: '$part_etag'"
         uploaded_parts+=("ETag=$part_etag,PartNumber=$part_number,Size=$part_size")
         
-        bytes_uploaded=$((bytes_uploaded + current_part_size))
+        # Use actual part size from server instead of calculated size
+        bytes_uploaded=$((bytes_uploaded + part_size))
         part_number=$((part_number + 1))
         rm -f "$part_file"
     done

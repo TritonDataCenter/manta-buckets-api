@@ -9,10 +9,10 @@
  * Test S3 ACL to Manta Role Mapping
  */
 
-var test = require('tap').test;
+var helper = require('./s3-test-helper.js');
 var s3Compat = require('../lib/s3-compat');
 
-test('S3 ACL to Manta Role Translation', function (t) {
+helper.test('S3 ACL to Manta Role Translation', function (t) {
     // Mock request object
     var req = {
         isS3Request: true,
@@ -36,7 +36,7 @@ test('S3 ACL to Manta Role Translation', function (t) {
     });
 });
 
-test('S3 Grant Headers to Manta Role Translation', function (t) {
+helper.test('S3 Grant Headers to Manta Role Translation', function (t) {
     // Mock request object
     var req = {
         isS3Request: true,
@@ -61,7 +61,7 @@ test('S3 Grant Headers to Manta Role Translation', function (t) {
     });
 });
 
-test('Non-S3 Request Passes Through', function (t) {
+helper.test('Non-S3 Request Passes Through', function (t) {
     // Mock request object
     var req = {
         isS3Request: false,

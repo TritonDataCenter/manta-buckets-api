@@ -91,7 +91,8 @@ test-s3: $(STAMP_NODE_MODULES)
 	    DTRACE_ENABLED=0 \
 	    $(NODE) ./node_modules/.bin/nodeunit --reporter=tap \
 	    test/s3-multipart.test.js test/s3-compat-enhanced.test.js \
-	    test/s3-routes.test.js test/aws-chunked-decoder.test.js
+	    test/s3-routes.test.js test/s3-role-mapping.test.js \
+	    test/aws-chunked-decoder.test.js
 
 #
 # This target can be used to invoke "acsetup.js", a program which configures

@@ -129,7 +129,7 @@ def main():
     ap.add_argument("--profile", help="AWS profile (uses env/default if omitted)")
     ap.add_argument("--bucket", required=True)
     ap.add_argument("--key", default=None, help="Object key (default auto)")
-    ap.add_argument("--size-mib", type=int, default=9, help="Test file size MiB (default 9)")
+    ap.add_argument("--size-mib", type=int, default=11, help="Test file size MiB (default 11)")
     ap.add_argument("--part-size-mib", type=int, default=5, help="Part size MiB (non-final >=5)")
     ap.add_argument("--insecure", action="store_true", help="Skip TLS verification")
     ap.add_argument("--ca-bundle", help="Path to custom CA bundle")

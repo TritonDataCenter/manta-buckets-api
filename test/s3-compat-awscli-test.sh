@@ -598,10 +598,14 @@ test_multipart_upload_basic() {
         fi
         
         log "  Uploading part $part_number ($current_part_size bytes)..."
+        log "  DEBUG: bytes_uploaded=$bytes_uploaded, remaining=$remaining, part_size=$part_size"
         
         # Extract part from original file
         local part_file="part$part_number.bin"
         dd if="$mpu_object" of="$part_file" bs=1 skip=$bytes_uploaded count=$current_part_size 2>/dev/null
+        
+        local actual_part_size=$(wc -c < "$part_file")
+        log "  DEBUG: Created part file size: $actual_part_size bytes"
         
         set +e
         # AWS CLI upload-part doesn't output anything by default, so we need to capture the ETag differently
@@ -677,6 +681,8 @@ test_multipart_upload_basic() {
         rm -f "$part_file"
     done
     
+    log "  DEBUG: Upload loop completed - total_size=$total_size, final bytes_uploaded=$bytes_uploaded"
+    log "  DEBUG: Total parts created: $((part_number - 1))"
     success "MPU basic test - Uploaded $((part_number - 1)) parts successfully"
     
     # Complete multipart upload

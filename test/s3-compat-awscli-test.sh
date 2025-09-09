@@ -1236,6 +1236,186 @@ test_nonexistent_object() {
     aws_s3api delete-bucket --bucket "$test_bucket" 2>/dev/null
 }
 
+# AWS CLI ACL tests
+test_aws_get_bucket_acl() {
+    log "Testing: AWS CLI Get Bucket ACL"
+    
+    set +e
+    local result=$(aws_s3api get-bucket-acl --bucket "$TEST_BUCKET" 2>&1)
+    local exit_code=$?
+    set -e
+    
+    if [ $exit_code -eq 0 ]; then
+        success "AWS CLI get bucket ACL - Retrieved bucket ACL successfully"
+    else
+        error "AWS CLI get bucket ACL - Failed to get bucket ACL: $result"
+    fi
+}
+
+test_aws_get_object_acl() {
+    log "Testing: AWS CLI Get Object ACL"
+    
+    # First upload a test object
+    echo "ACL test content" > "acl-test-object.txt"
+    set +e
+    aws_s3api put-object --bucket "$TEST_BUCKET" --key "acl-test-object.txt" --body "acl-test-object.txt" 2>/dev/null
+    local put_exit_code=$?
+    set -e
+    
+    if [ $put_exit_code -eq 0 ]; then
+        set +e
+        local result=$(aws_s3api get-object-acl --bucket "$TEST_BUCKET" --key "acl-test-object.txt" 2>&1)
+        local exit_code=$?
+        set -e
+        
+        if [ $exit_code -eq 0 ]; then
+            success "AWS CLI get object ACL - Retrieved object ACL successfully"
+        else
+            error "AWS CLI get object ACL - Failed to get object ACL: $result"
+        fi
+    else
+        error "AWS CLI get object ACL - Failed to upload test object"
+    fi
+    
+    rm -f "acl-test-object.txt"
+}
+
+test_aws_put_object_with_canned_acl() {
+    local acl_type="$1"
+    local test_file="acl-test-$acl_type.txt"
+    
+    log "Testing: AWS CLI Put Object with Canned ACL ($acl_type)"
+    
+    echo "Test content for $acl_type ACL" > "$test_file"
+    
+    set +e
+    local result=$(aws_s3api put-object --bucket "$TEST_BUCKET" --key "$test_file" --body "$test_file" --acl "$acl_type" 2>&1)
+    local exit_code=$?
+    set -e
+    
+    if [ $exit_code -eq 0 ]; then
+        success "AWS CLI put object with $acl_type ACL - Upload successful"
+        
+        # Try to get ACL of the object to verify it was set
+        set +e
+        local acl_result=$(aws_s3api get-object-acl --bucket "$TEST_BUCKET" --key "$test_file" 2>&1)
+        local acl_exit_code=$?
+        set -e
+        
+        if [ $acl_exit_code -eq 0 ]; then
+            success "AWS CLI put object with $acl_type ACL - Object ACL retrieved"
+        else
+            warning "AWS CLI put object with $acl_type ACL - Could not retrieve object ACL: $acl_result"
+        fi
+    else
+        error "AWS CLI put object with $acl_type ACL - Failed to upload: $result"
+    fi
+    
+    rm -f "$test_file"
+}
+
+test_aws_put_bucket_acl() {
+    log "Testing: AWS CLI Put Bucket ACL"
+    
+    set +e
+    local result=$(aws_s3api put-bucket-acl --bucket "$TEST_BUCKET" --acl "private" 2>&1)
+    local exit_code=$?
+    set -e
+    
+    if [ $exit_code -eq 0 ]; then
+        success "AWS CLI put bucket ACL - Successfully set private ACL on bucket"
+    else
+        error "AWS CLI put bucket ACL - Failed to set private ACL: $result"
+    fi
+}
+
+test_aws_put_object_acl() {
+    log "Testing: AWS CLI Put Object ACL"
+    
+    # First upload a test object
+    echo "ACL set test content" > "acl-set-test-object.txt"
+    set +e
+    aws_s3api put-object --bucket "$TEST_BUCKET" --key "acl-set-test-object.txt" --body "acl-set-test-object.txt" 2>/dev/null
+    local put_exit_code=$?
+    set -e
+    
+    if [ $put_exit_code -eq 0 ]; then
+        set +e
+        local result=$(aws_s3api put-object-acl --bucket "$TEST_BUCKET" --key "acl-set-test-object.txt" --acl "private" 2>&1)
+        local exit_code=$?
+        set -e
+        
+        if [ $exit_code -eq 0 ]; then
+            success "AWS CLI put object ACL - Successfully set private ACL on object"
+        else
+            error "AWS CLI put object ACL - Failed to set private ACL: $result"
+        fi
+    else
+        error "AWS CLI put object ACL - Failed to upload test object"
+    fi
+    
+    rm -f "acl-set-test-object.txt"
+}
+
+test_aws_canned_acls() {
+    log "Testing: AWS CLI Various Canned ACLs"
+    
+    # Test different canned ACL types that are supported
+    local acl_types=("private" "public-read" "public-read-write")
+    
+    for acl in "${acl_types[@]}"; do
+        test_aws_put_object_with_canned_acl "$acl"
+    done
+}
+
+test_aws_bucket_acl_policy() {
+    log "Testing: AWS CLI Bucket ACL Policy Operations"
+    
+    # Try to set bucket to public-read
+    set +e
+    local result=$(aws_s3api put-bucket-acl --bucket "$TEST_BUCKET" --acl "public-read" 2>&1)
+    local exit_code=$?
+    set -e
+    
+    if [ $exit_code -eq 0 ]; then
+        success "AWS CLI bucket ACL policy - Successfully set public-read ACL on bucket"
+        
+        # Verify the ACL was set by getting bucket ACL
+        set +e
+        local acl_result=$(aws_s3api get-bucket-acl --bucket "$TEST_BUCKET" 2>&1)
+        local acl_exit_code=$?
+        set -e
+        
+        if [ $acl_exit_code -eq 0 ]; then
+            success "AWS CLI bucket ACL policy - Retrieved bucket ACL after change"
+        else
+            warning "AWS CLI bucket ACL policy - Could not retrieve bucket ACL: $acl_result"
+        fi
+        
+        # Set back to private
+        set +e
+        aws_s3api put-bucket-acl --bucket "$TEST_BUCKET" --acl "private" 2>/dev/null || true
+        set -e
+    else
+        error "AWS CLI bucket ACL policy - Failed to set public-read ACL: $result"
+    fi
+}
+
+test_aws_list_objects_with_metadata() {
+    log "Testing: AWS CLI List Objects with Metadata"
+    
+    set +e
+    local result=$(aws_s3api list-objects-v2 --bucket "$TEST_BUCKET" 2>&1)
+    local exit_code=$?
+    set -e
+    
+    if [ $exit_code -eq 0 ]; then
+        success "AWS CLI list with metadata - Object listing successful"
+    else
+        error "AWS CLI list with metadata - Failed to list objects: $result"
+    fi
+}
+
 # Main test execution
 run_tests() {
     local test_filter="${1:-all}"
@@ -1254,6 +1434,12 @@ run_tests() {
             test_multipart_upload_basic || true
             test_multipart_upload_resume || true
             test_multipart_upload_errors || true
+            
+            # Clean up any objects before deleting bucket
+            log "Cleaning up test objects before bucket deletion..."
+            set +e
+            aws_s3 rm "s3://$TEST_BUCKET" --recursive 2>/dev/null || true
+            set -e
             
             # Cleanup bucket
             test_delete_bucket || true
@@ -1278,6 +1464,13 @@ run_tests() {
             test_list_bucket_objects_with_content || true
             test_conditional_headers || true
             test_delete_object || true
+            
+            # Clean up any objects before deleting bucket
+            log "Cleaning up test objects before bucket deletion..."
+            set +e
+            aws_s3 rm "s3://$TEST_BUCKET" --recursive 2>/dev/null || true
+            set -e
+            
             test_delete_bucket || true
             
             set -e  # Re-enable exit on error
@@ -1294,9 +1487,38 @@ run_tests() {
             
             set -e  # Re-enable exit on error
             ;;
+        "acl")
+            log "Starting S3 ACL Tests for manta-buckets-api using AWS CLI"
+            log "========================================================="
+            
+            set +e  # Disable exit on error for test execution
+            
+            # Create bucket for ACL tests
+            test_create_bucket || true
+            
+            # ACL tests only
+            test_aws_get_bucket_acl || true
+            test_aws_get_object_acl || true
+            test_aws_put_bucket_acl || true
+            test_aws_put_object_acl || true
+            test_aws_canned_acls || true
+            test_aws_bucket_acl_policy || true
+            test_aws_list_objects_with_metadata || true
+            
+            # Clean up ACL test objects before deleting bucket
+            log "Cleaning up ACL test objects before bucket deletion..."
+            set +e
+            aws_s3 rm "s3://$TEST_BUCKET" --recursive 2>/dev/null || true
+            set -e
+            
+            # Cleanup bucket
+            test_delete_bucket || true
+            
+            set -e  # Re-enable exit on error
+            ;;
         "all"|*)
-            log "Starting S3 Compatibility Tests for manta-buckets-api using AWS CLI"
-            log "===================================================================="
+            log "Starting S3 Compatibility Tests (including ACL) for manta-buckets-api using AWS CLI"
+            log "================================================================================="
             
             set +e  # Disable exit on error for test execution
             
@@ -1318,9 +1540,24 @@ run_tests() {
             test_multipart_upload_resume || true
             test_multipart_upload_errors || true
             
+            # ACL tests (run before deleting the main test bucket)
+            test_aws_get_bucket_acl || true
+            test_aws_get_object_acl || true
+            test_aws_put_bucket_acl || true
+            test_aws_put_object_acl || true
+            test_aws_canned_acls || true
+            test_aws_bucket_acl_policy || true
+            test_aws_list_objects_with_metadata || true
+            
+            # Clean up any ACL test objects before deleting bucket
+            log "Cleaning up ACL test objects before bucket deletion..."
+            set +e
+            aws_s3 rm "s3://$TEST_BUCKET" --recursive 2>/dev/null || true
+            set -e
+            
             test_delete_bucket || true
             
-            # Error handling tests
+            # Error handling tests (run after main bucket is deleted)
             test_nonexistent_bucket || true
             test_nonexistent_object || true
             
@@ -1365,10 +1602,11 @@ main() {
             echo "Usage: $0 [test_type] [options]"
             echo
             echo "Test Types:"
-            echo "  all        - Run all tests (default)"
+            echo "  all        - Run all tests including ACL (default)"
             echo "  basic      - Run basic S3 functionality tests only"
             echo "  mpu        - Run multipart upload tests only"
             echo "  multipart  - Alias for mpu"
+            echo "  acl        - Run ACL tests only"
             echo "  errors     - Run error handling tests only"
             echo
             echo "Environment variables:"
@@ -1378,9 +1616,10 @@ main() {
             echo "  AWS_REGION           - AWS region (default: us-east-1)"
             echo
             echo "Examples:"
-            echo "  $0                    # Run all tests"
+            echo "  $0                    # Run all tests including ACL"
             echo "  $0 mpu                # Run only multipart upload tests"
             echo "  $0 basic              # Run only basic functionality tests"
+            echo "  $0 acl                # Run only ACL tests"
             echo "  $0 errors             # Run only error handling tests"
             echo "  AWS_ACCESS_KEY_ID=mykey AWS_SECRET_ACCESS_KEY=mysecret $0 mpu"
             echo "  S3_ENDPOINT=https://manta.example.com:8080 $0 basic"

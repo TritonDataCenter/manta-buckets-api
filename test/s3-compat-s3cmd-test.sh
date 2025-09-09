@@ -527,10 +527,192 @@ test_s3cmd_nonexistent_object() {
     rm -f "/tmp/nonexistent"
 }
 
+# S3cmd ACL tests
+test_s3cmd_get_bucket_acl() {
+    log "Testing: S3cmd Get Bucket ACL"
+    
+    # Use existing TEST_BUCKET
+    set +e
+    local result=$(s3cmd_wrapper info "s3://$TEST_BUCKET" 2>&1)
+    local exit_code=$?
+    set -e
+    
+    if [ $exit_code -eq 0 ]; then
+        success "S3cmd get bucket ACL - Retrieved bucket info successfully"
+    else
+        error "S3cmd get bucket ACL - Failed to get bucket info: $result"
+    fi
+}
+
+test_s3cmd_get_object_acl() {
+    log "Testing: S3cmd Get Object ACL"
+    
+    # First upload a test object
+    echo "ACL test content" > "acl-test-object.txt"
+    set +e
+    s3cmd_wrapper put "acl-test-object.txt" "s3://$TEST_BUCKET/" 2>/dev/null
+    local put_exit_code=$?
+    set -e
+    
+    if [ $put_exit_code -eq 0 ]; then
+        set +e
+        local result=$(s3cmd_wrapper info "s3://$TEST_BUCKET/acl-test-object.txt" 2>&1)
+        local exit_code=$?
+        set -e
+        
+        if [ $exit_code -eq 0 ]; then
+            success "S3cmd get object ACL - Retrieved object info successfully"
+        else
+            error "S3cmd get object ACL - Failed to get object info: $result"
+        fi
+    else
+        error "S3cmd get object ACL - Failed to upload test object"
+    fi
+    
+    rm -f "acl-test-object.txt"
+}
+
+test_s3cmd_put_object_with_canned_acl() {
+    local acl_type="$1"
+    local test_file="acl-test-$acl_type.txt"
+    
+    log "Testing: S3cmd Put Object with Canned ACL ($acl_type)"
+    
+    echo "Test content for $acl_type ACL" > "$test_file"
+    
+    set +e
+    local result=$(s3cmd_wrapper put "$test_file" "s3://$TEST_BUCKET/" --acl-$acl_type 2>&1)
+    local exit_code=$?
+    set -e
+    
+    if [ $exit_code -eq 0 ]; then
+        success "S3cmd put object with $acl_type ACL - Upload successful"
+        
+        # Try to get info about the object to verify ACL was set
+        set +e
+        local info_result=$(s3cmd_wrapper info "s3://$TEST_BUCKET/$test_file" 2>&1)
+        local info_exit_code=$?
+        set -e
+        
+        if [ $info_exit_code -eq 0 ]; then
+            success "S3cmd put object with $acl_type ACL - Object info retrieved"
+        else
+            warning "S3cmd put object with $acl_type ACL - Could not retrieve object info: $info_result"
+        fi
+    else
+        error "S3cmd put object with $acl_type ACL - Failed to upload: $result"
+    fi
+    
+    rm -f "$test_file"
+}
+
+test_s3cmd_setacl_bucket() {
+    log "Testing: S3cmd Set Bucket ACL"
+    
+    set +e
+    local result=$(s3cmd_wrapper setacl "s3://$TEST_BUCKET" --acl-private 2>&1)
+    local exit_code=$?
+    set -e
+    
+    if [ $exit_code -eq 0 ]; then
+        success "S3cmd set bucket ACL - Successfully set private ACL on bucket"
+    else
+        error "S3cmd set bucket ACL - Failed to set private ACL: $result"
+    fi
+}
+
+test_s3cmd_setacl_object() {
+    log "Testing: S3cmd Set Object ACL"
+    
+    # First upload a test object
+    echo "ACL set test content" > "acl-set-test-object.txt"
+    set +e
+    s3cmd_wrapper put "acl-set-test-object.txt" "s3://$TEST_BUCKET/" 2>/dev/null
+    local put_exit_code=$?
+    set -e
+    
+    if [ $put_exit_code -eq 0 ]; then
+        set +e
+        local result=$(s3cmd_wrapper setacl "s3://$TEST_BUCKET/acl-set-test-object.txt" --acl-private 2>&1)
+        local exit_code=$?
+        set -e
+        
+        if [ $exit_code -eq 0 ]; then
+            success "S3cmd set object ACL - Successfully set private ACL on object"
+        else
+            error "S3cmd set object ACL - Failed to set private ACL: $result"
+        fi
+    else
+        error "S3cmd set object ACL - Failed to upload test object"
+    fi
+    
+    rm -f "acl-set-test-object.txt"
+}
+
+test_s3cmd_canned_acls() {
+    log "Testing: S3cmd Various Canned ACLs"
+    
+    # Test different canned ACL types that are supported
+    # Note: Only --acl-private and --acl-public are typically supported
+    local acl_types=("private" "public")
+    
+    for acl in "${acl_types[@]}"; do
+        test_s3cmd_put_object_with_canned_acl "$acl"
+    done
+}
+
+test_s3cmd_acl_bucket_policy() {
+    log "Testing: S3cmd Bucket ACL Policy Operations"
+    
+    # Try to set bucket to public (using supported --acl-public)
+    set +e
+    local result=$(s3cmd_wrapper setacl "s3://$TEST_BUCKET" --acl-public 2>&1)
+    local exit_code=$?
+    set -e
+    
+    if [ $exit_code -eq 0 ]; then
+        success "S3cmd bucket ACL policy - Successfully set public ACL on bucket"
+        
+        # Verify the ACL was set by getting bucket info
+        set +e
+        local info_result=$(s3cmd_wrapper info "s3://$TEST_BUCKET" 2>&1)
+        local info_exit_code=$?
+        set -e
+        
+        if [ $info_exit_code -eq 0 ]; then
+            success "S3cmd bucket ACL policy - Retrieved bucket info after ACL change"
+        else
+            warning "S3cmd bucket ACL policy - Could not retrieve bucket info: $info_result"
+        fi
+        
+        # Set back to private
+        set +e
+        s3cmd_wrapper setacl "s3://$TEST_BUCKET" --acl-private 2>/dev/null || true
+        set -e
+    else
+        error "S3cmd bucket ACL policy - Failed to set public ACL: $result"
+    fi
+}
+
+test_s3cmd_list_with_acl_info() {
+    log "Testing: S3cmd List Objects with ACL Information"
+    
+    set +e
+    local result=$(s3cmd_wrapper ls "s3://$TEST_BUCKET" --long 2>&1)
+    local exit_code=$?
+    set -e
+    
+    if [ $exit_code -eq 0 ]; then
+        success "S3cmd list with ACL info - Object listing successful"
+    else
+        error "S3cmd list with ACL info - Failed to list objects: $result"
+    fi
+}
+
 # Main test execution
 run_tests() {
-    log "Starting S3 Compatibility Tests for manta-buckets-api using S3cmd"
-    log "================================================================="
+    log "Starting S3 Compatibility Tests (including ACL) for manta-buckets-api using S3cmd"
+    log "================================================================================="
     
     set +e  # Disable exit on error for test execution
     
@@ -547,9 +729,24 @@ run_tests() {
     test_s3cmd_multipart_upload_resume || true
     test_s3cmd_multipart_upload_errors || true
     
+    # ACL tests (run before deleting the main test bucket)
+    test_s3cmd_get_bucket_acl || true
+    test_s3cmd_get_object_acl || true
+    test_s3cmd_setacl_bucket || true
+    test_s3cmd_setacl_object || true
+    test_s3cmd_canned_acls || true
+    test_s3cmd_acl_bucket_policy || true
+    test_s3cmd_list_with_acl_info || true
+    
+    # Clean up any objects created by ACL tests before deleting bucket
+    log "Cleaning up ACL test objects before bucket deletion..."
+    set +e
+    s3cmd_wrapper rm "s3://$TEST_BUCKET" --recursive --force 2>/dev/null || true
+    set -e
+    
     test_s3cmd_delete_bucket || true
     
-    # Error handling tests
+    # Error handling tests (run after main bucket is deleted)
     test_s3cmd_nonexistent_bucket || true
     test_s3cmd_nonexistent_object || true
     
@@ -573,7 +770,7 @@ print_results() {
         echo
         exit 1
     else
-        echo -e "\n${GREEN}🎉 All s3cmd tests passed! S3 compatibility is working correctly.${NC}"
+        echo -e "\n${GREEN}🎉 All s3cmd tests (including ACL) passed! S3 compatibility is working correctly.${NC}"
         exit 0
     fi
 }

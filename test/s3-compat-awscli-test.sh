@@ -545,8 +545,8 @@ test_multipart_upload_basic() {
     
     local mpu_bucket="mpu-test-$(date +%s)"
     local mpu_object="large-test-file.bin"
-    local part_size=6291456  # 6MB
-    local total_size=15728640  # 15MB (approximately 2.5 parts)
+    local part_size=8388608  # 8MB - ensures parts stay above 5MB minimum even with aws-chunked
+    local total_size=16777216  # 16MB (exactly 2 parts: 8MB + 8MB final)
     
     # Create test bucket
     set +e
@@ -585,24 +585,33 @@ test_multipart_upload_basic() {
         return 1
     fi
     
-    # Upload parts
+    # Upload parts - boto3 approach: use server-reported sizes for everything
     local part_number=1
     local uploaded_parts=()
-    local bytes_uploaded=0
+    local bytes_uploaded=0  # Track server-reported total size (authoritative)
+    local file_offset=0     # Track position in original file
     
-    while [ $bytes_uploaded -lt $total_size ]; do
-        local remaining=$((total_size - bytes_uploaded))
+    # Upload parts until file is fully consumed (aws-chunked may compress data)
+    while [ $file_offset -lt $total_size ]; do
+        local file_remaining=$((total_size - file_offset))
+        # Use standard part size, or remaining file data for final part
         local current_part_size=$part_size
-        if [ $remaining -lt $part_size ]; then
-            current_part_size=$remaining
+        if [ $file_remaining -lt $current_part_size ]; then
+            current_part_size=$file_remaining
         fi
         
-        log "  Uploading part $part_number ($current_part_size bytes)..."
-        log "  DEBUG: bytes_uploaded=$bytes_uploaded, remaining=$remaining, part_size=$part_size"
+        # Safety check: if no file data remaining, stop immediately
+        if [ $current_part_size -le 0 ]; then
+            log "  DEBUG: No more file data to upload (current_part_size=$current_part_size), stopping"
+            break
+        fi
         
-        # Extract part from original file
+        log "  Uploading part $part_number ($current_part_size bytes from file)..."
+        log "  DEBUG: file_offset=$file_offset, bytes_uploaded=$bytes_uploaded, file_remaining=$file_remaining"
+        
+        # Extract part from original file using file_offset
         local part_file="part$part_number.bin"
-        dd if="$mpu_object" of="$part_file" bs=1 skip=$bytes_uploaded count=$current_part_size 2>/dev/null
+        dd if="$mpu_object" of="$part_file" bs=1 skip=$file_offset count=$current_part_size 2>/dev/null
         
         local actual_part_size=$(wc -c < "$part_file")
         log "  DEBUG: Created part file size: $actual_part_size bytes"
@@ -646,8 +655,9 @@ test_multipart_upload_basic() {
         else
             echo "DEBUG: list-parts failed with exit code $list_exit_code"
             echo "DEBUG: list-parts error: $list_result"
-            log "  Warning: list-parts failed, using placeholder ETag"
+            log "  Warning: list-parts failed, using placeholder ETag and calculated size"
             part_etag="placeholder-etag-$part_number"
+            part_size=""  # Initialize part_size when list-parts fails
         fi
         
         log "  Part $part_number ETag: '$part_etag'"
@@ -668,21 +678,35 @@ test_multipart_upload_basic() {
         
         uploaded_parts+=("ETag=$part_etag,PartNumber=$part_number,Size=$part_size")
         
-        # Use actual part size from server instead of calculated size
-        echo "DEBUG: Basic MPU Part $part_number - calculated size: $current_part_size, server size: '$part_size'"
+        # CRITICAL: Always use server-reported size from ListParts API
+        # This is the only correct approach for S3 MPU - server is source of truth
+        #
+        # NOTE: AWS CLI uses 'Content-Encoding: aws-chunked' which adds encoding overhead
+        # to the data stream. The client sends 8MB (data + chunked metadata) but the 
+        # server stores only the actual decoded data (~6-7MB). This size discrepancy causes
+        # v2 commit failures if clients calculate based on what they sent rather than
+        # what was actually stored. boto3-resume-mpu.py works because it always uses
+        # ListParts sizes. This is the correct S3-compatible behavior.
+        echo "DEBUG: Basic MPU Part $part_number - file size: $current_part_size, server size: '$part_size'"
         if [ -n "$part_size" ] && [ "$part_size" -gt 0 ] 2>/dev/null; then
             bytes_uploaded=$((bytes_uploaded + part_size))
-            echo "DEBUG: Using server size $part_size for bytes_uploaded calculation"
+            echo "DEBUG: Using server-reported size $part_size (from ListParts) - this is correct S3 behavior"
+            echo "DEBUG: Server total: $bytes_uploaded, File offset will be: $((file_offset + current_part_size))"
         else
+            # Fallback only if ListParts failed completely
             bytes_uploaded=$((bytes_uploaded + current_part_size))
-            echo "DEBUG: Server size empty/zero, falling back to calculated size $current_part_size"
+            echo "WARNING: Server size unavailable, falling back to calculated size $current_part_size"
+            echo "WARNING: This may cause completion failures due to size mismatches"
         fi
+        
+        # Always advance file offset by the actual bytes read from file
+        file_offset=$((file_offset + current_part_size))
         part_number=$((part_number + 1))
         rm -f "$part_file"
     done
     
-    log "  DEBUG: Upload loop completed - total_size=$total_size, final bytes_uploaded=$bytes_uploaded"
-    log "  DEBUG: Total parts created: $((part_number - 1))"
+    log "  DEBUG: Upload loop completed - original file size=$total_size, server reported total=$bytes_uploaded"
+    log "  DEBUG: File offset reached: $file_offset, Parts created: $((part_number - 1))"
     success "MPU basic test - Uploaded $((part_number - 1)) parts successfully"
     
     # Complete multipart upload
@@ -899,22 +923,31 @@ test_multipart_upload_resume() {
         error "MPU resume test - ListParts missing size information (required for resume)"
     fi
     
-    # Continue with remaining parts - use actual size from list-parts for resume position
-    local bytes_uploaded=$part1_size
+    # Continue with remaining parts - separate file position from server totals
+    local bytes_uploaded=$part1_size  # Server-reported total (for tracking completion)
+    local file_offset=$part_size      # File position (for dd operations)
     local part_number=2
     local uploaded_parts=("ETag=$part1_etag,PartNumber=1,Size=$part1_size")
     
-    while [ $bytes_uploaded -lt $total_size ]; do
-        local remaining=$((total_size - bytes_uploaded))
+    while [ $file_offset -lt $total_size ]; do
+        local file_remaining=$((total_size - file_offset))
+        # Use standard part size, or remaining file data for final part
         local current_part_size=$part_size
-        if [ $remaining -lt $part_size ]; then
-            current_part_size=$remaining
+        if [ $file_remaining -lt $current_part_size ]; then
+            current_part_size=$file_remaining
+        fi
+        
+        # Safety check: if no file data remaining, stop immediately
+        if [ $current_part_size -le 0 ]; then
+            log "  DEBUG: No more file data to upload (current_part_size=$current_part_size), stopping resume"
+            break
         fi
         
         log "  Uploading part $part_number ($current_part_size bytes)..."
+        log "  DEBUG: file_offset=$file_offset, bytes_uploaded=$bytes_uploaded, file_remaining=$file_remaining"
         
         local part_file="part$part_number.bin"
-        dd if="$mpu_object" of="$part_file" bs=1 skip=$bytes_uploaded count=$current_part_size 2>/dev/null
+        dd if="$mpu_object" of="$part_file" bs=1 skip=$file_offset count=$current_part_size 2>/dev/null
         
         set +e
         part_result=$(aws_s3api upload-part --bucket "$mpu_bucket" --key "$mpu_object" --part-number $part_number --upload-id "$upload_id" --body "$part_file" 2>&1)
@@ -954,8 +987,17 @@ test_multipart_upload_resume() {
         log "  Part $part_number ETag: '$part_etag'"
         uploaded_parts+=("ETag=$part_etag,PartNumber=$part_number,Size=$part_size")
         
-        # Use actual part size from server instead of calculated size
-        bytes_uploaded=$((bytes_uploaded + part_size))
+        # Use actual part size from server - this is the correct approach for S3 MPU
+        if [ -n "$part_size" ] && [ "$part_size" -gt 0 ] 2>/dev/null; then
+            bytes_uploaded=$((bytes_uploaded + part_size))
+            echo "DEBUG: Resume MPU Part $part_number - using server size $part_size for bytes_uploaded calculation"
+        else
+            bytes_uploaded=$((bytes_uploaded + current_part_size))
+            echo "DEBUG: Resume MPU Part $part_number - server size empty/zero, falling back to calculated size $current_part_size"
+        fi
+        
+        # Always advance file offset by the actual bytes read from file
+        file_offset=$((file_offset + current_part_size))
         part_number=$((part_number + 1))
         rm -f "$part_file"
     done

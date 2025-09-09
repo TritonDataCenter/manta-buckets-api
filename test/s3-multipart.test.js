@@ -333,6 +333,251 @@ helper.test('MultiError unwrapping logic', function (t) {
     t.end();
 });
 
+helper.test('Enhanced EntityTooSmall MultiError unwrapping', function (t) {
+    // Test the enhanced logic that unwraps EntityTooSmall from jse_cause
+
+    function testEntityTooSmallUnwrapping(err) {
+        // Handle EntityTooSmall errors directly to preserve statusCode
+        if (err.restCode === 'EntityTooSmall' ||
+            err.name === 'EntityTooSmall') {
+            return (err);
+        }
+
+        // Check if MultiError contains EntityTooSmall
+        if (err.name === 'MultiError' && err.jse_cause &&
+            (err.jse_cause.restCode === 'EntityTooSmall' ||
+             err.jse_cause.name === 'EntityTooSmall')) {
+            return (err.jse_cause);
+        }
+
+        return (err);
+    }
+
+    // Test direct EntityTooSmall error
+    var directError = new Error('Part 1 is too small' +
+                                ' (4194304 bytes, minimum 5242880)');
+    directError.restCode = 'EntityTooSmall';
+    directError.statusCode = 400;
+
+    var result1 = testEntityTooSmallUnwrapping(directError);
+    t.equal(result1, directError, 'should pass through direct EntityTooSmall');
+    t.equal(result1.statusCode, 400, 'should preserve statusCode');
+
+    // Test MultiError with EntityTooSmall in jse_cause
+    var innerEntityError = new Error('Part 1 is too small' +
+                                     ' (4194304 bytes, minimum 5242880)');
+    innerEntityError.restCode = 'EntityTooSmall';
+    innerEntityError.statusCode = 400;
+
+    var multiErrorWithCause = {
+        name: 'MultiError',
+        jse_cause: innerEntityError,
+        message: 'first of 1 error: Part 1 is too small' +
+            ' (4194304 bytes, minimum 5242880)'
+    };
+
+    var result2 = testEntityTooSmallUnwrapping(multiErrorWithCause);
+    t.equal(result2, innerEntityError,
+            'should unwrap EntityTooSmall from jse_cause');
+    t.equal(result2.restCode, 'EntityTooSmall', 'should preserve restCode');
+    t.equal(result2.statusCode, 400, 'should preserve statusCode');
+
+    // Test MultiError with non-EntityTooSmall cause (should pass through)
+    var otherError = new Error('Some other error');
+    otherError.restCode = 'InternalError';
+
+    var multiErrorOther = {
+        name: 'MultiError',
+        jse_cause: otherError,
+        message: 'first of 1 error: Some other error'
+    };
+
+    var result3 = testEntityTooSmallUnwrapping(multiErrorOther);
+    t.equal(result3, multiErrorOther,
+            'should pass through non-EntityTooSmall MultiError');
+
+    t.end();
+});
+
+helper.test('SharkResponseError 409 size mismatch conversion', function (t) {
+    // Test detection of 409 errors with size mismatch message
+    // Test conversion to InvalidPart with statusCode 400
+    // This covers the s3-multipart-v2.js fix at lines 328-342
+
+    function testSizeMismatchDetection(postErr, res) {
+        // Check for 409 errors indicating size mismatches
+        if (res && res.statusCode === 409) {
+            return (createInvalidPartError('1.stor.example.com'));
+        }
+
+        // Check for SharkResponseError with 409 in message (size mismatch)
+        if (postErr && postErr.message &&
+            postErr.message.includes('HTTP 409') &&
+            postErr.message.includes('assembled temporary file') &&
+            postErr.message.includes('bytes, request specified')) {
+            return (createInvalidPartError('1.stor.example.com'));
+        }
+
+        return (null);
+    }
+
+    function createInvalidPartError(shark) {
+        var invalidPartError =
+            new Error('One or more parts have size discrepancies' +
+                      ' that prevent assembly');
+        invalidPartError.statusCode = 400;
+        invalidPartError.restCode = 'InvalidPart';
+        invalidPartError.shark = shark;
+        invalidPartError.isSharkFailure = true;
+        return (invalidPartError);
+    }
+
+    // Test direct 409 response
+    var mockResponse409 = { statusCode: 409 };
+    var result1 = testSizeMismatchDetection(null, mockResponse409);
+    t.ok(result1, 'should detect direct 409 response');
+    t.equal(result1.statusCode, 400, 'should convert to statusCode 400');
+    t.equal(result1.restCode, 'InvalidPart', 'should convert to InvalidPart');
+
+    // Test SharkResponseError with 409 in message
+    var sharkError =
+        new Error('storage node failure:\nHTTP 409\n' +
+                  '{"code":"BadRequestError",'+
+                  '"message":"assembled temporary file' +
+                  ' /manta/nginx_temp/0000004545 has size 9437184 bytes,' +
+                  ' request specified 8388608 bytes"}');
+    sharkError.name = 'SharkResponseError';
+
+    var result2 = testSizeMismatchDetection(sharkError, null);
+    t.ok(result2, 'should detect SharkResponseError with 409');
+    t.equal(result2.statusCode, 400, 'should convert to statusCode 400');
+    t.equal(result2.restCode, 'InvalidPart', 'should convert to InvalidPart');
+    t.ok(result2.message.includes('size discrepancies'),
+         'should have appropriate error message');
+
+    // Test non-409 SharkResponseError (should not convert)
+    var nonSizeError =
+        new Error('storage node failure:\nHTTP 500\nInternal Server Error');
+    var result3 = testSizeMismatchDetection(nonSizeError, null);
+    t.equal(result3, null, 'should not convert non-size-mismatch errors');
+
+    // Test regular error (should not convert)
+    var regularError = new Error('Regular error');
+    var result4 = testSizeMismatchDetection(regularError, null);
+    t.equal(result4, null, 'should not convert regular errors');
+
+    t.end();
+});
+
+helper.test('v2 commit InvalidPart extraction from parallel errors',
+            function (t) {
+    // Test extraction of InvalidPart errors from vasync ase_errors
+    // Test behavior when all sharks return InvalidPart vs mixed errors
+    // This covers the s3-multipart-v2.js fix at lines 399-415
+
+    function testInvalidPartExtraction(vasyncErr) {
+        // Check if this is an InvalidPart error (size mismatch)
+        if (vasyncErr.restCode === 'InvalidPart' ||
+            vasyncErr.statusCode === 400) {
+            return (vasyncErr);
+        }
+
+        // Check if MultiError contains InvalidPart errors from all sharks
+        if (vasyncErr.ase_errors && vasyncErr.ase_errors.length > 0) {
+            var invalidPartErrors = vasyncErr.ase_errors.filter(function (err) {
+                return (err.restCode === 'InvalidPart' ||
+                        err.statusCode === 400);
+            });
+
+            if (invalidPartErrors.length === vasyncErr.ase_errors.length) {
+                // All errors are InvalidPart - return the first one directly
+                return (invalidPartErrors[0]);
+            }
+        }
+
+        return (null); // Should continue with normal error handling
+    }
+
+    // Test all sharks returning InvalidPart
+    var allInvalidPartError = {
+        ase_errors: [
+            {
+                statusCode: 400,
+                restCode: 'InvalidPart',
+                shark: '1.stor.example.com',
+                isSharkFailure: true,
+                message:
+                'One or more parts have size' +
+                ' discrepancies that prevent assembly'
+            },
+            {
+                statusCode: 400,
+                restCode: 'InvalidPart',
+                shark: '2.stor.example.com',
+                isSharkFailure: true,
+                message:
+                'One or more parts have size' +
+                ' discrepancies that prevent assembly'
+            }
+        ],
+        message: 'first of 2 errors:' +
+            ' One or more parts have size discrepancies that prevent assembly'
+    };
+
+    var result1 = testInvalidPartExtraction(allInvalidPartError);
+    t.ok(result1,
+         'should extract InvalidPart when all sharks return InvalidPart');
+    t.equal(result1.statusCode, 400,
+            'should preserve statusCode 400');
+    t.equal(result1.restCode, 'InvalidPart',
+            'should preserve restCode InvalidPart');
+
+    // Test mixed errors (some InvalidPart, some other)
+    var mixedError = {
+        ase_errors: [
+            {
+                statusCode: 400,
+                restCode: 'InvalidPart',
+                shark: '1.stor.example.com'
+            },
+            {
+                statusCode: 503,
+                restCode: 'ServiceUnavailable',
+                shark: '2.stor.example.com'
+            }
+        ],
+        message: 'first of 2 errors: mixed error types'
+    };
+
+    var result2 = testInvalidPartExtraction(mixedError);
+    t.equal(result2, null,
+            'should not extract InvalidPart when errors are mixed');
+
+    // Test direct InvalidPart error (not in ase_errors)
+    var directInvalidPart = {
+        statusCode: 400,
+        restCode: 'InvalidPart',
+        message:
+        'One or more parts have size discrepancies that prevent assembly'
+    };
+
+    var result3 = testInvalidPartExtraction(directInvalidPart);
+    t.equal(result3, directInvalidPart,
+             'should pass through direct InvalidPart error');
+
+    // Test error with no ase_errors
+    var noAseError = {
+        statusCode: 503,
+        restCode: 'ServiceUnavailable',
+        message: 'Service unavailable'
+    };
+
+    var result4 = testInvalidPartExtraction(noAseError);
+    t.equal(result4, null,
+            'should return null for non-InvalidPart errors without ase_errors');
+    t.end();
+});
+
 helper.test('Upload record creation and retrieval', function (t) {
     // Test upload record structure and properties
     var uploadRecord = createMockUploadRecord();

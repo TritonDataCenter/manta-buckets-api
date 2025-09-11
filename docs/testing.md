@@ -12,6 +12,26 @@ The test suites validate S3 API compatibility across multiple clients and scenar
 
 ## Test Suites
 
+### Unit Test Suite (`make test-s3`)
+
+Pure unit tests with mocks that validate S3 functionality without external dependencies.
+
+**Key Features:**
+- **Multipart Upload Tests** (`test/s3-multipart.test.js`) - Core MPU functionality
+- **Enhanced S3 Compatibility** (`test/s3-compat-enhanced.test.js`) - Advanced S3 operations  
+- **Route Handling** (`test/s3-routes.test.js`) - S3 request routing and middleware
+- **Role Mapping** (`test/s3-role-mapping.test.js`) - S3 ACL to Manta role translation
+- **AWS Chunked Decoding** (`test/aws-chunked-decoder.test.js`) - AWS chunked transfer encoding
+
+**Run Unit Tests:**
+```bash
+# Run all S3 unit tests
+make test-s3
+
+# Or run individual test files
+./node_modules/.bin/nodeunit test/s3-multipart.test.js
+```
+
 ### AWS CLI Test Suite (`test/s3-compat-awscli-test.sh`)
 
 Comprehensive testing using AWS CLI (aws s3api commands) for low-level S3 API operations.

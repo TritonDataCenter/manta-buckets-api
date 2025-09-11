@@ -149,7 +149,7 @@ The system includes comprehensive security controls:
 MANTA_ANONYMOUS_ACCESS_ENABLED=true           # Anonymous access enabled by default
 MANTA_ANONYMOUS_BUCKETS=public                # Allowed bucket names (comma-separated)
 MANTA_ANONYMOUS_STRICT_MODE=true              # Strict security mode (default: enabled)
-MANTA_ANONYMOUS_RATE_LIMIT=100                # Requests per minute limit
+MANTA_ANONYMOUS_RATE_LIMIT=100                # Requests per minute limit (Not implemented)
 MANTA_ANONYMOUS_AUDIT_ALL=false               # Audit all attempts (default: disabled)
 ```
 
@@ -180,7 +180,7 @@ MANTA_ANONYMOUS_AUDIT_ALL=false               # Audit all attempts (default: dis
 
 ### System Configuration
 
-#### **Default Configuration** (Production Ready)
+#### **Default Configuration** 
 ```bash
 # Anonymous access is enabled by default with secure settings
 MANTA_ANONYMOUS_ACCESS_ENABLED=true           # Feature enabled
@@ -190,28 +190,9 @@ MANTA_ANONYMOUS_RATE_LIMIT=100                # Rate limiting active
 MANTA_ANONYMOUS_AUDIT_ALL=false               # Basic audit logging
 ```
 
-#### **High-Security Configuration**
-```bash
-# For maximum security environments
-MANTA_ANONYMOUS_ACCESS_ENABLED=false          # Disable entirely
-MANTA_ANONYMOUS_STRICT_MODE=true              # Strict mode always
-MANTA_ANONYMOUS_AUDIT_ALL=true                # Full audit trail
-```
+### Public buckets
 
-#### **Development Configuration**
-```bash
-# For development/testing only
-MANTA_ANONYMOUS_ACCESS_ENABLED=true
-MANTA_ANONYMOUS_BUCKETS=public,test-public,dev-public
-MANTA_ANONYMOUS_STRICT_MODE=false             # Less restrictive for testing
-MANTA_ANONYMOUS_AUDIT_ALL=true                # Full logging for debugging
-```
-
-### Making Buckets Public
-
-#### **Secure Method: Exact Bucket Names**
-
-The most secure approach is to use buckets named exactly `"public"`:
+A Bucket become publicly accessible when it's name public.
 
 ```bash
 # Create a bucket named exactly "public" 
@@ -224,57 +205,15 @@ s3cmd --no-check-certificate put document.pdf s3://public/
 curl https://manta.example.com/user/buckets/public/objects/document.pdf
 ```
 
-Buckets become publicly accessible when they meet the security criteria:
 
-#### Method 1: Using s3cmd with Canned ACLs
+#### Using Canned ACLs to allow access to objects within buckets.
 
-```bash
-# Create a new public bucket
-s3cmd --no-check-certificate --add-header="x-amz-acl:public-read" mb s3://public-docs
-
-# Make an existing bucket public
-s3cmd --no-check-certificate --acl-public setacl s3://existing-bucket
-```
-
-#### Method 2: Using s3cmd with Custom Headers
+By default all buckets are private (except a buckets named 'public'), but it is 
+possible to allow anonymous access to specific objects inside a bucket.
 
 ```bash
-# Create bucket with custom ACL header
-s3cmd --no-check-certificate \
-      --add-header="x-amz-acl:public-read" \
-      mb s3://public-docs
-
-# Set ACL on existing bucket
-s3cmd --no-check-certificate \
-      --add-header="x-amz-acl:public-read" \
-      setacl s3://existing-bucket
-```
-
-#### Method 3: Using curl with Manta API
-
-```bash
-# Create bucket with public-reader role
-curl -X PUT \
-     -H "role-tag: public-reader" \
-     -H "Authorization: Signature keyId=\"/user/keys/...\",algorithm=\"rsa-sha256\",signature=\"...\"" \
-     -H "Date: $(date -u '+%a, %d %h %Y %H:%M:%S GMT')" \
-     https://manta.example.com/user/buckets/public-docs
-
-# Update existing bucket to be public
-curl -X PUT \
-     -H "role-tag: public-reader" \
-     -H "Authorization: Signature ..." \
-     -H "Date: $(date -u '+%a, %d %h %Y %H:%M:%S GMT')" \
-     https://manta.example.com/user/buckets/existing-bucket
-```
-
-#### Method 4: Using S3 Grant Headers
-
-```bash
-# Grant read access to all users
-s3cmd --no-check-certificate \
-      --add-header="x-amz-grant-read:uri=\"http://acs.amazonaws.com/groups/global/AllUsers\"" \
-      mb s3://public-docs
+# Share an object within a bucket 
+s3cmd --no-check-certificate --acl=public-read  s3://mybucket/shareobject.txt
 ```
 
 ### Removing Public Access
@@ -285,59 +224,28 @@ To make a public bucket private again, you need to remove the `public-reader` ro
 
 ```bash
 # Set bucket to private
-s3cmd --no-check-certificate --acl-private setacl s3://public-bucket
+s3cmd --no-check-certificate --acl-private setacl s3://mybucket/myobject.txt
 
 # Alternative: recreate bucket without public access
 s3cmd --no-check-certificate del s3://public-bucket
 s3cmd --no-check-certificate mb s3://public-bucket  # Private by default
 ```
 
-#### Method 2: Using curl with Manta API
-
-```bash
-# Remove role-tag by setting it to empty
-curl -X PUT \
-     -H "Authorization: Signature keyId=\"/user/keys/...\",algorithm=\"rsa-sha256\",signature=\"...\"" \
-     -H "Date: $(date -u '+%a, %d %h %Y %H:%M:%S GMT')" \
-     -H "role-tag: " \
-     https://manta.example.com/user/buckets/public-bucket
-
-# OR explicitly set to private ACL
-curl -X PUT \
-     -H "Authorization: Signature ..." \
-     -H "Date: $(date -u '+%a, %d %h %Y %H:%M:%S GMT')" \
-     -H "x-amz-acl: private" \
-     https://manta.example.com/user/buckets/public-bucket
-```
-
-#### Method 3: Using s3cmd with Headers
-
-```bash
-# Explicitly set private ACL
-s3cmd --no-check-certificate \
-      --add-header="x-amz-acl:private" \
-      setacl s3://public-bucket
-```
-
 ### Verifying Bucket Access Status
 
-#### Check if Bucket is Public
+#### Check if the Bucket object is public 
 
 ```bash
 # Method 1: Check bucket headers for role-tag
-curl -I \
-     -H "Authorization: Signature ..." \
-     -H "Date: $(date -u '+%a, %d %h %Y %H:%M:%S GMT')" \
-     https://manta.example.com/user/buckets/bucket-name
-
-# Look for: role-tag: public-reader
+curl -JOL   https://{manta_endpoint}/{your account}\
+    /buckets/{bucket}/objects/myobject.txt
 ```
 
 #### Test Browser Access
 
 ```bash
 # Public bucket: Should return JSON or content
-curl https://manta.example.com/user/buckets/public-bucket
+curl https://manta.example.com/user/buckets/public
 
 # Private bucket: Should return 403 Forbidden
 curl https://manta.example.com/user/buckets/private-bucket
@@ -440,36 +348,25 @@ For browser-based applications, CORS headers are automatically added:
    - Ensure anonymous user context is created
    - Confirm bucket name contains "public" (current simplified implementation)
 
-2. **Can't Make Bucket Public**
-   - Ensure you're using the correct s3cmd syntax: `--add-header="x-amz-acl:public-read"`
-   - Verify the S3 role translator middleware is active
-   - Check that the bucket creation succeeded
-   - Look for role translation in debug logs: `s3RoleTranslator: translated S3 ACL to Manta roles`
-
-3. **Can't Remove Public Access**
+2. **Can't Remove Public Access**
    - Use `--acl-private` flag with s3cmd: `s3cmd --acl-private setacl s3://bucket`
    - Verify the role-tag header is empty after removal
    - Test browser access returns 403 Forbidden
    - Check debug logs show `roles=[]` and `isPublic=false`
 
-4. **Public Access Not Working After Setup**
+3. **Public Access Not Working After Setup**
    - Restart buckets-api service after code changes
    - Verify anonymous access handler is loaded before authentication
    - Check that bucket name contains "public" (current naming-based detection)
    - Ensure browser is not sending authentication headers (clear cookies/auth)
 
-5. **CORS Errors in Browser**
+4. **CORS Errors in Browser**
    - Verify CORS headers are being set
    - Check browser developer tools for CORS policy errors
    - Ensure OPTIONS requests are handled
 
-6. **Performance Issues**
-   - Monitor bucket role lookup performance  
-   - Consider implementing role caching
-   - Check for excessive metadata queries
-
-7. **Bucket Shows as Public But Browser Access Fails**
-   - Check if bucket name contains "public" (required for current implementation)
+5. **Bucket is named Public But Browser Access Fails**
+   - Check if bucket name is "public" (required for current implementation)
    - Verify the anonymous access middleware chain is complete
    - Look for authorization bypass logs: `authorize: allowing public access - bypassing Mahi authorization`
    - Ensure no authentication headers are being sent by the browser
@@ -480,7 +377,8 @@ Enable debug logging to troubleshoot anonymous access issues:
 
 ```bash
 # Enable debug logging
-export NODE_LOG_LEVEL=debug
+svccfg -s buckets-api setenv LOG_LEVEL debug
+svcadm refresh buckets-api
 
 # Check logs for anonymous access
 grep "anonymous" /var/log/buckets-api.log

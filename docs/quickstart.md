@@ -129,10 +129,10 @@ The following table shows the services that the Manta Buckets API S3 layer depen
 
 | Service Name | Service Type | UUID/Identifier | Needs Extra Steps? |
 |--------------|--------------|-----------------|-------------------|
-| Mahi | Authentication & Authorization | `authcache` |2d6c9916-2bc3-40d7-ad3c-4f76fb5fbc05 | Yes - Requires cache rebuild |
-| Buckets API | Core Bucket Operations | `buckets-api`|684049e8-9b78-49b3-8e09-8744f7df3698" | No - Direct integration |
-| Mako | Storage Nodes | `storage` | No - Backend dependency |5735eba4-746c-4f93-b275-8d739e53f1e4| No - direct integration |
-| Manta Load Balancer | Traffic Distribution | `loadbalancer` |f9f32770-14fa-4f85-a7cc-a1b8b62ede07| No -  direct integration  |
+| `authcache` | Authentication & Authorization |  2d6c9916-2bc3-40d7-ad3c-4f76fb5fbc05 | Yes - Requires cache rebuild |
+| `buckets-api`| Core Bucket Operations |  684049e8-9b78-49b3-8e09-8744f7df3698" | No - Direct integration |
+| `storage`  | Storage Nodes |  5735eba4-746c-4f93-b275-8d739e53f1e4| No - Backend dependency |
+| `loadbalancer` | Traffic Distribution | |f9f32770-14fa-4f85-a7cc-a1b8b62ede07| No -  direct integration  |
 
 ### Services Requiring Extra Steps
 
@@ -141,15 +141,14 @@ are specified in https://github.com/TritonDataCenter/manta-buckets-api/blob/MANT
 
 ## Troubleshooting
 
-### Common Issues
 
-## Mahi is not picking up changes
+### Mahi is not picking up changes
 
 Authcache must be rebuild to pickup the new structure for accesskeys 
 https://github.com/TritonDataCenter/mahi/blob/master/docs/index.md
 
 
-#### Where is my bucket object stored? 
+### Where is my bucket object stored? 
 https://github.com/TritonDataCenter/manta/blob/master/docs/operator-guide/maintenance.md#pickerstorinfo-toggle
 
 For manta-buckets-api there is /opt/smartdc/buckets-api/bin/mlocate 

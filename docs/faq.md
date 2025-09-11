@@ -76,3 +76,50 @@ total 1
 [root@b948d68a (storage) /manta/v2/c116efce-086f-455e-9ae4-26d49551428d/afc19bda-99de-461c-81f5-8b0633c88259/56]$ cat 56ccac05-c9c6-4e6b-8a8e-5daad7d4e44f,4116ddb8d538f4db68253ca6a6fb9bee
 sopa1
 
+### Sigv4 is not working, error 403 
+
+Make sure that the access keys you are using are the correct ones, also we need
+to check if the authcachev2 is seeing our account access keys.
+Try 
+
+```
+redis-cli -n 1 get "/accesskey/your-access-key-id"
+```
+If this returns nil, then we need to rebuild caches for authcache instances
+The new changes in manta-buckets-api require that all caches from authcache 
+instances to be rebuilt in order for Sigv4 authentication to work.
+Document for this procedure is  here : 
+
+- https://github.com/TritonDataCenter/mahi/blob/master/docs/index.md
+
+The steps for rebuilding caches are :
+
+1. In the mahi zone, disable registrar and mahi-server. This takes mahi out of 
+DNS so services will not try to use this instance of mahi. HA setups (Manta) 
+will continue to use other instances.
+    
+    ```
+     svcadm disable registrar
+     svcadm disable mahi-server
+    ```
+    
+2. Disable mahi-replicator, flush the redis database and re-enable mahi-replicator.
+    
+    ```
+     svcadm disable mahi-replicator
+     redis-cli -n $(json -f /opt/smartdc/mahi/etc/mahi2.json redis.db || 0) flushdb
+     svcadm enable mahi-replicator
+    ```
+
+3. Enable mahi-server and registrar. Registrar's healthcheck won't pass and mahi-server will return 500s until mahi-replicator has caught up.
+    
+    ```
+     svcadm enable mahi-server
+     svcadm enable registrar
+    ```
+4. Test if data has been refreshed
+
+This command should return the uuid for the account associated with the access key id
+```
+redis-cli -n 1 get "/accesskey/your-access-key-id"
+``` 

@@ -130,7 +130,7 @@ The following table shows the services that the Manta Buckets API S3 layer depen
 | Service Name | Service Type | UUID/Identifier | Needs Extra Steps? |
 |--------------|--------------|-----------------|-------------------|
 | `authcache` | Authentication & Authorization |  2d6c9916-2bc3-40d7-ad3c-4f76fb5fbc05 | Yes - Requires cache rebuild |
-| `buckets-api`| Core Bucket Operations |  684049e8-9b78-49b3-8e09-8744f7df3698" | No - Direct integration |
+| `buckets-api`| Core Bucket Operations |  684049e8-9b78-49b3-8e09-8744f7df3698  | No - Direct integration |
 | `storage`  | Storage Nodes |  5735eba4-746c-4f93-b275-8d739e53f1e4| No - Backend dependency |
 | `loadbalancer` | Traffic Distribution | f9f32770-14fa-4f85-a7cc-a1b8b62ede07| No -  direct integration  |
 

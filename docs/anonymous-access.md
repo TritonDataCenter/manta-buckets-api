@@ -10,7 +10,6 @@ The anonymous access system is **enabled by default** and provides secure access
 - Static website hosting from Manta buckets
 - Public CDN-style content distribution
 - API access without authentication for public resources
-- Production-grade security and audit logging
 
 ## Architecture
 
@@ -94,15 +93,15 @@ Browser → Authentication → Authorization → Bucket Access
 ```
 Browser → Anonymous Check → Skip Auth → Authorization → Bucket Access
           ↓
-    (if public bucket)
+    (if object in bucket is public)
 ```
 
 ### Detailed Anonymous Flow
 
-1. **Request Received**: Browser sends `GET /user/buckets/public-docs/objects/readme.txt`
+1. **Request Received**: Browser sends `GET /user/buckets/public/objects/readme.txt`
 2. **Anonymous Handler**: Checks for authentication headers
    - No auth headers found
-   - Extracts bucket name: `public-docs`
+   - Extracts bucket name: `public`
 3. **Public Bucket Check**: Queries bucket metadata for roles
    - Finds `public-reader` role on bucket
    - Marks request as `req.isAnonymousAccess = true`

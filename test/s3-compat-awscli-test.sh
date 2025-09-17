@@ -135,14 +135,14 @@ test_list_buckets() {
     set -e  # Re-enable exit on error
     
     if [ $exit_code -eq 0 ]; then
-        if echo "$result" | grep -q '"Buckets"'; then
+        if echo "$result" | jq -e '.Buckets' >/dev/null 2>&1; then
             success "List buckets - JSON response contains Buckets array"
         else
             error "List buckets - Response missing Buckets array"
             echo "Response: $result"
         fi
         
-        if echo "$result" | grep -q '"Owner"'; then
+        if echo "$result" | jq -e '.Owner' >/dev/null 2>&1; then
             success "List buckets - JSON response contains Owner information"
         else
             error "List buckets - Response missing Owner information"
@@ -192,7 +192,7 @@ test_list_bucket_objects() {
     set -e  # Re-enable exit on error
     
     if [ $exit_code -eq 0 ]; then
-        if echo "$result" | grep -q '"KeyCount": 0' || echo "$result" | grep -q '"Contents": \[\]' || ! echo "$result" | grep -q '"Contents"'; then
+        if echo "$result" | jq -e '.KeyCount == 0 or (.Contents | length == 0) or (.Contents | not)' >/dev/null 2>&1; then
             success "List objects - Empty bucket returns correct response"
         else
             error "List objects - Empty bucket response unexpected: $result"
@@ -211,7 +211,7 @@ test_put_object() {
     set -e  # Re-enable exit on error
     
     if [ $exit_code -eq 0 ]; then
-        if echo "$result" | grep -q '"ETag"'; then
+        if echo "$result" | jq -e '.ETag' >/dev/null 2>&1; then
             success "Put object - $TEST_OBJECT uploaded successfully"
         else
             error "Put object - Response missing ETag: $result"
@@ -343,13 +343,13 @@ test_list_bucket_objects_with_content() {
     log "Testing: List Bucket Objects (with content)"
     
     if result=$(aws_s3api list-objects-v2 --bucket "$TEST_BUCKET" 2>&1); then
-        if echo "$result" | grep -q "\"Key\": \"$TEST_OBJECT\""; then
+        if echo "$result" | jq -e --arg key "$TEST_OBJECT" '.Contents[]? | select(.Key == $key)' >/dev/null 2>&1; then
             success "List objects - Object $TEST_OBJECT found in listing"
         else
             error "List objects - Object $TEST_OBJECT not found in listing: $result"
         fi
         
-        if echo "$result" | grep -q '"KeyCount": 1'; then
+        if echo "$result" | jq -e '.KeyCount == 1' >/dev/null 2>&1; then
             success "List objects - KeyCount correctly shows 1 object"
         else
             warning "List objects - KeyCount may be incorrect"
@@ -410,7 +410,7 @@ test_conditional_headers() {
     fi
     
     # Extract ETag from put response
-    local etag=$(echo "$put_result" | grep -o '"ETag": "[^"]*"' | cut -d'"' -f4)
+    local etag=$(echo "$put_result" | jq -r '.ETag // empty')
     log "  Object ETag: $etag"
     
     # Get object metadata to extract Last-Modified
@@ -576,7 +576,7 @@ test_multipart_upload_basic() {
         return 1
     fi
     
-    local upload_id=$(echo "$initiate_result" | grep -o '"UploadId": "[^"]*"' | cut -d'"' -f4)
+    local upload_id=$(echo "$initiate_result" | jq -r '.UploadId // empty')
     log "  Upload ID: $upload_id"
     
     if [ -z "$upload_id" ]; then
@@ -823,7 +823,7 @@ test_multipart_upload_resume() {
         return 1
     fi
     
-    local upload_id=$(echo "$initiate_result" | grep -o '"UploadId": "[^"]*"' | cut -d'"' -f4)
+    local upload_id=$(echo "$initiate_result" | jq -r '.UploadId // empty')
     log "  Upload ID: $upload_id"
     
     # Upload first part only
@@ -871,10 +871,10 @@ test_multipart_upload_resume() {
             echo "DEBUG: part1 sed extraction result: '$part1_etag'"
         fi
         
-        # If sed fails, try a different approach with awk
+        # If sed fails, try jq as a fallback
         if [ -z "$part1_etag" ]; then
-            part1_etag=$(echo "$list_result" | grep '"ETag":' | head -1 | sed 's/.*"ETag": *"\([^"]*\)".*/\1/')
-            echo "DEBUG: part1 awk extraction result: '$part1_etag'"
+            part1_etag=$(echo "$list_result" | jq -r '.Parts[0].ETag // empty')
+            echo "DEBUG: part1 jq fallback extraction result: '$part1_etag'"
         fi
     else
         echo "DEBUG: part1 list-parts failed with exit code $list_exit_code"
@@ -909,7 +909,7 @@ test_multipart_upload_resume() {
     fi
     
     # Verify part 1 is listed
-    if echo "$list_parts_result" | grep -q "\"PartNumber\": 1"; then
+    if echo "$list_parts_result" | jq -e '.Parts[]? | select(.PartNumber == 1)' >/dev/null 2>&1; then
         success "MPU resume test - ListParts correctly shows existing part 1"
     else
         error "MPU resume test - ListParts does not show existing part 1"
@@ -917,7 +917,7 @@ test_multipart_upload_resume() {
     fi
     
     # Verify ListParts returns size information
-    if echo "$list_parts_result" | grep -q "\"Size\""; then
+    if echo "$list_parts_result" | jq -e '.Parts[]?.Size' >/dev/null 2>&1; then
         success "MPU resume test - ListParts includes part size information"
     else
         error "MPU resume test - ListParts missing size information (required for resume)"
@@ -1107,7 +1107,7 @@ test_multipart_upload_errors() {
         return 1
     fi
     
-    local upload_id=$(echo "$initiate_result" | grep -o '"UploadId": "[^"]*"' | cut -d'"' -f4)
+    local upload_id=$(echo "$initiate_result" | jq -r '.UploadId // empty')
     
     # Upload a small part (should fail with EntityTooSmall if not final part)
     log "  Testing EntityTooSmall error for 4MB non-final part..."
@@ -1167,12 +1167,12 @@ test_multipart_upload_errors() {
             
             # Final fallback - awk approach
             if [ -z "$part1_etag" ]; then
-                part1_etag=$(echo "$list_result" | grep '"ETag":' | head -1 | sed 's/.*"ETag": *"\([^"]*\)".*/\1/')
-                echo "DEBUG: error test part1 awk result: '$part1_etag'"
+                part1_etag=$(echo "$list_result" | jq -r '.Parts[0].ETag // empty')
+                echo "DEBUG: error test part1 jq result: '$part1_etag'"
             fi
             if [ -z "$part2_etag" ]; then
-                part2_etag=$(echo "$list_result" | grep '"ETag":' | tail -1 | sed 's/.*"ETag": *"\([^"]*\)".*/\1/')
-                echo "DEBUG: error test part2 awk result: '$part2_etag'"
+                part2_etag=$(echo "$list_result" | jq -r '.Parts[1].ETag // empty')
+                echo "DEBUG: error test part2 jq result: '$part2_etag'"
             fi
         else
             log "  Warning: list-parts failed, using placeholder ETags"

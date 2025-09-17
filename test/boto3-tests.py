@@ -382,6 +382,119 @@ def run_suite(args) -> int:
     tr.run("Multipart Upload (basic with MD5 verification)", t_multipart_upload_basic)
     tr.run("Multipart Upload (resume simulation)", t_multipart_upload_resume)
 
+    # --- List Objects with Pagination Test --------------------------------
+    def t_list_objects_with_pagination():
+        """Test listing all objects in bucket using pagination."""
+        # Create a dedicated bucket for pagination testing to avoid interference
+        import uuid
+        pagination_bucket = f"pagination-test-{uuid.uuid4().hex[:8]}"
+        test_objects = []
+        num_objects = 15  # Create enough objects to test pagination
+        
+        try:
+            info(f"Creating dedicated bucket for pagination test: {pagination_bucket}")
+            # Create the pagination test bucket
+            try:
+                if args.region and args.region != "us-east-1":
+                    s3.create_bucket(
+                        Bucket=pagination_bucket,
+                        CreateBucketConfiguration={"LocationConstraint": args.region},
+                    )
+                else:
+                    s3.create_bucket(Bucket=pagination_bucket)
+                info(f"Created pagination bucket: {pagination_bucket}")
+            except ClientError as e:
+                code = e.response.get("Error", {}).get("Code", "")
+                if code in (
+                    "InvalidLocationConstraint",
+                    "IllegalLocationConstraintException", 
+                    "InvalidRequest",
+                ):
+                    s3.create_bucket(Bucket=pagination_bucket)
+                    info(f"Created pagination bucket (fallback): {pagination_bucket}")
+                else:
+                    raise
+
+            info(f"Creating {num_objects} test objects for pagination test...")
+            for i in range(num_objects):
+                test_key = f"pagination-test-{i:03d}.txt"
+                test_content = f"Test content for object {i}".encode()
+                s3.put_object(Bucket=pagination_bucket, Key=test_key, Body=test_content)
+                test_objects.append(test_key)
+            
+            # Now test listing with pagination
+            all_objects = []
+            continuation_token = None
+            page_count = 0
+            max_keys = 5  # Small page size to force pagination
+            
+            info(f"Starting paginated listing with MaxKeys={max_keys}")
+            
+            while True:
+                page_count += 1
+                
+                # Build list_objects_v2 parameters
+                list_params = {
+                    'Bucket': pagination_bucket,
+                    'MaxKeys': max_keys
+                }
+                
+                if continuation_token:
+                    list_params['ContinuationToken'] = continuation_token
+                
+                # Get page of objects
+                response = s3.list_objects_v2(**list_params)
+                
+                # Extract objects from this page
+                page_objects = response.get('Contents', [])
+                all_objects.extend(page_objects)
+                
+                info(f"Page {page_count}: Found {len(page_objects)} objects")
+                
+                # Check if there are more pages
+                if not response.get('IsTruncated', False):
+                    info("No more pages, pagination complete")
+                    break
+                
+                # Get continuation token for next page
+                continuation_token = response.get('NextContinuationToken')
+                if not continuation_token:
+                    info("No continuation token, pagination complete")
+                    break
+            
+            # Verify results
+            info(f"Pagination complete: Found {len(all_objects)} total objects across {page_count} pages")
+            
+            # Verify we found our test objects
+            found_test_objects = [obj['Key'] for obj in all_objects if obj['Key'].startswith('pagination-test-')]
+            info(f"Found {len(found_test_objects)} test objects out of {num_objects} created")
+            
+            assert len(found_test_objects) >= num_objects, f"Expected at least {num_objects} test objects, found {len(found_test_objects)}"
+            assert page_count > 1, f"Expected multiple pages for pagination test, got {page_count}"
+            
+        finally:
+            # Clean up test objects and pagination bucket
+            info("Cleaning up pagination test objects and bucket...")
+            for test_key in test_objects:
+                try:
+                    s3.delete_object(Bucket=pagination_bucket, Key=test_key)
+                except ClientError as e:
+                    if e.response.get("Error", {}).get("Code", "") != "NoSuchKey":
+                        warn(f"Failed to delete test object {test_key}: {e}")
+            
+            # Delete the pagination bucket
+            try:
+                s3.delete_bucket(Bucket=pagination_bucket)
+                info(f"Deleted pagination bucket: {pagination_bucket}")
+            except ClientError as e:
+                code = e.response.get("Error", {}).get("Code", "")
+                if code not in ("NoSuchBucket", "BucketNotEmpty"):
+                    warn(f"Failed to delete pagination bucket {pagination_bucket}: {e}")
+                else:
+                    info(f"Pagination bucket {pagination_bucket} already deleted or empty")
+
+    tr.run("ListObjects with Pagination", t_list_objects_with_pagination)
+
     # Clean up the MPU object
     def t_delete_mpu_object():
         try:

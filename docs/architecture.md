@@ -290,3 +290,217 @@ Errors are converted to S3-compatible XML format:
 - XML response generation for S3 compatibility
 - Proper HTTP status codes
 - S3-compatible error messages
+
+### Supported Operations
+
+#### Bucket Operations
+- **ListBuckets**: `GET /` → Lists all buckets for the authenticated account
+- **CreateBucket**: `PUT /:bucket` → Creates a new bucket
+- **ListBucketObjects**: `GET /:bucket` → Lists objects in a bucket (S3 API v1)
+- **ListBucketObjectsV2**: `GET /:bucket?list-type=2` → Lists objects in a bucket (S3 API v2)
+- **HeadBucket**: `HEAD /:bucket` → Checks if bucket exists
+- **DeleteBucket**: `DELETE /:bucket` → Deletes an empty bucket
+
+#### Object Operations
+- **CreateBucketObject**: `PUT /:bucket/:object` → Uploads an object to a bucket
+- **GetBucketObject**: `GET /:bucket/:object` → Downloads an object from a bucket
+- **HeadBucketObject**: `HEAD /:bucket/:object` → Gets object metadata
+- **DeleteBucketObject**: `DELETE /:bucket/:object` → Deletes an object from a bucket
+
+### Addressing Styles
+
+Currently only S3 Path-style addressing is supported:
+
+- **Path-style**: `https://domain.com/bucket/object`
+- **Virtual-hosted**: `https://bucket.domain.com/object`
+
+The system automatically detects the addressing style based on the Host header and request path,
+but currently virtual-hosted style is disabled.
+
+### Response Format Translation
+
+#### Bucket Listings
+Manta's JSON streaming format is converted to S3's XML format:
+```xml
+<ListAllMyBucketsResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
+  <Owner>
+    <ID>account-uuid</ID>
+    <DisplayName>account-login</DisplayName>
+  </Owner>
+  <Buckets>
+    <Bucket>
+      <Name>bucket-name</Name>
+      <CreationDate>2023-01-01T00:00:00.000Z</CreationDate>
+    </Bucket>
+  </Buckets>
+</ListAllMyBucketsResult>
+```
+
+#### Object Listings
+Object lists are converted to S3 XML format with support for both v1 and v2 APIs:
+```xml
+<ListBucketResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
+  <Name>bucket-name</Name>
+  <KeyCount>1</KeyCount>
+  <Contents>
+    <Key>object-key</Key>
+    <LastModified>2023-01-01T00:00:00.000Z</LastModified>
+    <ETag>"etag-value"</ETag>
+    <Size>1024</Size>
+    <StorageClass>STANDARD</StorageClass>
+  </Contents>
+</ListBucketResult>
+```
+
+#### Error Responses
+Manta errors are translated to S3 XML error format:
+```xml
+<Error>
+  <Code>NoSuchBucket</Code>
+  <Message>The specified bucket does not exist.</Message>
+  <RequestId>request-id</RequestId>
+</Error>
+```
+
+### Header Translation
+
+- **Metadata headers**: `m-*` → `x-amz-meta-*`
+- **Standard headers**: `content-type`, `content-length`, `etag`, `last-modified` are preserved
+- **S3-specific headers**: `x-amz-request-id`, `x-amz-id-2` are added automatically
+
+### Authentication
+
+S3 compatibility requires AWS Signature Version 4 (SigV4) authentication. Traditional Manta authentication methods are not supported for S3 endpoints.
+
+#### AWS Signature Version 4 (SigV4) Authentication
+
+The Manta Buckets API implements full AWS SigV4 authentication compatibility through integration with the Mahi authentication service. This enables standard AWS tools and SDKs to authenticate seamlessly with Manta's bucket storage.
+
+##### SigV4 Authentication Flow
+
+```mermaid
+graph TD
+    A[S3 Client Request with SigV4 Headers] --> B[Authentication Middleware]
+    B --> C{Authorization Header Check}
+    C -->|AWS4-HMAC-SHA256| D[SigV4 Handler]
+    C -->|Other| E[Traditional Manta Auth]
+    
+    D --> F[Parse SigV4 Headers]
+    F --> G[Extract Authorization Components]
+    G --> H{Required Headers Present?}
+    
+    H -->|Missing| I[Return 400 Bad Request]
+    H -->|Present| J[Prepare Request for Verification]
+    
+    J --> K[Filter Problematic Headers]
+    K --> L[Handle URL Encoding]
+    L --> M[Call Mahi SigV4 Verification]
+    
+    M --> N[Mahi /aws-verify Endpoint]
+    N --> O[Access Key Lookup]
+    O --> P[Signature Calculation]
+    P --> Q[Signature Comparison]
+    
+    Q -->|Invalid| R[Return 403 Forbidden]
+    Q -->|Valid| S[Return User Context]
+    
+    S --> T[Set Authentication Context]
+    T --> U[Load User Account Information]
+    U --> V[Set req.caller with Account Details]
+    V --> W[Continue to S3 Handler]
+    
+    R --> X[Map to S3 Error Format]
+    I --> X
+    X --> Y[Send S3 XML Error Response]
+    
+    classDef clientNode fill:#F8FBFF,stroke:#90CAF9,stroke-width:1px,color:#1565C0
+    classDef authNode fill:#FFFAF0,stroke:#FFCC80,stroke-width:1px,color:#F57C00
+    classDef processNode fill:#FCF8FF,stroke:#CE93D8,stroke-width:1px,color:#8E24AA
+    classDef mahiNode fill:#F8FFF8,stroke:#A5D6A7,stroke-width:1px,color:#43A047
+    classDef errorNode fill:#FFF8F8,stroke:#FFAB91,stroke-width:1px,color:#F4511E
+    classDef successNode fill:#F8FFF8,stroke:#A5D6A7,stroke-width:1px,color:#43A047
+    
+    class A clientNode
+    class B,C,D authNode
+    class F,G,H,J,K,L processNode
+    class M,N,O,P,Q,S mahiNode
+    class I,R,X,Y errorNode
+    class T,U,V,W successNode
+```
+
+##### Implementation Details
+
+**Key Components:**
+
+1. **SigV4 Detection** (`lib/auth.js:sigv4Handler`)
+   - Identifies requests with `AWS4-HMAC-SHA256` authorization scheme
+   - Validates presence of required headers (`Authorization`, `x-amz-date`)
+   - Filters problematic headers that cause verification issues
+
+2. **Mahi Integration** (`node_modules/mahi/lib/client.js`)
+   - **Signature Verification**: `verifySigV4()` calls `/aws-verify` endpoint
+   - **Access Key Lookup**: `getUserByAccessKey()` retrieves user credentials
+   - **Account Resolution**: Maps AWS access keys to Manta accounts
+
+3. **Authentication Context** (`lib/auth.js:loadCaller`)
+   ```javascript
+   req.auth = {
+       accountid: result.userUuid,
+       accessKeyId: result.accessKeyId,
+       method: 'sigv4',
+       signature: {
+           verified: true,
+           keyId: result.accessKeyId
+       }
+   };
+   ```
+
+**Required SigV4 Headers:**
+- `Authorization: AWS4-HMAC-SHA256 Credential=...`
+- `x-amz-date: 20231201T120000Z` (or standard `Date` header)
+- `x-amz-content-sha256: <payload-hash>` (for POST/PUT requests)
+- `Host: <endpoint-hostname>`
+
+**Signature Calculation Process:**
+1. **Canonical Request**: Normalize HTTP method, URI, query parameters, headers, and payload
+2. **String to Sign**: Create standardized string with algorithm, timestamp, scope, and canonical request hash
+3. **Signing Key**: Derive signing key from secret access key, date, region, and service
+4. **Signature**: Calculate HMAC-SHA256 of string-to-sign using signing key
+
+**Error Handling:**
+- `InvalidSignature` → 403 Forbidden with S3 XML error format
+- `AccessKeyNotFound` → 403 Forbidden (mapped to InvalidSignature for security)
+- `RequestTimeTooSkewed` → 403 Forbidden with time skew error
+- `MissingHeaders` → 400 Bad Request
+
+**Security Features:**
+- **Time-based Validation**: Requests must be within acceptable time window
+- **Replay Protection**: Signatures include timestamp and are single-use
+- **Secure Key Storage**: Access keys managed through Mahi service
+- **Audit Logging**: All authentication attempts are logged for security monitoring
+
+##### Configuration
+
+SigV4 authentication is configured through the Mahi client setup:
+
+```javascript
+// main.js - Mahi client configuration
+var mahiClient = mahi.createClient({
+    url: 'http://mahi.service.consul:8080',
+    log: bunyan.createLogger({name: 'mahi'}),
+    typeTable: apertureConfig.typeTable
+});
+```
+
+**Environment Variables:**
+- `MAHI_URL` - Mahi authentication service endpoint
+- `APERTURE_URL` - Aperture authorization service endpoint  
+- `KEYAPI_URL` - Key management service endpoint
+
+##### Testing SigV4 Authentication
+
+The test suite (`test/s3-compat-test.sh`) validates SigV4 authentication with:
+- **AWS CLI Integration**: Standard AWS CLI commands with custom endpoint
+- **Credential Validation**: Access key and secret key verification
+- **Error Scenarios**: Invalid signatures, missing headers, time skew
+- **Multi-operation Flows**: End-to-end workflows with authentication

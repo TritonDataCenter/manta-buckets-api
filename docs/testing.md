@@ -306,7 +306,7 @@ AWS_DEBUG=1 ./test/s3-compat-awscli-test.sh
 ### Check Server Logs
 ```bash
 # Monitor manta-buckets-api logs during test execution
-tail -f /var/log/manta-buckets-api.log | grep -E "(S3_MPU|ERROR|WARN)"
+tail -f $(svcs -L buckets-api) | grep -E "(S3_MPU|ERROR|WARN)"
 ```
 
 ### Common Debug Steps
@@ -316,110 +316,3 @@ tail -f /var/log/manta-buckets-api.log | grep -E "(S3_MPU|ERROR|WARN)"
 4. **Review test output**: Look for specific error messages in test logs
 5. **Check server logs**: Review server-side errors and warnings
 
-## Integration with CI/CD
-
-### Example GitHub Actions
-```yaml
-name: S3 Compatibility Tests
-on: [push, pull_request]
-
-jobs:
-  s3-compatibility:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-      
-      - name: Install dependencies
-        run: |
-          curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscli.zip"
-          unzip awscli.zip && sudo ./aws/install
-          sudo apt-get install s3cmd jq nodejs npm
-          sudo npm install -g json
-          
-      - name: Start manta-buckets-api
-        run: |
-          # Start your manta-buckets-api server here
-          npm start &
-          sleep 10
-          
-      - name: Run AWS CLI tests
-        run: ./test/s3-compat-awscli-test.sh
-        
-      - name: Run s3cmd tests  
-        run: ./test/s3-compat-s3cmd-test.sh
-```
-
-## Contributing Test Cases
-
-### Adding New Test Scenarios
-1. **Follow naming convention**: `test_category_specific_scenario()`
-2. **Include proper logging**: Use `log()`, `success()`, `error()` functions
-3. **Handle cleanup**: Ensure resources are cleaned up on success/failure
-4. **Add to test runner**: Include in the main `run_tests()` function
-
-### Test Function Template
-```bash
-test_new_scenario() {
-    log "Testing: New Scenario Description"
-    
-    # Setup
-    local test_bucket="test-bucket-$(date +%s)"
-    
-    # Test execution with error handling
-    set +e
-    local result=$(aws_s3api create-bucket --bucket "$test_bucket" 2>&1)
-    local exit_code=$?
-    set -e
-    
-    # Validation and cleanup
-    if [ $exit_code -eq 0 ]; then
-        success "New scenario - Test passed"
-        aws_s3api delete-bucket --bucket "$test_bucket" 2>/dev/null || true
-    else
-        error "New scenario - Test failed: $result"
-    fi
-}
-```
-
-## Best Practices
-
-### Test Environment
-- **Use dedicated test credentials** separate from production
-- **Run against local instances** for development testing
-- **Validate cleanup** after each test run
-- **Monitor resource usage** during large file tests
-
-### Test Development
-- **Write atomic tests** that don't depend on other test state
-- **Include negative testing** for error scenarios  
-- **Validate both success and failure cases**
-- **Use descriptive test names** and log messages
-
-### Performance Testing
-- **Test with various file sizes** (small, medium, large)
-- **Validate multipart thresholds** (5MB parts, etc.)
-- **Test concurrent operations** when applicable
-- **Monitor memory usage** during large uploads
-
-## Troubleshooting
-
-### Common Issues
-
-| Issue | Symptoms | Solution |
-|-------|----------|----------|
-| **Server not running** | Connection refused errors | Start manta-buckets-api service |
-| **Port conflicts** | Address already in use | Change S3_ENDPOINT port or stop conflicting service |
-| **Permission issues** | Access denied errors | Verify AWS credentials configuration |
-| **Missing tools** | Command not found errors | Install required dependencies |
-| **SSL issues** | Certificate validation errors | Tests handle this automatically with --no-verify-ssl |
-| **Memory issues** | Large file test failures | Increase available memory or reduce test file sizes |
-
-### Support and Issues
-- **GitHub Issues**: Report test failures and bugs
-- **Server logs**: Always include relevant server logs with issue reports
-- **Test output**: Include full test output for debugging
-- **Environment details**: Specify OS, tool versions, and configuration
-
----
-
-*This testing guide is maintained as part of the manta-buckets-api project. For the latest updates and additional information, refer to the project repository.*

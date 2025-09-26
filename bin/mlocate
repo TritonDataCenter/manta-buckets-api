@@ -97,7 +97,8 @@ function parsePath(dataPath, cb) {
      * If the user specified a path of the form <user>/<bucket>/ with a trailing
      * slash, pathArr[2] will be an empty string. We allow this syntax and parse
      * this as meaning that no object was specified.
-     * For paths longer than 3 components, join the remaining parts as the object path.
+     * For paths longer than 3 components, join the remaining parts as the
+     * object path.
      */
     if (pathArr.length === 2 || (pathArr.length === 3 && pathArr[2] === '')) {
         ret.object = null;

@@ -504,3 +504,461 @@ The test suite (`test/s3-compat-test.sh`) validates SigV4 authentication with:
 - **Credential Validation**: Access key and secret key verification
 - **Error Scenarios**: Invalid signatures, missing headers, time skew
 - **Multi-operation Flows**: End-to-end workflows with authentication
+
+## S3 Presigned URLs
+
+The Manta Buckets API supports S3 presigned URLs, providing secure, time-limited access to objects without requiring AWS credentials in the client. This feature enables use cases like temporary file sharing, web browser uploads/downloads, and serverless application integrations.
+
+### Overview
+
+S3 presigned URLs embed authentication information directly in the URL query parameters, allowing temporary access to specific objects. The system validates these URLs by reconstructing the original signed request and verifying the cryptographic signature against the embedded credentials.
+
+### Architecture
+
+```mermaid
+graph TB
+    subgraph "Client Side"
+        User[User/Application]
+        AWSCLI[AWS CLI<br/>aws s3 presign]
+        SDK[AWS SDK<br/>boto3, etc.]
+    end
+    
+    subgraph "URL Generation"
+        User --> AWSCLI
+        User --> SDK
+        AWSCLI --> PresignedURL[Presigned URL<br/>X-Amz-Algorithm=AWS4-HMAC-SHA256<br/>X-Amz-Credential=AKIATEST.../20250926/us-east-1/s3/aws4_request<br/>X-Amz-Date=20250926T120000Z<br/>X-Amz-Expires=3600<br/>X-Amz-SignedHeaders=host<br/>X-Amz-Signature=abc123...]
+        SDK --> PresignedURL
+    end
+    
+    subgraph "URL Usage"
+        Browser[Web Browser]
+        CURL[curl/wget]
+        WebApp[Web Application]
+        PresignedURL --> Browser
+        PresignedURL --> CURL
+        PresignedURL --> WebApp
+    end
+    
+    subgraph "Manta Infrastructure"
+        HAProxy[HAProxy<br/>Request Routing]
+        BucketsAPI[manta-buckets-api<br/>S3 Compatibility]
+        MahiAuth[Mahi<br/>Authentication Service]
+        MantaStorage[Manta Storage<br/>Sharks/Metadata]
+    end
+    
+    Browser --> HAProxy
+    CURL --> HAProxy
+    WebApp --> HAProxy
+    
+    HAProxy --> BucketsAPI
+    BucketsAPI --> MahiAuth
+    BucketsAPI --> MantaStorage
+    
+    classDef clientNode fill:#E3F2FD,stroke:#1976D2,stroke-width:2px
+    classDef urlNode fill:#FFF3E0,stroke:#F57C00,stroke-width:2px
+    classDef infraNode fill:#E8F5E8,stroke:#388E3C,stroke-width:2px
+    
+    class User,AWSCLI,SDK,Browser,CURL,WebApp clientNode
+    class PresignedURL urlNode
+    class HAProxy,BucketsAPI,MahiAuth,MantaStorage infraNode
+```
+
+### Request Flow
+
+#### 1. Presigned URL Detection and Routing
+
+```mermaid
+sequenceDiagram
+    participant Client as Client<br/>(Browser/curl)
+    participant HAProxy as HAProxy<br/>Load Balancer
+    participant BucketsAPI as manta-buckets-api
+    participant Auth as Authentication<br/>Middleware
+    
+    Note over Client: User accesses presigned URL:<br/>GET /bucket/file.txt?X-Amz-Algorithm=AWS4-HMAC-SHA256&...
+    
+    Client->>HAProxy: HTTP Request with S3 query parameters
+    
+    Note over HAProxy: Route Selection Logic:<br/>✓ acl_s3_presigned: urlp(X-Amz-Algorithm) -m found<br/>✓ acl_s3_presigned_alt: urlp(X-Amz-Signature) -m found<br/>✓ acl_s3_credential: urlp(X-Amz-Credential) -m found
+    
+    HAProxy->>HAProxy: Detect S3 presigned URL parameters
+    HAProxy->>BucketsAPI: Route to buckets_api backend
+    
+    BucketsAPI->>Auth: Process S3 presigned URL
+    Auth-->>BucketsAPI: Authentication context established
+    BucketsAPI-->>HAProxy: Response (file content or error)
+    HAProxy-->>Client: HTTP Response
+```
+
+#### 2. S3 Presigned URL Processing Pipeline
+
+```mermaid
+sequenceDiagram
+    participant Request as Incoming Request
+    participant Converter as convertS3PresignedToManta()
+    participant Checker as checkIfPresigned()
+    participant Validator as preSignedUrl()
+    participant Mahi as Mahi SigV4 Verification
+    participant Handler as S3 Route Handler
+    
+    Request->>Converter: URL with X-Amz-* parameters
+    
+    Note over Converter: Parameter Preservation:<br/>• _originalS3Credential<br/>• _originalS3Date<br/>• _originalS3Expires<br/>• _originalS3SignedHeaders<br/>• _originalS3Signature
+    
+    Converter->>Converter: Extract access key from X-Amz-Credential
+    Converter->>Converter: Parse X-Amz-Date (ISO8601 format)
+    Converter->>Converter: Calculate absolute expiration timestamp
+    
+    Note over Converter: Manta Format Conversion:<br/>keyId → access key<br/>algorithm → 'rsa-sha256'<br/>expires → Unix timestamp<br/>signature → X-Amz-Signature<br/>method → HTTP method
+    
+    Converter->>Converter: Mark req._s3PresignedConverted = true
+    Converter->>Checker: Continue to presigned check
+    
+    Checker->>Checker: Detect presigned URL (S3 or Manta format)
+    Checker->>Checker: Set req._presigned = true
+    Checker->>Validator: Continue to validation
+    
+    Note over Validator: Signature Validation Process
+    
+    Validator->>Validator: Reconstruct Authorization header:<br/>AWS4-HMAC-SHA256 Credential=..., SignedHeaders=..., Signature=...
+    
+    Validator->>Validator: Rebuild original S3 URL with query parameters:<br/>X-Amz-Algorithm, X-Amz-Credential, X-Amz-Date, etc.
+    
+    Validator->>Validator: Create verification request object:<br/>{method, url, headers}
+    
+    Validator->>Mahi: verifySigV4(reconstructedRequest)
+    
+    Note over Mahi: Mahi Verification:<br/>1. Parse Authorization header<br/>2. Extract signing components<br/>3. Calculate canonical request<br/>4. Generate string-to-sign<br/>5. Compute expected signature<br/>6. Compare signatures
+    
+    alt Signature Valid
+        Mahi-->>Validator: {userUuid, accessKeyId}
+        Validator->>Validator: Set authentication context:<br/>req.auth.accountid = userUuid<br/>req.auth.method = 'presigned-s3'<br/>req._s3PresignedAuthComplete = true
+        Validator->>Handler: Continue to S3 operation
+    else Signature Invalid
+        Mahi-->>Validator: Error (Invalid signature)
+        Validator-->>Request: 403 Forbidden<br/>PreSignedRequestError
+    end
+```
+
+### Implementation Details
+
+#### Query Parameter Conversion
+
+```mermaid
+graph LR
+    subgraph "S3 Presigned URL Format"
+        S3Algo["X-Amz-Algorithm<br/>AWS4-HMAC-SHA256"]
+        S3Cred["X-Amz-Credential<br/>AKIATEST.../20250926/us-east-1/s3/aws4_request"]
+        S3Date["X-Amz-Date<br/>20250926T120000Z"]
+        S3Expires["X-Amz-Expires<br/>3600"]
+        S3Headers["X-Amz-SignedHeaders<br/>host"]
+        S3Sig["X-Amz-Signature<br/>abc123..."]
+    end
+    
+    subgraph "Manta Presigned Format"
+        MantaKeyId["keyId<br/>AKIATEST..."]
+        MantaAlgo["algorithm<br/>rsa-sha256"]
+        MantaExpires["expires<br/>1758927600"]
+        MantaSig["signature<br/>abc123..."]
+        MantaMethod["method<br/>GET"]
+    end
+    
+    S3Cred --> MantaKeyId
+    S3Algo --> MantaAlgo
+    S3Date --> MantaExpires
+    S3Expires --> MantaExpires
+    S3Sig --> MantaSig
+    
+    classDef s3Style fill:#FFE082,stroke:#F57C00,stroke-width:2px
+    classDef mantaStyle fill:#A5D6A7,stroke:#388E3C,stroke-width:2px
+    
+    class S3Algo,S3Cred,S3Date,S3Expires,S3Headers,S3Sig s3Style
+    class MantaKeyId,MantaAlgo,MantaExpires,MantaSig,MantaMethod mantaStyle
+```
+
+#### Signature Verification Process
+
+The signature verification reconstructs the exact request that was signed by the client:
+
+```javascript
+// 1. Reconstruct Authorization header
+var authHeader = 'AWS4-HMAC-SHA256 Credential=' + credential + 
+               ', SignedHeaders=' + signedHeaders + 
+               ', Signature=' + signature;
+
+// 2. Rebuild original URL with S3 query parameters  
+var originalQueryParams = [
+    'X-Amz-Algorithm=AWS4-HMAC-SHA256',
+    'X-Amz-Credential=' + encodeURIComponent(credential),
+    'X-Amz-Date=' + amzDate,
+    'X-Amz-Expires=' + expires,
+    'X-Amz-SignedHeaders=' + signedHeaders
+];
+
+// 3. Create verification request
+var requestForVerification = {
+    method: req.method,
+    url: pathPart + '?' + originalQueryParams.join('&'),
+    headers: {
+        'authorization': authHeader,
+        'x-amz-date': amzDate,
+        'host': req.headers.host
+    }
+};
+
+// 4. Verify with Mahi
+req.mahi.verifySigV4(requestForVerification, callback);
+```
+
+### Security Model
+
+#### Time-based Validation
+```mermaid
+graph TD
+    A[X-Amz-Date] --> B[Parse ISO8601 Timestamp<br/>20250926T120000Z]
+    C[X-Amz-Expires] --> D[Expiration Duration<br/>3600 seconds]
+    
+    B --> E[Request Time<br/>2025-09-26 12:00:00 UTC]
+    D --> E
+    E --> F[Calculated Expiry<br/>2025-09-26 13:00:00 UTC]
+    
+    G[Current Time] --> H{Within Valid Window?}
+    F --> H
+    
+    H -->|Yes| I[✅ Allow Request]
+    H -->|No| J[❌ Deny - URL Expired]
+    
+    classDef timeNode fill:#E1F5FE,stroke:#0277BD,stroke-width:2px
+    classDef checkNode fill:#FFF9C4,stroke:#F9A825,stroke-width:2px
+    classDef successNode fill:#E8F5E8,stroke:#388E3C,stroke-width:2px
+    classDef errorNode fill:#FFEBEE,stroke:#D32F2F,stroke-width:2px
+    
+    class A,B,C,D,E,F,G timeNode
+    class H checkNode
+    class I successNode
+    class J errorNode
+```
+
+#### Cryptographic Validation
+- **Algorithm**: AWS SigV4 (HMAC-SHA256)
+- **Signature Scope**: Method + URL + Headers + Timestamp
+- **Tamper Detection**: Any URL modification invalidates signature
+- **Replay Protection**: Time window limits reuse
+
+#### Permission Model
+```mermaid
+graph TB
+    subgraph "Access Control Flow"
+        A[Presigned URL Request] --> B[Signature Validation]
+        B --> C[Extract Access Key]
+        C --> D[Mahi User Lookup]
+        D --> E[Manta Authorization]
+        E --> F[Resource Access Check]
+        
+        F --> G{Permission Check}
+        G -->|Authorized| H[✅ Grant Access]
+        G -->|Denied| I[❌ Access Denied]
+    end
+    
+    subgraph "Permission Inheritance"
+        J[Signer's Permissions] --> K[URL Access Level]
+        K --> L[Scoped to Specific Object]
+        L --> M[Limited by Expiration Time]
+    end
+    
+    classDef processNode fill:#E3F2FD,stroke:#1976D2,stroke-width:2px
+    classDef permNode fill:#F3E5F5,stroke:#7B1FA2,stroke-width:2px
+    classDef successNode fill:#E8F5E8,stroke:#388E3C,stroke-width:2px
+    classDef errorNode fill:#FFEBEE,stroke:#D32F2F,stroke-width:2px
+    
+    class A,B,C,D,E,F,G processNode
+    class J,K,L,M permNode
+    class H successNode
+    class I errorNode
+```
+
+### Use Cases and Examples
+
+#### Use Case 1: Temporary File Sharing
+
+```mermaid
+sequenceDiagram
+    participant FileOwner as File Owner
+    participant AWSCLI as AWS CLI
+    participant Recipient as Recipient
+    participant Browser as Web Browser
+    participant Manta as Manta Storage
+    
+    FileOwner->>AWSCLI: aws s3 presign s3://bucket/document.pdf --expires-in 3600
+    AWSCLI->>AWSCLI: Generate presigned URL with 1-hour expiration
+    AWSCLI-->>FileOwner: https://manta.example.com/bucket/document.pdf?X-Amz-Algorithm=...
+    
+    FileOwner->>Recipient: Share presigned URL (email, chat, etc.)
+    
+    Recipient->>Browser: Click presigned URL
+    Browser->>Manta: GET request with embedded signature
+    Manta->>Manta: Validate signature and expiration
+    Manta-->>Browser: Document content (if valid)
+    Browser-->>Recipient: Display/download document
+    
+    Note over Browser,Manta: URL automatically expires after 1 hour
+    Note over FileOwner: No need to share AWS credentials
+```
+
+#### Use Case 2: Web Application Direct Upload
+
+```mermaid
+sequenceDiagram
+    participant User as Web User
+    participant WebApp as Web Application
+    participant Backend as App Backend
+    participant Manta as Manta Storage
+    
+    User->>WebApp: Request file upload form
+    WebApp->>Backend: Generate upload presigned URL
+    Backend->>Backend: aws s3 presign s3://uploads/user123/file.jpg --expires-in 900
+    Backend-->>WebApp: Presigned URL for PUT operation
+    
+    WebApp->>WebApp: Create HTML form with presigned URL
+    WebApp-->>User: Upload form with hidden presigned URL
+    
+    User->>User: Select file and submit form
+    User->>Manta: PUT request directly to presigned URL
+    Manta->>Manta: Validate signature and store file
+    Manta-->>User: 200 OK - Upload successful
+    
+    Note over User,Manta: File uploaded directly to Manta without going through app backend
+    Note over Backend: Backend only generates URL, doesn't handle file data
+```
+
+#### Use Case 3: CDN Integration
+
+```mermaid
+graph TB
+    subgraph "Content Delivery Workflow"
+        A[Content Creator] --> B[Generate Presigned URLs]
+        B --> C[Distribute URLs to CDN]
+        C --> D[CDN Edge Servers]
+        
+        E[End Users] --> F[Request Content from CDN]
+        F --> G{Content Cached?}
+        
+        G -->|Yes| H[Serve from CDN Cache]
+        G -->|No| I[Fetch from Manta using Presigned URL]
+        
+        I --> J[Manta Validates Signature]
+        J --> K[Serve Content to CDN]
+        K --> L[CDN Caches Content]
+        L --> M[Serve to End User]
+        
+        H --> N[Content Delivered]
+        M --> N
+    end
+    
+    classDef creatorNode fill:#E8F5E8,stroke:#388E3C,stroke-width:2px
+    classDef cdnNode fill:#E3F2FD,stroke:#1976D2,stroke-width:2px
+    classDef userNode fill:#FFF3E0,stroke:#F57C00,stroke-width:2px
+    classDef mantaNode fill:#F3E5F5,stroke:#7B1FA2,stroke-width:2px
+    
+    class A,B creatorNode
+    class C,D,F,G,H,L,M cdnNode
+    class E,N userNode
+    class I,J,K mantaNode
+```
+
+### Error Handling and Diagnostics
+
+#### Common Error Scenarios
+
+```mermaid
+graph TD
+    A[Presigned URL Request] --> B{URL Format Valid?}
+    B -->|No| C[400 Bad Request<br/>Invalid S3 presigned URL format]
+    
+    B -->|Yes| D{Required Parameters Present?}
+    D -->|No| E[403 Forbidden<br/>Missing required S3 presigned URL parameters]
+    
+    D -->|Yes| F{URL Expired?}
+    F -->|Yes| G[403 Forbidden<br/>URL has expired]
+    
+    F -->|No| H{Signature Valid?}
+    H -->|No| I[403 Forbidden<br/>Invalid signature]
+    
+    H -->|Yes| J{User Has Permission?}
+    J -->|No| K[403 Forbidden<br/>Access denied]
+    
+    J -->|Yes| L[✅ Process Request Successfully]
+    
+    classDef errorNode fill:#FFEBEE,stroke:#D32F2F,stroke-width:2px
+    classDef checkNode fill:#FFF9C4,stroke:#F9A825,stroke-width:2px
+    classDef successNode fill:#E8F5E8,stroke:#388E3C,stroke-width:2px
+    
+    class C,E,G,I,K errorNode
+    class B,D,F,H,J checkNode
+    class L successNode
+```
+
+#### Debugging Information
+
+The system provides detailed logging for troubleshooting presigned URL issues:
+
+```javascript
+// Authentication flow logging
+log.debug({
+    originalUrl: req.url,
+    verificationUrl: urlForVerification,
+    authHeader: authHeader.substring(0, 100) + '...',
+    signedHeaders: signedHeaders
+}, 'S3_PRESIGNED_DEBUG: Constructed verification request');
+
+// Signature validation results
+log.debug({
+    accessKeyId: result.accessKeyId,
+    userUuid: result.userUuid
+}, 'S3_PRESIGNED_DEBUG: Signature validation successful');
+```
+
+### Performance Considerations
+
+#### HAProxy Routing Efficiency
+- **Parameter Detection**: Fast ACL checks on query parameters
+- **Minimal Overhead**: Direct routing without complex pattern matching
+- **Load Balancing**: Distributes presigned URL requests across buckets-api instances
+
+#### Signature Validation Optimization
+- **Cached Results**: Mahi may cache signature validation results
+- **Connection Pooling**: Reuse connections to Mahi service
+- **Parallel Processing**: Multiple presigned URL requests processed concurrently
+
+#### Monitoring and Metrics
+- **Request Latency**: Track time from URL request to signature validation
+- **Error Rates**: Monitor signature validation failures and expiration errors
+- **Usage Patterns**: Analyze presigned URL generation and access patterns
+
+### Configuration
+
+#### HAProxy Rules
+```haproxy
+# S3 presigned URL detection in /home/build/S3-MANTA/muppet/etc/haproxy.cfg.in
+acl acl_s3_presigned urlp(X-Amz-Algorithm) -m found
+acl acl_s3_presigned_alt urlp(X-Amz-Signature) -m found  
+acl acl_s3_credential urlp(X-Amz-Credential) -m found
+
+# Route presigned URLs to buckets-api
+use_backend buckets_api if acl_s3_presigned
+use_backend buckets_api if acl_s3_presigned_alt
+use_backend buckets_api if acl_s3_credential
+```
+
+#### Manta Buckets API Middleware
+```javascript
+// Authentication pipeline in lib/server.js
+server.use(auth.convertS3PresignedToManta);  // Convert S3 to Manta format
+server.use(auth.checkIfPresigned);           // Detect presigned requests  
+server.use(auth.preSignedUrl);               // Validate signatures
+```
+
+#### Security Settings
+- **Maximum Expiration**: URLs can be valid for up to 7 days (604800 seconds)
+- **Minimum Expiration**: URLs must be valid for at least 1 second
+- **Time Skew Tolerance**: Configurable time window for clock differences
+- **Algorithm Support**: Only AWS4-HMAC-SHA256 is supported

@@ -1464,6 +1464,247 @@ test_aws_list_objects_with_metadata() {
     fi
 }
 
+# Test AWS CLI presigned URL generation and usage
+test_aws_cli_presigned_urls() {
+    log "Testing: AWS CLI Presigned URL Generation and Usage"
+    
+    local presigned_test_object="presigned-test-object.txt"
+    local presigned_content="Test content for presigned URL - $(date +%s)"
+    local presigned_download_file="downloaded-presigned.txt"
+    
+    # Create test file
+    echo "$presigned_content" > "$presigned_test_object"
+    
+    # Upload object first using regular API
+    set +e
+    aws_s3api put-object --bucket "$TEST_BUCKET" --key "$presigned_test_object" --body "$presigned_test_object" 2>/dev/null
+    local put_exit_code=$?
+    set -e
+    
+    if [ $put_exit_code -ne 0 ]; then
+        error "Presigned URL test - Failed to upload test object"
+        rm -f "$presigned_test_object"
+        return 1
+    fi
+    
+    # Generate presigned URL for GET operation (1 hour expiry)
+    set +e
+    local presigned_get_url=$(aws s3 presign "s3://$TEST_BUCKET/$presigned_test_object" --expires-in 3600 2>&1)
+    local presign_exit_code=$?
+    set -e
+    
+    if [ $presign_exit_code -eq 0 ]; then
+        success "AWS CLI presigned URL - Generated GET presigned URL"
+        log "  Presigned URL: ${presigned_get_url:0:100}..."
+        
+        # Test the presigned URL with curl
+        set +e
+        local curl_response=$(curl -s -w "%{http_code}" --insecure "$presigned_get_url" -o "$presigned_download_file" 2>&1)
+        local curl_exit_code=$?
+        local http_code="${curl_response: -3}"
+        set -e
+        
+        if [ $curl_exit_code -eq 0 ] && [ "$http_code" = "200" ]; then
+            success "AWS CLI presigned GET - Successfully downloaded using presigned URL"
+            
+            # Verify content
+            if [ -f "$presigned_download_file" ]; then
+                local downloaded_content=$(cat "$presigned_download_file")
+                if [ "$downloaded_content" = "$presigned_content" ]; then
+                    success "AWS CLI presigned GET - Downloaded content matches original"
+                else
+                    error "AWS CLI presigned GET - Content mismatch via presigned URL"
+                fi
+            else
+                error "AWS CLI presigned GET - Download file not created"
+            fi
+        else
+            error "AWS CLI presigned GET - Failed to download via presigned URL (HTTP $http_code)"
+        fi
+        
+    else
+        error "AWS CLI presigned URL - Failed to generate GET presigned URL: $presigned_get_url"
+    fi
+    
+    # Cleanup
+    set +e
+    aws_s3api delete-object --bucket "$TEST_BUCKET" --key "$presigned_test_object" 2>/dev/null || true
+    rm -f "$presigned_test_object" "$presigned_download_file"
+    set -e
+}
+
+# Test presigned URL PUT operations using manual signature calculation
+test_presigned_url_put_operations() {
+    log "Testing: Presigned URL PUT Operations"
+    
+    local put_test_object="presigned-put-test.txt"
+    local put_test_content="PUT test via presigned URL - $(date +%s)"
+    echo "$put_test_content" > "$put_test_object"
+    
+    # Use our manual presigned URL script to generate a proper PUT URL
+    # Since AWS CLI doesn't support generating PUT presigned URLs directly
+    local temp_bucket="put-presigned-$(date +%s)"
+    
+    # Create temporary bucket for PUT test
+    set +e
+    aws_s3api create-bucket --bucket "$temp_bucket" 2>/dev/null
+    local bucket_exit_code=$?
+    set -e
+    
+    if [ $bucket_exit_code -ne 0 ]; then
+        error "Presigned PUT test - Failed to create temporary bucket"
+        rm -f "$put_test_object"
+        return 1
+    fi
+    
+    # Generate presigned PUT URL using embedded signature calculation
+    log "  Generating PUT presigned URL using embedded signature calculation..."
+    
+    # HMAC helper functions (embedded in AWS CLI test)
+    hmac_sha256() {
+        local key="$1"
+        local data="$2"
+        echo -n "$data" | openssl dgst -sha256 -mac HMAC -macopt hexkey:"$key" -binary | xxd -p -c 256
+    }
+
+    hmac_sha256_string() {
+        local key="$1"
+        local data="$2"
+        echo -n "$data" | openssl dgst -sha256 -mac HMAC -macopt key:"$key" -binary | xxd -p -c 256
+    }
+    
+    # Create a PUT presigned URL generator
+    local now=$(date -u +"%Y%m%dT%H%M%SZ")
+    local date_stamp=$(echo "$now" | cut -c1-8)
+    local credential="${AWS_ACCESS_KEY_ID}/${date_stamp}/${AWS_REGION}/s3/aws4_request"
+    local host=$(echo "$S3_ENDPOINT" | sed 's|^https://||' | sed 's|^http://||' | sed 's|/.*$||')
+    
+    # Build canonical request for PUT
+    local canonical_uri="/${temp_bucket}/${put_test_object}"
+    local canonical_querystring="X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=${credential}&X-Amz-Date=${now}&X-Amz-Expires=300&X-Amz-SignedHeaders=host"
+    canonical_querystring=$(echo "$canonical_querystring" | sed 's|/|%2F|g')
+    
+    local canonical_headers="host:${host}
+"
+    local canonical_request="PUT
+${canonical_uri}
+${canonical_querystring}
+${canonical_headers}
+host
+UNSIGNED-PAYLOAD"
+    
+    # Create string to sign
+    local algorithm="AWS4-HMAC-SHA256"
+    local credential_scope="${date_stamp}/${AWS_REGION}/s3/aws4_request"
+    local canonical_request_hash=$(echo -n "$canonical_request" | openssl dgst -sha256 -hex | cut -d' ' -f2)
+    
+    local string_to_sign="${algorithm}
+${now}
+${credential_scope}
+${canonical_request_hash}"
+    
+    # Calculate signature using embedded HMAC functions
+    local kDate=$(hmac_sha256_string "AWS4${AWS_SECRET_ACCESS_KEY}" "$date_stamp")
+    local kRegion=$(hmac_sha256 "$kDate" "$AWS_REGION")
+    local kService=$(hmac_sha256 "$kRegion" "s3")
+    local kSigning=$(hmac_sha256 "$kService" "aws4_request")
+    local signature=$(echo -n "$string_to_sign" | openssl dgst -sha256 -mac HMAC -macopt hexkey:"$kSigning" -hex | cut -d' ' -f2)
+    
+    local put_presigned_url="${S3_ENDPOINT}/${temp_bucket}/${put_test_object}?${canonical_querystring}&X-Amz-Signature=${signature}"
+    
+    log "  Generated PUT presigned URL: ${put_presigned_url:0:100}..."
+    
+    # Test PUT with curl
+    set +e
+    local put_curl_response=$(curl -s -w "%{http_code}" -X PUT --data-binary "@$put_test_object" --insecure "$put_presigned_url" 2>&1)
+    local put_curl_exit_code=$?
+    local put_http_code="${put_curl_response: -3}"
+    set -e
+    
+    if [ $put_curl_exit_code -eq 0 ] && [ "$put_http_code" -ge 200 ] && [ "$put_http_code" -lt 300 ]; then
+        success "Presigned PUT - Successfully uploaded using presigned PUT URL"
+        
+        # Verify the object was uploaded by downloading it
+        set +e
+        local verify_download="verify-put-download.txt"
+        aws_s3api get-object --bucket "$temp_bucket" --key "$put_test_object" "$verify_download" 2>/dev/null
+        local verify_exit_code=$?
+        set -e
+        
+        if [ $verify_exit_code -eq 0 ] && [ -f "$verify_download" ]; then
+            local verify_content=$(cat "$verify_download")
+            if [ "$verify_content" = "$put_test_content" ]; then
+                success "Presigned PUT - PUT via presigned URL verified"
+            else
+                error "Presigned PUT - PUT content verification failed"
+            fi
+            rm -f "$verify_download"
+        else
+            error "Presigned PUT - Could not verify PUT operation"
+        fi
+    else
+        error "Presigned PUT - Failed to upload via presigned PUT URL (HTTP $put_http_code)"
+    fi
+    
+    # Cleanup
+    set +e
+    aws s3 rm "s3://$temp_bucket" --recursive 2>/dev/null || true
+    aws_s3api delete-bucket --bucket "$temp_bucket" 2>/dev/null || true
+    rm -f "$put_test_object"
+    set -e
+}
+
+# Test presigned URL expiry
+test_presigned_url_expiry() {
+    log "Testing: Presigned URL Expiry Validation"
+    
+    local expiry_test_object="expiry-test-object.txt"
+    echo "Expiry test content" > "$expiry_test_object"
+    
+    # Upload test object
+    set +e
+    aws_s3api put-object --bucket "$TEST_BUCKET" --key "$expiry_test_object" --body "$expiry_test_object" 2>/dev/null
+    local put_exit_code=$?
+    set -e
+    
+    if [ $put_exit_code -eq 0 ]; then
+        # Generate presigned URL with very short expiry (1 second)
+        set +e
+        local short_expiry_url=$(aws s3 presign "s3://$TEST_BUCKET/$expiry_test_object" --expires-in 1 2>&1)
+        local presign_exit_code=$?
+        set -e
+        
+        if [ $presign_exit_code -eq 0 ]; then
+            # Wait for URL to expire
+            log "  Waiting for presigned URL to expire..."
+            sleep 2
+            
+            # Test expired URL
+            set +e
+            local curl_response=$(curl -s -w "%{http_code}" --insecure "$short_expiry_url" 2>&1)
+            local curl_exit_code=$?
+            local http_code="${curl_response: -3}"
+            set -e
+            
+            if [ "$http_code" = "403" ] || [ "$http_code" = "400" ]; then
+                success "Presigned URL expiry - Expired URL properly rejected"
+            else
+                error "Presigned URL expiry - Expected 400/403 for expired URL, got $http_code"
+            fi
+        else
+            error "Presigned URL expiry - Failed to generate short-expiry URL: $short_expiry_url"
+        fi
+    else
+        error "Presigned URL expiry - Failed to upload test object"
+    fi
+    
+    # Cleanup
+    set +e
+    aws_s3api delete-object --bucket "$TEST_BUCKET" --key "$expiry_test_object" 2>/dev/null || true
+    rm -f "$expiry_test_object"
+    set -e
+}
+
 # Main test execution
 run_tests() {
     local test_filter="${1:-all}"
@@ -1564,6 +1805,31 @@ run_tests() {
             
             set -e  # Re-enable exit on error
             ;;
+        "presigned")
+            log "Starting S3 Presigned URL Tests for manta-buckets-api using AWS CLI"
+            log "================================================================"
+            
+            set +e  # Disable exit on error for test execution
+            
+            # Create bucket for presigned URL tests
+            test_create_bucket || true
+            
+            # Presigned URL tests only
+            test_aws_cli_presigned_urls || true
+            test_presigned_url_put_operations || true
+            test_presigned_url_expiry || true
+            
+            # Clean up test objects before deleting bucket
+            log "Cleaning up presigned URL test objects before bucket deletion..."
+            set +e
+            aws_s3 rm "s3://$TEST_BUCKET" --recursive 2>/dev/null || true
+            set -e
+            
+            # Cleanup bucket
+            test_delete_bucket || true
+            
+            set -e  # Re-enable exit on error
+            ;;
         "all"|*)
             log "Starting S3 Compatibility Tests (including ACL) for manta-buckets-api using AWS CLI"
             log "================================================================================="
@@ -1597,7 +1863,12 @@ run_tests() {
             test_aws_bucket_acl_policy || true
             test_aws_list_objects_with_metadata || true
             
-            # Clean up any ACL test objects before deleting bucket
+            # Presigned URL tests
+            test_aws_cli_presigned_urls || true
+            test_presigned_url_put_operations || true
+            test_presigned_url_expiry || true
+            
+            # Clean up any test objects before deleting bucket
             log "Cleaning up ACL test objects before bucket deletion..."
             set +e
             aws_s3 rm "s3://$TEST_BUCKET" --recursive 2>/dev/null || true
@@ -1656,6 +1927,7 @@ main() {
             echo "  multipart  - Alias for mpu"
             echo "  acl        - Run ACL tests only"
             echo "  errors     - Run error handling tests only"
+            echo "  presigned  - Run presigned URL tests only"
             echo
             echo "Environment variables:"
             echo "  AWS_ACCESS_KEY_ID     - AWS access key (default: AKIA123456789EXAMPLE)"
@@ -1669,13 +1941,14 @@ main() {
             echo "  $0 basic              # Run only basic functionality tests"
             echo "  $0 acl                # Run only ACL tests"
             echo "  $0 errors             # Run only error handling tests"
+            echo "  $0 presigned          # Run only presigned URL tests"
             echo "  AWS_ACCESS_KEY_ID=mykey AWS_SECRET_ACCESS_KEY=mysecret $0 mpu"
             echo "  S3_ENDPOINT=https://manta.example.com:8080 $0 basic"
             echo
             echo "Note: This script requires AWS CLI to be installed and configured."
             exit 0
             ;;
-        "mpu"|"multipart"|"basic"|"errors"|"all")
+        "mpu"|"multipart"|"basic"|"errors"|"presigned"|"acl"|"all")
             test_type="$1"
             ;;
         "")

@@ -43,6 +43,7 @@ Comprehensive testing using AWS CLI (aws s3api commands) for low-level S3 API op
 - Resume functionality testing
 - Conditional header testing (If-Match, If-None-Match, etc.)
 - Error scenario validation (EntityTooSmall, etc.)
+- **S3 Presigned URL testing** (GET operations and expiry validation)
 
 ### s3cmd Test Suite (`test/s3-compat-s3cmd-test.sh`)
 
@@ -146,6 +147,12 @@ cd /path/to/manta-buckets-api
 # Run only error handling tests
 ./test/s3-compat-awscli-test.sh errors
 
+# Run only presigned URL tests
+./test/s3-compat-awscli-test.sh presigned
+
+# Run only ACL tests
+./test/s3-compat-awscli-test.sh acl
+
 # Run all tests (explicit)
 ./test/s3-compat-awscli-test.sh all
 ```
@@ -192,6 +199,8 @@ cd /path/to/manta-buckets-api
 - ✅ **Conditional Headers**: If-Match, If-None-Match, If-Modified-Since, If-Unmodified-Since
 - ✅ **Error Scenarios**: Non-existent bucket/object handling
 - ✅ **ETag Validation**: Content integrity verification
+- ✅ **S3 Presigned URLs**: GET presigned URL generation and usage validation
+- ✅ **ACL Operations**: Bucket and object ACL management and canned ACL support
 
 ### s3cmd Test Suite
 
@@ -252,6 +261,126 @@ ERROR: json command not found
 ERROR: SSL certificate verify failed
 ```
 **Solution**: Tests use `--no-verify-ssl` and `--no-check-certificate` flags for localhost testing.
+
+## S3 Presigned URL Testing
+
+The test suites include comprehensive validation of S3 presigned URL functionality, which allows generating time-limited URLs for S3 operations without requiring AWS credentials in the request.
+
+### AWS CLI Presigned URL Tests (`presigned` test category)
+
+#### Features Tested
+- ✅ **GET Presigned URLs**: Generated using `aws s3 presign` command
+- ✅ **URL Validation**: Verify presigned URLs work with curl/HTTP clients
+- ✅ **Content Integrity**: Downloaded content matches uploaded content
+- ✅ **Expiry Handling**: Expired URLs are properly rejected with 403/400 status
+- ✅ **Authentication Bypass**: Presigned URLs work without additional credentials
+
+#### Running Presigned URL Tests
+```bash
+# Run only presigned URL tests
+./test/s3-compat-awscli-test.sh presigned
+
+# Example output for successful presigned URL test
+✅ AWS CLI presigned URL - Generated GET presigned URL
+✅ AWS CLI presigned GET - Successfully downloaded using presigned URL  
+✅ AWS CLI presigned GET - Downloaded content matches original
+✅ Presigned URL expiry - Expired URL properly rejected
+```
+
+#### Test Workflow
+1. **Upload Test Object**: Create object using standard authenticated API
+2. **Generate Presigned URL**: Use `aws s3 presign` with configurable expiry
+3. **Test Valid URL**: Download object using presigned URL with curl
+4. **Verify Content**: Ensure downloaded content matches original
+5. **Test Expiry**: Generate short-lived URL and verify rejection after expiry
+6. **Cleanup**: Remove test objects and validate cleanup
+
+### Manual S3v4 Presigned URL Tests (`test/manual-presigned-url-test.sh`)
+
+For comprehensive presigned URL testing including PUT operations (which AWS CLI doesn't support natively), use the manual test script.
+
+#### Features Tested
+- ✅ **PUT Presigned URLs**: Manual S3v4 signature generation for uploads
+- ✅ **GET Presigned URLs**: Manual S3v4 signature generation for downloads
+- ✅ **Signature Validation**: Proper AWS Signature v4 implementation
+- ✅ **Expiry Validation**: Invalid and expired URL rejection
+- ✅ **Content Upload/Download**: Full round-trip testing via presigned URLs
+
+#### Running Manual Presigned URL Tests
+```bash
+# Run complete manual presigned URL test suite
+./test/manual-presigned-url-test.sh
+
+# Example output for successful tests
+✅ S3v4 presigned PUT - Object uploaded successfully
+✅ S3v4 presigned GET - Downloaded content matches uploaded content
+✅ Expired presigned URL - Properly rejected expired URL
+✅ Invalid signature URL - Properly rejected invalid signature
+```
+
+#### Manual Test Workflow
+1. **Create Test Bucket**: Set up isolated test environment
+2. **Generate PUT Presigned URL**: Manual AWS SigV4 signature calculation
+3. **Upload via Presigned URL**: Use curl to upload content
+4. **Generate GET Presigned URL**: Create download URL with fresh signature
+5. **Download and Verify**: Ensure content integrity through full cycle
+6. **Test Edge Cases**: Invalid signatures, expired URLs, malformed requests
+7. **Cleanup**: Remove all test artifacts
+
+### Presigned URL Security Validation
+
+Both test suites validate critical security aspects:
+
+#### Signature Validation
+- ✅ **Valid Signatures**: Properly constructed URLs succeed
+- ✅ **Invalid Signatures**: Malformed or incorrect signatures fail with 403
+- ✅ **Tampered URLs**: Modified query parameters are rejected
+
+#### Expiry Handling  
+- ✅ **Valid Time Window**: URLs within expiry time succeed
+- ✅ **Expired URLs**: Past expiry time results in 403/400 errors
+- ✅ **Future Expiry**: Long-lived URLs work within time bounds
+
+#### Authentication Bypass
+- ✅ **No Credentials Required**: Presigned URLs work without AWS headers
+- ✅ **Proper Authorization**: Valid signatures grant appropriate access
+- ✅ **Access Control**: Invalid/expired URLs properly deny access
+
+### Troubleshooting Presigned URL Tests
+
+#### Common Issues and Solutions
+
+**1. Signature Mismatch Errors**
+```
+ERROR: Invalid signature: Signature mismatch
+```
+- Verify system clock is synchronized (signature includes timestamp)
+- Check AWS credentials match between client and server
+- Ensure proper URL encoding of query parameters
+
+**2. Expired URL Errors** 
+```
+ERROR: Request has expired
+```
+- Verify system time is correct on both client and server
+- Check if URL expiry time is reasonable for test execution
+- Ensure no delays between URL generation and usage
+
+**3. SSL/TLS Issues with Presigned URLs**
+```
+ERROR: SSL certificate verify failed
+```
+- Tests use `--insecure` flag for localhost testing
+- For production testing, ensure proper SSL certificates
+- Verify endpoint URL matches SSL certificate
+
+**4. Content Integrity Failures**
+```
+ERROR: Downloaded content doesn't match uploaded content
+```
+- Check for encoding issues (binary vs text handling)
+- Verify no proxy/gateway modifications to content
+- Ensure proper content-type handling
 
 ## Test Data and Cleanup
 

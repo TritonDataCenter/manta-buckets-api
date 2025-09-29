@@ -1533,128 +1533,6 @@ test_aws_cli_presigned_urls() {
     set -e
 }
 
-# Test presigned URL PUT operations using manual signature calculation
-test_presigned_url_put_operations() {
-    log "Testing: Presigned URL PUT Operations"
-    
-    local put_test_object="presigned-put-test.txt"
-    local put_test_content="PUT test via presigned URL - $(date +%s)"
-    echo "$put_test_content" > "$put_test_object"
-    
-    # Use our manual presigned URL script to generate a proper PUT URL
-    # Since AWS CLI doesn't support generating PUT presigned URLs directly
-    local temp_bucket="put-presigned-$(date +%s)"
-    
-    # Create temporary bucket for PUT test
-    set +e
-    aws_s3api create-bucket --bucket "$temp_bucket" 2>/dev/null
-    local bucket_exit_code=$?
-    set -e
-    
-    if [ $bucket_exit_code -ne 0 ]; then
-        error "Presigned PUT test - Failed to create temporary bucket"
-        rm -f "$put_test_object"
-        return 1
-    fi
-    
-    # Generate presigned PUT URL using embedded signature calculation
-    log "  Generating PUT presigned URL using embedded signature calculation..."
-    
-    # HMAC helper functions (embedded in AWS CLI test)
-    hmac_sha256() {
-        local key="$1"
-        local data="$2"
-        echo -n "$data" | openssl dgst -sha256 -mac HMAC -macopt hexkey:"$key" -binary | xxd -p -c 256
-    }
-
-    hmac_sha256_string() {
-        local key="$1"
-        local data="$2"
-        echo -n "$data" | openssl dgst -sha256 -mac HMAC -macopt key:"$key" -binary | xxd -p -c 256
-    }
-    
-    # Create a PUT presigned URL generator
-    local now=$(date -u +"%Y%m%dT%H%M%SZ")
-    local date_stamp=$(echo "$now" | cut -c1-8)
-    local credential="${AWS_ACCESS_KEY_ID}/${date_stamp}/${AWS_REGION}/s3/aws4_request"
-    local host=$(echo "$S3_ENDPOINT" | sed 's|^https://||' | sed 's|^http://||' | sed 's|/.*$||')
-    
-    # Build canonical request for PUT
-    local canonical_uri="/${temp_bucket}/${put_test_object}"
-    local canonical_querystring="X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=${credential}&X-Amz-Date=${now}&X-Amz-Expires=300&X-Amz-SignedHeaders=host"
-    canonical_querystring=$(echo "$canonical_querystring" | sed 's|/|%2F|g')
-    
-    local canonical_headers="host:${host}
-"
-    local canonical_request="PUT
-${canonical_uri}
-${canonical_querystring}
-${canonical_headers}
-host
-UNSIGNED-PAYLOAD"
-    
-    # Create string to sign
-    local algorithm="AWS4-HMAC-SHA256"
-    local credential_scope="${date_stamp}/${AWS_REGION}/s3/aws4_request"
-    local canonical_request_hash=$(echo -n "$canonical_request" | openssl dgst -sha256 -hex | cut -d' ' -f2)
-    
-    local string_to_sign="${algorithm}
-${now}
-${credential_scope}
-${canonical_request_hash}"
-    
-    # Calculate signature using embedded HMAC functions
-    local kDate=$(hmac_sha256_string "AWS4${AWS_SECRET_ACCESS_KEY}" "$date_stamp")
-    local kRegion=$(hmac_sha256 "$kDate" "$AWS_REGION")
-    local kService=$(hmac_sha256 "$kRegion" "s3")
-    local kSigning=$(hmac_sha256 "$kService" "aws4_request")
-    local signature=$(echo -n "$string_to_sign" | openssl dgst -sha256 -mac HMAC -macopt hexkey:"$kSigning" -hex | cut -d' ' -f2)
-    
-    local put_presigned_url="${S3_ENDPOINT}/${temp_bucket}/${put_test_object}?${canonical_querystring}&X-Amz-Signature=${signature}"
-    
-    log "  Generated PUT presigned URL: ${put_presigned_url:0:100}..."
-    
-    # Test PUT with curl
-    set +e
-    local put_curl_response=$(curl -s -w "%{http_code}" -X PUT --data-binary "@$put_test_object" --insecure "$put_presigned_url" 2>&1)
-    local put_curl_exit_code=$?
-    local put_http_code="${put_curl_response: -3}"
-    set -e
-    
-    if [ $put_curl_exit_code -eq 0 ] && [ "$put_http_code" -ge 200 ] && [ "$put_http_code" -lt 300 ]; then
-        success "Presigned PUT - Successfully uploaded using presigned PUT URL"
-        
-        # Verify the object was uploaded by downloading it
-        set +e
-        local verify_download="verify-put-download.txt"
-        aws_s3api get-object --bucket "$temp_bucket" --key "$put_test_object" "$verify_download" 2>/dev/null
-        local verify_exit_code=$?
-        set -e
-        
-        if [ $verify_exit_code -eq 0 ] && [ -f "$verify_download" ]; then
-            local verify_content=$(cat "$verify_download")
-            if [ "$verify_content" = "$put_test_content" ]; then
-                success "Presigned PUT - PUT via presigned URL verified"
-            else
-                error "Presigned PUT - PUT content verification failed"
-            fi
-            rm -f "$verify_download"
-        else
-            error "Presigned PUT - Could not verify PUT operation"
-        fi
-    else
-        error "Presigned PUT - Failed to upload via presigned PUT URL (HTTP $put_http_code)"
-    fi
-    
-    # Cleanup
-    set +e
-    aws s3 rm "s3://$temp_bucket" --recursive 2>/dev/null || true
-    aws_s3api delete-bucket --bucket "$temp_bucket" 2>/dev/null || true
-    rm -f "$put_test_object"
-    set -e
-}
-
-# Test presigned URL expiry
 test_presigned_url_expiry() {
     log "Testing: Presigned URL Expiry Validation"
     
@@ -1816,7 +1694,6 @@ run_tests() {
             
             # Presigned URL tests only
             test_aws_cli_presigned_urls || true
-            test_presigned_url_put_operations || true
             test_presigned_url_expiry || true
             
             # Clean up test objects before deleting bucket
@@ -1865,7 +1742,6 @@ run_tests() {
             
             # Presigned URL tests
             test_aws_cli_presigned_urls || true
-            test_presigned_url_put_operations || true
             test_presigned_url_expiry || true
             
             # Clean up any test objects before deleting bucket

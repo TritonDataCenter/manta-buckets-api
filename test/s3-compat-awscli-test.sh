@@ -1489,7 +1489,7 @@ test_aws_cli_presigned_urls() {
     
     # Generate presigned URL for GET operation (1 hour expiry)
     set +e
-    local presigned_get_url=$(aws s3 presign "s3://$TEST_BUCKET/$presigned_test_object" --expires-in 3600 2>&1)
+    local presigned_get_url=$(aws s3 presign "s3://$TEST_BUCKET/$presigned_test_object" --expires-in 3600 --endpoint-url="$S3_ENDPOINT" 2>&1)
     local presign_exit_code=$?
     set -e
     
@@ -1548,7 +1548,7 @@ test_presigned_url_expiry() {
     if [ $put_exit_code -eq 0 ]; then
         # Generate presigned URL with very short expiry (1 second)
         set +e
-        local short_expiry_url=$(aws s3 presign "s3://$TEST_BUCKET/$expiry_test_object" --expires-in 1 2>&1)
+        local short_expiry_url=$(aws s3 presign "s3://$TEST_BUCKET/$expiry_test_object" --expires-in 1 --endpoint-url="$S3_ENDPOINT" 2>&1)
         local presign_exit_code=$?
         set -e
         

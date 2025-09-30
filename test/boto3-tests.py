@@ -19,6 +19,7 @@ from botocore.config import Config
 from botocore.exceptions import ClientError, EndpointConnectionError, NoCredentialsError, ReadTimeoutError
 from boto3.s3.transfer import TransferConfig
 import urllib.request
+import requests
 
 # --- Pretty printing ---------------------------------------------------------
 GREEN = "\033[32m"
@@ -494,6 +495,171 @@ def run_suite(args) -> int:
                     info(f"Pagination bucket {pagination_bucket} already deleted or empty")
 
     tr.run("ListObjects with Pagination", t_list_objects_with_pagination)
+
+    # --- S3 Presigned URL Tests --------------------------------------------
+    def t_presigned_url_get():
+        """Test GET presigned URL generation and usage."""
+        presigned_key = "presigned-get-test.txt"
+        test_content = b"Hello from presigned GET URL test!"
+        
+        # First upload the object that we'll download via presigned URL
+        s3.put_object(Bucket=bucket, Key=presigned_key, Body=test_content)
+        info(f"Uploaded test object for presigned GET: {presigned_key}")
+        
+        try:
+            # Generate presigned URL for GET operation (valid for 1 hour)
+            presigned_url = s3.generate_presigned_url(
+                'get_object',
+                Params={'Bucket': bucket, 'Key': presigned_key},
+                ExpiresIn=3600
+            )
+            info(f"Generated presigned GET URL: {presigned_url[:100]}...")
+            
+            # Validate URL format
+            assert "X-Amz-Algorithm=AWS4-HMAC-SHA256" in presigned_url, "Missing AWS4-HMAC-SHA256 algorithm"
+            assert "X-Amz-Credential=" in presigned_url, "Missing X-Amz-Credential"
+            assert "X-Amz-Date=" in presigned_url, "Missing X-Amz-Date"
+            assert "X-Amz-Expires=" in presigned_url, "Missing X-Amz-Expires"
+            assert "X-Amz-SignedHeaders=" in presigned_url, "Missing X-Amz-SignedHeaders"
+            assert "X-Amz-Signature=" in presigned_url, "Missing X-Amz-Signature"
+            info("Presigned GET URL format validation passed")
+            
+            # Use the presigned URL to download the object using requests
+            response = requests.get(presigned_url, verify=not args.insecure)
+            assert response.status_code == 200, f"Expected 200, got {response.status_code}"
+            
+            downloaded_content = response.content
+            assert downloaded_content == test_content, "Downloaded content doesn't match original"
+            info(f"Successfully downloaded {len(downloaded_content)} bytes via presigned GET URL")
+            
+        finally:
+            # Clean up test object
+            try:
+                s3.delete_object(Bucket=bucket, Key=presigned_key)
+            except ClientError:
+                pass
+
+    def t_presigned_url_put():
+        """Test PUT presigned URL generation and usage."""
+        presigned_key = "presigned-put-test.txt"
+        test_content = b"Hello from presigned PUT URL test!"
+        
+        try:
+            # Generate presigned URL for PUT operation (valid for 1 hour)
+            presigned_url = s3.generate_presigned_url(
+                'put_object',
+                Params={'Bucket': bucket, 'Key': presigned_key},
+                ExpiresIn=3600
+            )
+            info(f"Generated presigned PUT URL: {presigned_url[:100]}...")
+            
+            # Validate URL format
+            assert "X-Amz-Algorithm=AWS4-HMAC-SHA256" in presigned_url, "Missing AWS4-HMAC-SHA256 algorithm"
+            assert "X-Amz-Credential=" in presigned_url, "Missing X-Amz-Credential"
+            assert "X-Amz-Date=" in presigned_url, "Missing X-Amz-Date"
+            assert "X-Amz-Expires=" in presigned_url, "Missing X-Amz-Expires"
+            assert "X-Amz-SignedHeaders=" in presigned_url, "Missing X-Amz-SignedHeaders"
+            assert "X-Amz-Signature=" in presigned_url, "Missing X-Amz-Signature"
+            info("Presigned PUT URL format validation passed")
+            
+            # Use the presigned URL to upload the object using requests
+            response = requests.put(presigned_url, data=test_content, verify=not args.insecure)
+            assert response.status_code == 200, f"Expected 200, got {response.status_code}"
+            info(f"Successfully uploaded {len(test_content)} bytes via presigned PUT URL")
+            
+            # Verify the upload by downloading the object with regular S3 API
+            verify_response = s3.get_object(Bucket=bucket, Key=presigned_key)
+            verified_content = verify_response['Body'].read()
+            assert verified_content == test_content, "Uploaded content doesn't match original"
+            info("Verified uploaded content matches original")
+            
+        finally:
+            # Clean up test object
+            try:
+                s3.delete_object(Bucket=bucket, Key=presigned_key)
+            except ClientError:
+                pass
+
+    def t_presigned_url_expired():
+        """Test that expired presigned URLs are rejected."""
+        presigned_key = "presigned-expired-test.txt"
+        test_content = b"This should not be accessible with expired URL"
+        
+        # First upload the object 
+        s3.put_object(Bucket=bucket, Key=presigned_key, Body=test_content)
+        
+        try:
+            # Generate presigned URL with very short expiry (1 second)
+            presigned_url = s3.generate_presigned_url(
+                'get_object',
+                Params={'Bucket': bucket, 'Key': presigned_key},
+                ExpiresIn=1
+            )
+            info("Generated presigned GET URL with 1 second expiry")
+            
+            # Wait for URL to expire
+            time.sleep(2)
+            info("Waited for URL to expire")
+            
+            # Try to use expired URL - should fail
+            response = requests.get(presigned_url, verify=not args.insecure)
+            assert response.status_code in [403, 400], f"Expected 403/400 for expired URL, got {response.status_code}"
+            info(f"Expired URL correctly rejected with status {response.status_code}")
+            
+        finally:
+            # Clean up test object
+            try:
+                s3.delete_object(Bucket=bucket, Key=presigned_key)
+            except ClientError:
+                pass
+
+    def t_presigned_url_with_conditions():
+        """Test presigned URL with additional conditions (content type)."""
+        presigned_key = "presigned-conditions-test.txt"
+        test_content = b"Content with specific type"
+        content_type = "text/plain"
+        
+        try:
+            # Generate presigned URL for PUT with content-type condition
+            presigned_url = s3.generate_presigned_url(
+                'put_object',
+                Params={
+                    'Bucket': bucket, 
+                    'Key': presigned_key,
+                    'ContentType': content_type
+                },
+                ExpiresIn=3600
+            )
+            info(f"Generated presigned PUT URL with content-type condition")
+            
+            # Upload with correct content type - should succeed
+            response = requests.put(
+                presigned_url, 
+                data=test_content,
+                headers={'Content-Type': content_type},
+                verify=not args.insecure
+            )
+            assert response.status_code == 200, f"Expected 200 with correct content-type, got {response.status_code}"
+            info("Upload with correct content-type succeeded")
+            
+            # Verify the upload
+            verify_response = s3.get_object(Bucket=bucket, Key=presigned_key)
+            verified_content = verify_response['Body'].read()
+            assert verified_content == test_content, "Uploaded content doesn't match original"
+            assert verify_response.get('ContentType') == content_type, "Content-Type not preserved"
+            info("Content and content-type verified")
+            
+        finally:
+            # Clean up test object
+            try:
+                s3.delete_object(Bucket=bucket, Key=presigned_key)
+            except ClientError:
+                pass
+
+    tr.run("S3 Presigned URL - GET operation", t_presigned_url_get)
+    tr.run("S3 Presigned URL - PUT operation", t_presigned_url_put)
+    tr.run("S3 Presigned URL - Expired URL rejection", t_presigned_url_expired)
+    tr.run("S3 Presigned URL - With conditions (Content-Type)", t_presigned_url_with_conditions)
 
     # Clean up the MPU object
     def t_delete_mpu_object():

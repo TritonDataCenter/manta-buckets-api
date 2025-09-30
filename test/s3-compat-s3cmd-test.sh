@@ -271,10 +271,37 @@ test_s3cmd_multipart_upload_basic() {
     
     # Download and verify the uploaded file
     local downloaded_file="downloaded-s3cmd-$mpu_object"
+    log "  Downloading file for verification..."
     set +e
-    s3cmd_wrapper get "s3://$mpu_bucket/$mpu_object" "$downloaded_file" 2>/dev/null
+    local download_result=$(s3cmd_wrapper get "s3://$mpu_bucket/$mpu_object" "$downloaded_file" 2>&1)
     local download_exit_code=$?
     set -e
+    
+    # Wait a moment to ensure download completion
+    if [ $download_exit_code -eq 0 ]; then
+        sleep 1
+        # Wait for file to be fully written (check if file size stabilizes)
+        local prev_size=0
+        local curr_size=0
+        local stable_count=0
+        for i in {1..10}; do
+            if [ -f "$downloaded_file" ]; then
+                curr_size=$(wc -c < "$downloaded_file" 2>/dev/null || echo "0")
+                if [ "$curr_size" = "$prev_size" ] && [ "$curr_size" -gt 0 ]; then
+                    ((stable_count++))
+                    if [ $stable_count -ge 3 ]; then
+                        break
+                    fi
+                else
+                    stable_count=0
+                fi
+                prev_size=$curr_size
+                sleep 0.5
+            else
+                sleep 0.5
+            fi
+        done
+    fi
     
     if [ $download_exit_code -eq 0 ] && [ -f "$downloaded_file" ]; then
         local downloaded_md5=$(md5sum "$downloaded_file" | cut -d' ' -f1)
@@ -361,10 +388,37 @@ test_s3cmd_multipart_upload_resume() {
     
     # Download and verify
     local downloaded_file="downloaded-s3cmd-resume-$mpu_object"
+    log "  Downloading file for verification..."
     set +e
-    s3cmd_wrapper get "s3://$mpu_bucket/$mpu_object" "$downloaded_file" 2>/dev/null
+    local download_result=$(s3cmd_wrapper get "s3://$mpu_bucket/$mpu_object" "$downloaded_file" 2>&1)
     local download_exit_code=$?
     set -e
+    
+    # Wait a moment to ensure download completion
+    if [ $download_exit_code -eq 0 ]; then
+        sleep 1
+        # Wait for file to be fully written (check if file size stabilizes)
+        local prev_size=0
+        local curr_size=0
+        local stable_count=0
+        for i in {1..10}; do
+            if [ -f "$downloaded_file" ]; then
+                curr_size=$(wc -c < "$downloaded_file" 2>/dev/null || echo "0")
+                if [ "$curr_size" = "$prev_size" ] && [ "$curr_size" -gt 0 ]; then
+                    ((stable_count++))
+                    if [ $stable_count -ge 3 ]; then
+                        break
+                    fi
+                else
+                    stable_count=0
+                fi
+                prev_size=$curr_size
+                sleep 0.5
+            else
+                sleep 0.5
+            fi
+        done
+    fi
     
     if [ $download_exit_code -eq 0 ] && [ -f "$downloaded_file" ]; then
         local downloaded_md5=$(md5sum "$downloaded_file" | cut -d' ' -f1)
@@ -419,10 +473,37 @@ test_s3cmd_multipart_upload_errors() {
         
         # Verify the uploaded file
         local downloaded_file="downloaded-s3cmd-error-$mpu_object"
+        log "    Downloading file for verification..."
         set +e
-        s3cmd_wrapper get "s3://$mpu_bucket/$mpu_object" "$downloaded_file" 2>/dev/null
+        local download_result=$(s3cmd_wrapper get "s3://$mpu_bucket/$mpu_object" "$downloaded_file" 2>&1)
         local download_exit_code=$?
         set -e
+        
+        # Wait a moment to ensure download completion
+        if [ $download_exit_code -eq 0 ]; then
+            sleep 1
+            # Wait for file to be fully written (check if file size stabilizes)
+            local prev_size=0
+            local curr_size=0
+            local stable_count=0
+            for i in {1..10}; do
+                if [ -f "$downloaded_file" ]; then
+                    curr_size=$(wc -c < "$downloaded_file" 2>/dev/null || echo "0")
+                    if [ "$curr_size" = "$prev_size" ] && [ "$curr_size" -gt 0 ]; then
+                        ((stable_count++))
+                        if [ $stable_count -ge 3 ]; then
+                            break
+                        fi
+                    else
+                        stable_count=0
+                    fi
+                    prev_size=$curr_size
+                    sleep 0.5
+                else
+                    sleep 0.5
+                fi
+            done
+        fi
         
         if [ $download_exit_code -eq 0 ]; then
             success "S3cmd MPU error test - File uploaded and downloaded successfully"

@@ -48,6 +48,42 @@ Manta Buckets API provides S3-compatible storage functionality backed by Manta's
 | **COPY OBJECT** | ✅ Supported | ❌ Not Implemented | **NOT IMPLEMENTED** | No server-side copy functionality |
 | **GET OBJECT TORRENT** | ✅ Supported | ❌ Not Implemented | **NOT IMPLEMENTED** | BitTorrent not supported |
 
+## Presigned URL Operations
+
+| Operation | AWS S3 | Manta Buckets API | Status | Notes |
+|-----------|--------|------------------|--------|-------|
+| **PRESIGNED GET URL** | ✅ Supported | ✅ Supported | **IMPLEMENTED** | Time-limited download URLs with AWS SigV4 |
+| **PRESIGNED PUT URL** | ✅ Supported | ✅ Supported | **IMPLEMENTED** | Time-limited upload URLs with AWS SigV4 |
+| **PRESIGNED POST** | ✅ Supported | ❌ Not Implemented | **NOT IMPLEMENTED** | HTML form-based uploads not supported |
+| **PRESIGNED DELETE URL** | ✅ Supported | ❌ Not Implemented | **NOT IMPLEMENTED** | Presigned DELETE operations not supported |
+
+### Presigned URL Implementation Details
+
+**✅ Supported Features:**
+- **AWS Signature Version 4** - Full SigV4 signature validation using Mahi
+- **GET Operations** - Time-limited download URLs for object retrieval
+- **PUT Operations** - Time-limited upload URLs for object creation
+- **Configurable Expiry** - URLs expire after specified time period
+- **Authentication Bypass** - Valid presigned URLs work without additional credentials
+- **Security Validation** - Signature verification, expiry checking, and access control
+
+**Usage Examples:**
+```bash
+# AWS CLI presigned URL generation (works with manta-buckets-api)
+aws s3 presign s3://my-bucket/my-file.txt --expires-in 3600 --endpoint-url https://manta.example.com
+
+# Boto3 presigned URL generation
+import boto3
+s3 = boto3.client('s3', endpoint_url='https://manta.example.com')
+url = s3.generate_presigned_url('get_object', Params={'Bucket': 'my-bucket', 'Key': 'my-file.txt'}, ExpiresIn=3600)
+```
+
+**❌ Not Supported:**
+- **Presigned POST** - HTML form-based uploads with policy documents
+- **Presigned DELETE** - Time-limited deletion URLs  
+- **Advanced Conditions** - Complex policy conditions beyond basic expiry
+- **Custom Query Parameters** - Additional non-AWS query parameters in presigned URLs
+
 ## Multipart Upload Operations
 
 | Operation | AWS S3 | Manta Buckets API | Status | Notes |
@@ -102,6 +138,7 @@ Manta Buckets API provides S3-compatible storage functionality backed by Manta's
 ### High Compatibility ✅
 - Basic CRUD operations (GET, PUT, DELETE, HEAD)
 - Multipart uploads for large objects
+- **Presigned URLs for GET and PUT operations**
 - ACL management with role translation
 - Conditional headers and ETags
 - Standard S3 error responses

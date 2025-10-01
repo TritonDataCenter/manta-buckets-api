@@ -6,6 +6,7 @@
 
 #
 # Copyright 2020 Joyent, Inc.
+# Copyright 2025 Edgecast Cloud LLC.
 #
 
 #
@@ -35,7 +36,7 @@ SMF_MANIFESTS_IN =  smf/manifests/buckets-api.xml.in
 NAME       = buckets-api
 
 NODE_PREBUILT_TAG       = zone
-NODE_PREBUILT_VERSION	:= v6.17.0
+NODE_PREBUILT_VERSION	:= v6.17.1
 # sdc-minimal-multiarch-lts 15.4.1
 NODE_PREBUILT_IMAGE     = 18b094b0-eb01-11e5-80c1-175dac7ddf02
 

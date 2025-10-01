@@ -445,3 +445,276 @@ tail -f $(svcs -L buckets-api) | grep -E "(S3_MPU|ERROR|WARN)"
 4. **Review test output**: Look for specific error messages in test logs
 5. **Check server logs**: Review server-side errors and warnings
 
+## Presigned URL Test Scripts
+
+For more comprehensive and flexible presigned URL testing, two additional test scripts are available that provide manual presigned URL generation and testing capabilities.
+
+### Boto3-Compatible Presigned URL Generator (`test/boto3-compatible-presigned.sh`)
+
+A bash script that implements the exact AWS SigV4 algorithm used by boto3, allowing manual generation and testing of presigned URLs with full control over parameters.
+
+#### Features
+- ✅ **Exact boto3 Algorithm**: Replicates boto3's canonical request construction
+- ✅ **Flexible Parameters**: Configurable method, bucket, object, and expiry time
+- ✅ **Generate-Only Mode**: Create URLs without testing for external use
+- ✅ **Debug Output**: Shows canonical request, string-to-sign, and HMAC chain
+- ✅ **Both Methods**: Supports GET and PUT presigned URL generation
+
+#### Usage
+```bash
+# Basic usage with defaults
+./test/boto3-compatible-presigned.sh
+
+# Specify method, bucket, object, and expiry
+./test/boto3-compatible-presigned.sh PUT my-bucket upload.txt 600
+
+# Generate URL only (no testing)
+./test/boto3-compatible-presigned.sh --generate-only GET my-bucket file.txt 300
+./test/boto3-compatible-presigned.sh -g PUT test-bucket data.bin 1800
+
+# Show help and usage
+./test/boto3-compatible-presigned.sh --help
+```
+
+#### Parameters
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `METHOD` | HTTP method (GET or PUT) | `GET` |
+| `BUCKET` | S3 bucket name | `test-bucket` |
+| `OBJECT` | S3 object key | `test-object.txt` |
+| `EXPIRES` | Expiration time in seconds | `300` |
+
+#### Environment Variables
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `AWS_ACCESS_KEY_ID` | `AKIA123456789EXAMPLE` | AWS access key |
+| `AWS_SECRET_ACCESS_KEY` | `wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY` | AWS secret key |
+| `S3_ENDPOINT` | `https://localhost:8080` | S3 endpoint URL |
+| `AWS_REGION` | `us-east-1` | AWS region |
+
+#### Example Output
+```bash
+$ ./test/boto3-compatible-presigned.sh GET my-bucket file.txt 600
+
+Building presigned URL with timestamp: 20251001T120000Z
+Method: GET
+Bucket: my-bucket
+Object: file.txt
+Expires: 600 seconds
+Credential: AKIA123456789EXAMPLE/20251001/us-east-1/s3/aws4_request
+Host: localhost:8080
+
+=== CANONICAL REQUEST ===
+GET
+/my-bucket/file.txt
+X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIA123456789EXAMPLE%2F20251001%2Fus-east-1%2Fs3%2Faws4_request&X-Amz-Date=20251001T120000Z&X-Amz-Expires=600&X-Amz-SignedHeaders=host
+host:localhost:8080
+
+host
+UNSIGNED-PAYLOAD
+=========================
+
+=== FINAL URL ===
+https://localhost:8080/my-bucket/file.txt?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIA123456789EXAMPLE%2F20251001%2Fus-east-1%2Fs3%2Faws4_request&X-Amz-Date=20251001T120000Z&X-Amz-Expires=600&X-Amz-SignedHeaders=host&X-Amz-Signature=abc123...
+=================
+
+Testing the GET URL...
+HTTP response code: 200
+✅ SUCCESS: Presigned GET URL works!
+```
+
+### Python Boto3 Presigned URL Tester (`test/test-presigned-boto3.py`)
+
+A Python script that uses the official boto3 library to generate and test presigned URLs, providing a reference implementation for comparison.
+
+#### Features
+- ✅ **Official boto3 Library**: Uses AWS's official Python SDK
+- ✅ **PUT and GET URLs**: Tests both upload and download presigned URLs
+- ✅ **Signature Extraction**: Shows generated signatures for comparison
+- ✅ **Content Validation**: Verifies upload/download content integrity
+- ✅ **Error Handling**: Proper error reporting and status codes
+
+#### Usage
+```bash
+# Set credentials and endpoint
+export AWS_ACCESS_KEY_ID="your-access-key"
+export AWS_SECRET_ACCESS_KEY="your-secret-key"
+export S3_ENDPOINT="https://localhost:8080"
+
+# Run the test
+python3 test/test-presigned-boto3.py
+```
+
+#### Example Output
+```bash
+$ python3 test/test-presigned-boto3.py
+
+Testing presigned URLs with boto3
+Endpoint: https://localhost:8080
+Region: us-east-1
+Access Key: your-acces...
+
+✓ Created bucket test-bucket
+
+=== Testing PUT presigned URL ===
+PUT URL: https://localhost:8080/test-bucket/test-object.txt?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=...
+PUT Signature: a1b2c3d4e5f6789...
+PUT Response: 200
+✓ PUT presigned URL works!
+
+=== Testing GET presigned URL ===
+GET URL: https://localhost:8080/test-bucket/test-object.txt?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=...
+GET Signature: f6e5d4c3b2a1987...
+GET Response: 200
+✓ GET presigned URL works and content matches!
+```
+
+### How Boto3 Python Script Tests Presigned URLs
+
+The Python boto3 script provides a comprehensive testing methodology that validates presigned URL functionality using AWS's official SDK as the reference implementation.
+
+#### Test Methodology
+
+**1. Bucket Creation and Validation**
+```python
+# Create bucket if needed
+try:
+    s3.head_bucket(Bucket=BUCKET)
+    print(f"✓ Bucket {BUCKET} exists")
+except:
+    s3.create_bucket(Bucket=BUCKET)
+    print(f"✓ Created bucket {BUCKET}")
+```
+
+**2. PUT Presigned URL Testing**
+```python
+# Generate PUT presigned URL using boto3
+put_url = s3.generate_presigned_url(
+    'put_object',
+    Params={'Bucket': BUCKET, 'Key': OBJECT},
+    ExpiresIn=300
+)
+
+# Test upload using requests library (not boto3)
+response = requests.put(put_url, data=TEST_CONTENT, verify=False)
+```
+
+**3. GET Presigned URL Testing**
+```python
+# Generate GET presigned URL using boto3
+get_url = s3.generate_presigned_url(
+    'get_object', 
+    Params={'Bucket': BUCKET, 'Key': OBJECT},
+    ExpiresIn=300
+)
+
+# Test download and verify content integrity
+response = requests.get(get_url, verify=False)
+if response.content == TEST_CONTENT:
+    print("✓ GET presigned URL works and content matches!")
+```
+
+#### Key Testing Principles
+
+**Separation of URL Generation and Usage**
+- Uses boto3 to generate presigned URLs (trusted reference)
+- Uses requests library to test URLs (simulates external client)
+- Validates that presigned URLs work independently of AWS SDKs
+
+**Content Integrity Validation**
+- Uploads known test content via PUT presigned URL
+- Downloads content via GET presigned URL  
+- Verifies downloaded content exactly matches uploaded content
+- Ensures no data corruption through the presigned URL workflow
+
+**Signature Extraction and Comparison**
+```python
+# Extract signature for debugging/comparison
+if 'X-Amz-Signature=' in put_url:
+    sig_start = put_url.find('X-Amz-Signature=') + len('X-Amz-Signature=')
+    sig_end = put_url.find('&', sig_start) if put_url.find('&', sig_start) != -1 else len(put_url)
+    signature = put_url[sig_start:sig_end]
+    print(f"PUT Signature: {signature}")
+```
+
+**Real-World Client Simulation**
+- Uses standard HTTP clients (requests) rather than AWS SDKs
+- Tests presigned URLs as external applications would use them
+- Validates compatibility with non-AWS HTTP clients
+
+#### Validation Benefits
+
+**Reference Implementation Guarantee**
+- boto3 is AWS's official SDK with canonical SigV4 implementation
+- Any presigned URL that works with boto3 should work with AWS S3
+- Provides gold standard for signature validation
+
+**Cross-Implementation Testing**
+- Compare signatures between boto3 (Python) and manual bash implementation
+- Identify discrepancies in canonical request construction
+- Validate that manta-buckets-api matches AWS behavior exactly
+
+**End-to-End Workflow Verification**
+- Tests complete upload/download cycle via presigned URLs
+- Verifies both URL generation and actual usage work correctly
+- Ensures presigned URLs integrate properly with manta-buckets-api authentication
+
+### Use Cases for Manual Presigned URL Scripts
+
+#### 1. External Application Testing
+```bash
+# Generate a PUT URL for external application to upload to
+./test/boto3-compatible-presigned.sh --generate-only PUT uploads my-file.pdf 3600
+
+# Use the generated URL in external application
+curl -X PUT "https://endpoint/uploads/my-file.pdf?X-Amz-..." --data-binary @my-file.pdf
+```
+
+#### 2. Signature Algorithm Debugging
+```bash
+# Compare signatures between bash and boto3 implementations
+./test/boto3-compatible-presigned.sh GET test-bucket file.txt 300
+python3 test/test-presigned-boto3.py
+```
+
+#### 3. Performance Testing
+```bash
+# Generate multiple URLs with different expiry times
+for expiry in 300 600 1800 3600; do
+    ./test/boto3-compatible-presigned.sh -g PUT load-test file-$expiry.bin $expiry
+done
+```
+
+#### 4. Integration Testing
+```bash
+# Test presigned URLs work across different clients and implementations
+./test/boto3-compatible-presigned.sh PUT integration-test upload.bin 600
+python3 test/test-presigned-boto3.py  # Verify compatibility
+```
+
+### Troubleshooting Manual Presigned URL Scripts
+
+#### Common Issues
+
+**1. Signature Mismatch Between Scripts**
+```bash
+# Compare canonical requests and signatures
+./test/boto3-compatible-presigned.sh GET test-bucket file.txt 300 | grep "Canonical request hash"
+python3 test/test-presigned-boto3.py  # Check signature output
+```
+
+**2. URL Generation vs Testing**
+- Use `--generate-only` flag to separate URL generation from testing
+- Test generated URLs with external tools (curl, Postman, etc.)
+- Verify signatures match between different implementations
+
+**3. Environment Variable Issues**
+```bash
+# Verify credentials are set correctly
+echo "Access Key: ${AWS_ACCESS_KEY_ID:0:10}..."
+echo "Endpoint: $S3_ENDPOINT"
+
+# Test with explicit values
+AWS_ACCESS_KEY_ID="key" AWS_SECRET_ACCESS_KEY="secret" ./test/boto3-compatible-presigned.sh
+```
+

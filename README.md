@@ -233,7 +233,7 @@ service name of "manta"), and to reduce load on
 
 Manta Buckets API provides S3-compatible endpoints that translate S3 API requests into Manta bucket operations. This compatibility layer enables S3 clients and tools to work with Manta's bucket storage.
 [!NOTE]
-Only Path-Style URL is supported, Virtual-Hosted style is in development.
+Only Path-Style URL is supported.
 
 
 ### Supported Operations

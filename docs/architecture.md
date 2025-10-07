@@ -874,3 +874,368 @@ server.use(auth.preSignedUrl);               // Validate signatures
 - **Minimum Expiration**: URLs must be valid for at least 1 second
 - **Time Skew Tolerance**: Configurable time window for clock differences
 - **Algorithm Support**: Only AWS4-HMAC-SHA256 is supported
+
+## Role-Based Access Control (RBAC) for S3 Compatibility
+
+The Manta Buckets API implements Role-Based Access Control (RBAC) to provide fine-grained access control for S3 operations. This system allows administrators to create subusers with specific permissions for individual buckets and objects.
+
+### RBAC Architecture Overview
+
+```mermaid
+graph TB
+    subgraph "Account Structure"
+        Account[Account Owner<br/>neirac]
+        Subuser1[Subuser<br/>s3qa]
+        Subuser2[Subuser<br/>app-user]
+        Account --> Subuser1
+        Account --> Subuser2
+    end
+    
+    subgraph "Policy Definitions"
+        Policy1[bucket-reader<br/>CAN getbucket test-bucket<br/>CAN getobject test-bucket/*]
+        Policy2[bucket-admin<br/>CAN getbucket uploads<br/>CAN getobject uploads/*<br/>CAN putobject uploads/*<br/>CAN deleteobject uploads/*]
+        Policy3[multi-bucket<br/>CAN getbucket dev-*<br/>CAN getobject dev-*/*]
+    end
+    
+    subgraph "Role Assignment"
+        Role1[storage-reader<br/>members: [s3qa]<br/>default_members: [s3qa]<br/>policies: [bucket-reader]]
+        Role2[uploader<br/>members: [app-user]<br/>default_members: [app-user]<br/>policies: [bucket-admin]]
+    end
+    
+    subgraph "S3 Authorization Flow"
+        S3Request[S3 Request<br/>GET /test-bucket/file.txt]
+        AuthCheck[Authorization Check<br/>Resource: test-bucket/file.txt<br/>Action: getobject]
+        PolicyEval[Policy Evaluation<br/>test-bucket/* matches<br/>test-bucket/file.txt]
+        Decision[✅ Allow Access]
+    end
+    
+    Policy1 --> Role1
+    Policy2 --> Role2
+    Policy3 --> Role1
+    
+    Role1 --> Subuser1
+    Role2 --> Subuser2
+    
+    Subuser1 --> S3Request
+    S3Request --> AuthCheck
+    AuthCheck --> PolicyEval
+    PolicyEval --> Decision
+    
+    classDef accountNode fill:#E3F2FD,stroke:#1976D2,stroke-width:2px
+    classDef policyNode fill:#FFF3E0,stroke:#F57C00,stroke-width:2px
+    classDef roleNode fill:#E8F5E8,stroke:#388E3C,stroke-width:2px
+    classDef authNode fill:#F3E5F5,stroke:#7B1FA2,stroke-width:2px
+    
+    class Account,Subuser1,Subuser2 accountNode
+    class Policy1,Policy2,Policy3 policyNode
+    class Role1,Role2 roleNode
+    class S3Request,AuthCheck,PolicyEval,Decision authNode
+```
+
+### Default Role Activation for S3 Compatibility
+
+A critical requirement for S3 compatibility is that subusers must be in the `default_members` array of their roles. This ensures automatic role activation since S3 clients cannot send explicit role headers.
+
+#### Authentication Flow with Default Roles
+
+```mermaid
+sequenceDiagram
+    participant S3Client as S3 Client<br/>(AWS CLI)
+    participant Auth as Authentication<br/>Middleware
+    participant Mahi as Mahi Service
+    participant RBAC as RBAC Evaluation
+    participant Storage as Manta Storage
+    
+    Note over S3Client: S3 clients cannot send<br/>Role headers
+    
+    S3Client->>Auth: GET /test-bucket/file.txt<br/>Authorization: AWS4-HMAC-SHA256...
+    Auth->>Mahi: Verify SigV4 signature
+    Mahi-->>Auth: Valid user: s3qa
+    
+    Auth->>Auth: loadCaller(s3qa)
+    Note over Auth: Mahi returns:<br/>user.roles: ["role-uuid"]<br/>user.defaultRoles: ["role-uuid"]
+    
+    Auth->>Auth: getActiveRoles()
+    Note over Auth: No Role header provided<br/>Use defaultRoles for activation
+    
+    Auth->>Auth: activeRoles = user.defaultRoles
+    Auth->>RBAC: Authorize with active roles
+    
+    RBAC->>RBAC: Check policy rules<br/>Resource: test-bucket/file.txt<br/>Action: getobject
+    
+    alt User in default_members
+        RBAC->>RBAC: Evaluate: CAN getobject test-bucket/*<br/>Matches: test-bucket/file.txt ✅
+        RBAC-->>Auth: ✅ Access Granted
+        Auth->>Storage: Retrieve object
+        Storage-->>S3Client: Object content
+    else User NOT in default_members
+        RBAC->>RBAC: activeRoles = [] (empty)<br/>No permissions active ❌
+        RBAC-->>Auth: ❌ Access Denied
+        Auth-->>S3Client: 403 Forbidden
+    end
+```
+
+### Resource Naming and Bucket-Scoped Permissions
+
+The system supports bucket-scoped object permissions using hierarchical resource names. This enables fine-grained access control at the bucket level.
+
+#### Resource Name Resolution
+
+```mermaid
+graph TB
+    subgraph "S3 Request Processing"
+        Request[S3 Request<br/>GET /test-bucket/photos/image.jpg]
+        RouteHandler[S3 Route Handler<br/>Extract bucket and object]
+        BucketName[Bucket: test-bucket]
+        ObjectName[Object: photos/image.jpg]
+    end
+    
+    subgraph "Authorization Resource Construction"
+        LoadRequest[loadRequest Function<br/>lib/buckets/buckets.js:33-37]
+        ResourceKey[resource.key Construction]
+        FullPath[Full Resource Path<br/>test-bucket/photos/image.jpg]
+    end
+    
+    subgraph "Policy Evaluation"
+        PolicyRule[Policy Rule<br/>CAN getobject test-bucket/*]
+        RegexMatch[Regex Pattern Match<br/>/test\-bucket\/.*/]
+        MatchResult[✅ test-bucket/photos/image.jpg<br/>matches test-bucket/*]
+    end
+    
+    Request --> RouteHandler
+    RouteHandler --> BucketName
+    RouteHandler --> ObjectName
+    
+    BucketName --> LoadRequest
+    ObjectName --> LoadRequest
+    LoadRequest --> ResourceKey
+    ResourceKey --> FullPath
+    
+    FullPath --> PolicyRule
+    PolicyRule --> RegexMatch
+    RegexMatch --> MatchResult
+    
+    classDef requestNode fill:#E3F2FD,stroke:#1976D2,stroke-width:2px
+    classDef processNode fill:#FFF9C4,stroke:#F9A825,stroke-width:2px
+    classDef policyNode fill:#E8F5E8,stroke:#388E3C,stroke-width:2px
+    
+    class Request,RouteHandler,BucketName,ObjectName requestNode
+    class LoadRequest,ResourceKey,FullPath processNode
+    class PolicyRule,RegexMatch,MatchResult policyNode
+```
+
+#### Code Implementation
+
+The fix for bucket-scoped permissions was implemented in `lib/buckets/buckets.js`:
+
+```javascript
+// Before fix (line 36):
+resource.key = req.bucketObject.name;  // Only "file.txt"
+
+// After fix (line 36):
+resource.key = req.bucket.name + '/' + req.bucketObject.name;  // "test-bucket/file.txt"
+```
+
+This ensures that authorization checks use the full path, enabling patterns like `test-bucket/*` to work correctly.
+
+### Policy Examples and Use Cases
+
+#### Granular Bucket Access Policies
+
+```javascript
+// Read-only access to specific bucket
+{
+  "name": "bucket-reader",
+  "rules": [
+    "CAN getbucket test-bucket",      // List bucket contents
+    "CAN getobject test-bucket/*"     // Download any object in bucket
+  ]
+}
+
+// Full access to specific bucket
+{
+  "name": "bucket-admin", 
+  "rules": [
+    "CAN getbucket uploads",          // List bucket contents
+    "CAN getobject uploads/*",        // Download objects
+    "CAN putobject uploads/*",        // Upload objects
+    "CAN deleteobject uploads/*"      // Delete objects
+  ]
+}
+
+// Multi-bucket access with patterns
+{
+  "name": "dev-environment",
+  "rules": [
+    "CAN getbucket dev-*",            // Access all dev buckets
+    "CAN getobject dev-*/*",          // Download from dev buckets
+    "CAN putobject dev-*/*"           // Upload to dev buckets
+  ]
+}
+
+// Environment-based access
+{
+  "name": "developer-access",
+  "rules": [
+    "CAN getbucket dev-*",            // Full dev access
+    "CAN getobject dev-*/*",
+    "CAN putobject dev-*/*", 
+    "CAN deleteobject dev-*/*",
+    "CAN getbucket prod-*",           // Read-only prod access
+    "CAN getobject prod-*/*"
+  ]
+}
+```
+
+#### Role Configuration for S3 Compatibility
+
+```javascript
+// Critical: User must be in BOTH members and default_members
+{
+  "name": "storage-reader",
+  "members": ["s3qa"],                // User can assume this role
+  "default_members": ["s3qa"],        // Role activates automatically
+  "policies": ["bucket-reader"]       // Policy provides permissions
+}
+
+// Multiple users with automatic activation
+{
+  "name": "uploader-team",
+  "members": ["user1", "user2", "user3"],
+  "default_members": ["user1", "user2", "user3"],  // All get auto-activation
+  "policies": ["bucket-admin"]
+}
+
+// Mixed activation (some users auto, others manual)
+{
+  "name": "developer-role",
+  "members": ["dev1", "dev2", "admin1"],
+  "default_members": ["dev1", "dev2"],             // Only devs get auto-activation
+  "policies": ["dev-environment"]                   // admin1 must send Role header
+}
+```
+
+### Authorization Action Mapping
+
+S3 operations map to specific authorization actions that must be granted in policies:
+
+| S3 Operation | Authorization Action | Required Permission Example |
+|--------------|---------------------|----------------------------|
+| **List Bucket** | `getbucket` | `CAN getbucket test-bucket` |
+| **Get Object** | `getobject` | `CAN getobject test-bucket/*` |
+| **Put Object** | `putobject` | `CAN putobject test-bucket/*` |
+| **Delete Object** | `deleteobject` | `CAN deleteobject test-bucket/*` |
+| **Head Bucket** | `getbucket` | `CAN getbucket test-bucket` |
+| **Head Object** | `getobject` | `CAN getobject test-bucket/file.txt` |
+
+**Important Note**: Unlike traditional Manta routes that use separate `listbucket` permissions, S3 routes consolidate bucket operations under `getbucket` to align with AWS S3's permission model.
+
+### Permission Scope and Wildcards
+
+#### Bucket-Level Permissions
+
+```javascript
+// Specific bucket access
+"CAN getbucket mybucket"              // Only mybucket
+"CAN getobject mybucket/*"            // All objects in mybucket
+
+// Pattern-based bucket access  
+"CAN getbucket dev-*"                 // All buckets starting with dev-
+"CAN getobject dev-*/*"               // All objects in dev-* buckets
+
+// Multiple specific buckets
+"CAN getbucket bucket1"               // Access bucket1
+"CAN getbucket bucket2"               // Access bucket2
+"CAN getobject bucket1/*"             // Objects in bucket1
+"CAN getobject bucket2/*"             // Objects in bucket2
+```
+
+#### Object-Level Permissions
+
+```javascript
+// Specific object access
+"CAN getobject mybucket/file.txt"     // Only specific file
+"CAN getobject mybucket/folder/*"     // All files in folder
+
+// Path-based restrictions
+"CAN getobject uploads/public/*"      // Public files only
+"CAN putobject uploads/user-123/*"    // User's folder only
+
+// File type restrictions
+"CAN getobject assets/*.jpg"          // Only JPEG files
+"CAN getobject docs/*.pdf"            // Only PDF files
+```
+
+### Security Considerations
+
+#### Least Privilege Principle
+
+- Grant minimum required permissions for specific use cases
+- Use bucket-scoped patterns instead of global wildcards
+- Regularly audit and review user permissions
+
+#### Access Key Management
+
+- Generate separate access keys for each subuser
+- Rotate access keys regularly
+- Monitor access key usage and deactivate unused keys
+
+#### Role Inheritance and Conflicts
+
+- Users can have multiple roles with overlapping permissions
+- Permission evaluation follows allow-first policy
+- More specific permissions take precedence over wildcards
+
+### Troubleshooting RBAC Issues
+
+#### Common Permission Problems
+
+1. **Empty activeRoles**
+   ```
+   Problem: User not in default_members
+   Solution: Add user to role's default_members array
+   ```
+
+2. **Bucket-scoped permissions not working**
+   ```
+   Problem: Resource name mismatch
+   Solution: Ensure patterns use bucket/object format
+   ```
+
+3. **403 Forbidden despite correct permissions**
+   ```
+   Problem: Role/policy propagation delay
+   Solution: Wait 5-10 seconds after changes
+   ```
+
+#### Debugging Authorization
+
+The system provides detailed logging for authorization decisions:
+
+```javascript
+// Example authorization log output
+{
+  "activeRoles": ["100db4d0-67e3-44ba-a104-db53081d9b61"],
+  "action": "getobject", 
+  "resource": "test-bucket/file.txt",
+  "caller": "s3qa",
+  "decision": "allow",
+  "matchedRule": "CAN getobject test-bucket/*"
+}
+```
+
+### Performance and Scalability
+
+#### Role Evaluation Efficiency
+
+- Mahi caches role and policy information
+- Authorization decisions are cached temporarily
+- Bulk operations benefit from shared authorization context
+
+#### Large-Scale Deployments
+
+- Use role templates for consistent permission patterns
+- Implement automated role provisioning for new users
+- Monitor authorization performance with detailed logging
+
+This RBAC system provides the foundation for secure, scalable multi-tenant S3 access while maintaining compatibility with standard AWS tools and SDKs.

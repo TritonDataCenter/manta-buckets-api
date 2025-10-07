@@ -392,6 +392,181 @@ sopa1
 
 ```
 
+## User Access Control for Buckets and Objects
+
+This section explains how to create subusers and grant them specific access to buckets and objects using Manta's Role-Based Access Control (RBAC) system.
+
+**⚠️ Important Note**: Role and policy changes take a few seconds to become effective. After creating or modifying roles and policies, wait 5-10 seconds before testing access.
+
+### Creating Subusers with Bucket-Specific Access
+
+#### Step 1: Create a Subuser
+
+```bash
+# Create a subuser for S3 access
+sdc-user create --login s3qa --email s3qa@example.com --password temp-password
+
+# Example response:
+{
+  "login": "s3qa",
+  "uuid": "04a54897-82c0-4ab9-a77a-bbf800ff371a",
+  "email": "s3qa@example.com"
+}
+```
+
+#### Step 2: Generate Access Keys for the Subuser
+
+```bash
+# Generate S3 access keys for the subuser
+cloudapi /your-account/users/s3qa/accesskeys -X POST
+
+# Example response:
+{
+  "accesskeyid": "b6856fbd3d5a3645e1347931fe8e9226",
+  "accesskeysecret": "77a041b549e8170fba994022c762a9e9e5be986454ef770d0f9e213082ecede4"
+}
+```
+
+#### Step 3: Create Policies for Bucket Access
+
+```bash
+# Policy for reading objects from a specific bucket
+sdc-policy create --name=bucket-reader --rules='CAN getbucket test-bucket' 'CAN getobject test-bucket/*'
+
+# Policy for full access to a specific bucket
+sdc-policy create --name=bucket-admin --rules='CAN getbucket test-bucket' 'CAN getobject test-bucket/*' 'CAN putobject test-bucket/*' 'CAN deleteobject test-bucket/*'
+
+# Policy for read-only access to multiple buckets
+sdc-policy create --name=multi-bucket-reader --rules='CAN getbucket dev-bucket' 'CAN getobject dev-bucket/*' 'CAN getbucket prod-bucket' 'CAN getobject prod-bucket/*'
+```
+
+#### Step 4: Create Roles and Assign to Subuser
+
+**Critical for S3 clients**: Subusers must be in both `members` AND `default_members` arrays for S3 compatibility, as S3 clients cannot send role headers.
+
+```bash
+# Create role for bucket reading access
+sdc-role create --name=storage-reader --members=s3qa --default_members=s3qa --policies=bucket-reader
+
+# Create role for full bucket access
+sdc-role create --name=storage-admin --members=s3qa --default_members=s3qa --policies=bucket-admin
+```
+
+### Common Access Patterns
+
+#### Read-Only Access to Specific Bucket
+
+```bash
+# Create policy
+sdc-policy create --name=readonly-mybucket --rules='CAN getbucket mybucket' 'CAN getobject mybucket/*'
+
+# Create role with default activation
+sdc-role create --name=mybucket-reader --members=s3qa --default_members=s3qa --policies=readonly-mybucket
+```
+
+#### Upload and Download Access to Specific Bucket
+
+```bash
+# Create policy
+sdc-policy create --name=readwrite-uploads --rules='CAN getbucket uploads' 'CAN getobject uploads/*' 'CAN putobject uploads/*'
+
+# Create role with default activation
+sdc-role create --name=uploads-user --members=s3qa --default_members=s3qa --policies=readwrite-uploads
+```
+
+#### Multiple Bucket Access with Different Permissions
+
+```bash
+# Policy for development environment (full access)
+sdc-policy create --name=dev-full-access --rules='CAN getbucket dev-*' 'CAN getobject dev-*/*' 'CAN putobject dev-*/*' 'CAN deleteobject dev-*/*'
+
+# Policy for production environment (read-only)
+sdc-policy create --name=prod-readonly --rules='CAN getbucket prod-*' 'CAN getobject prod-*/*'
+
+# Combined role
+sdc-role create --name=developer --members=s3qa --default_members=s3qa --policies=dev-full-access,prod-readonly
+```
+
+### Testing Subuser Access
+
+#### Configure S3 Client with Subuser Credentials
+
+```bash
+# Configure AWS CLI with subuser credentials
+aws configure set aws_access_key_id b6856fbd3d5a3645e1347931fe8e9226
+aws configure set aws_secret_access_key 77a041b549e8170fba994022c762a9e9e5be986454ef770d0f9e213082ecede4
+
+# Test access
+aws s3 ls s3://test-bucket/ --endpoint-url https://your-manta-endpoint
+aws s3 cp localfile.txt s3://test-bucket/ --endpoint-url https://your-manta-endpoint
+```
+
+#### Verify Permissions
+
+```bash
+# Should succeed (if user has getbucket permission)
+aws s3 ls s3://test-bucket/ --endpoint-url https://your-manta-endpoint
+
+# Should succeed (if user has getobject permission)  
+aws s3 cp s3://test-bucket/file.txt downloaded.txt --endpoint-url https://your-manta-endpoint
+
+# Should fail (if user lacks permission for different bucket)
+aws s3 ls s3://other-bucket/ --endpoint-url https://your-manta-endpoint
+```
+
+### Troubleshooting Access Issues
+
+#### Common Issues
+
+1. **403 Forbidden Errors**
+   - Verify user is in both `members` and `default_members` of role
+   - Check that policy includes required permissions (`getbucket`, `getobject`, `putobject`)
+   - Wait 5-10 seconds after role/policy changes
+
+2. **Empty activeRoles**
+   - User must be in `default_members` for automatic role activation
+   - S3 clients cannot send Role headers, so default activation is required
+
+3. **Bucket-scoped permissions not working**
+   - Use bucket-scoped patterns: `bucketname/*` for objects
+   - Ensure bucket name in policy matches exactly
+
+#### Debugging Commands
+
+```bash
+# Check user's roles and permissions
+sdc-user get s3qa
+
+# List all roles for account
+sdc-role list
+
+# View specific role details
+sdc-role get storage-reader
+
+# Check policy rules
+sdc-policy get bucket-reader
+```
+
+### Security Best Practices
+
+1. **Principle of Least Privilege**: Grant minimum required permissions
+2. **Bucket-Specific Access**: Use bucket-scoped permissions rather than wildcards
+3. **Regular Audit**: Periodically review user permissions and active roles
+4. **Access Key Rotation**: Regularly rotate subuser access keys
+5. **Default Role Management**: Only add users to `default_members` when necessary for S3 compatibility
+
+### Permission Reference
+
+| Operation | Required Permission | Example |
+|-----------|-------------------|---------|
+| List bucket contents | `CAN getbucket bucket-name` | `CAN getbucket uploads` |
+| Download objects | `CAN getobject bucket-name/*` | `CAN getobject uploads/*` |
+| Upload objects | `CAN putobject bucket-name/*` | `CAN putobject uploads/*` |
+| Delete objects | `CAN deleteobject bucket-name/*` | `CAN deleteobject uploads/*` |
+| Bucket metadata | `CAN getbucket bucket-name` | `CAN getbucket uploads` |
+
+**Note**: `getbucket` permission is required for both bucket listing and bucket metadata operations in S3 compatibility mode.
+
 ## Advanced Configuration
 
 ### Custom Role Management

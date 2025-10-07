@@ -33,6 +33,9 @@ TESTS_PASSED=0
 TESTS_FAILED=0
 FAILED_TESTS=()
 
+# Simple MPU operation tracking
+MPU_TESTS_RUNNING=false
+
 # Utility functions
 log() {
     echo -e "${BLUE}[$(date '+%Y-%m-%d %H:%M:%S')] $1${NC}"
@@ -51,6 +54,54 @@ error() {
 
 warning() {
     echo -e "${YELLOW}⚠️  $1${NC}"
+}
+
+# Check if any s3cmd or MPU operations are still running
+wait_for_mpu_operations() {
+    if [ "$MPU_TESTS_RUNNING" = true ]; then
+        log "Checking for active MPU operations..."
+        
+        local max_wait=60  # Maximum 60 seconds
+        local check_interval=2  # Check every 2 seconds
+        local waited=0
+        
+        while [ $waited -lt $max_wait ]; do
+            # Check for any s3cmd processes
+            local s3cmd_count=$(pgrep -c "s3cmd" 2>/dev/null || echo "0")
+            
+            # Check for any test buckets still existing (indicates possible ongoing operations)
+            local test_buckets=0
+            set +e
+            # Count test buckets that still exist using a simpler approach
+            local bucket_list=$(s3cmd_wrapper ls 2>/dev/null | grep -E "(s3cmd-mpu-test-|s3cmd-mpu-resume-test-|s3cmd-mpu-error-test-)" | wc -l || echo "0")
+            if [[ "$bucket_list" =~ ^[0-9]+$ ]]; then
+                test_buckets=$bucket_list
+            else
+                test_buckets=0
+            fi
+            set -e
+            
+            if [ "$s3cmd_count" -eq 0 ] && [ "$test_buckets" -eq 0 ]; then
+                log "No active MPU operations detected"
+                break
+            fi
+            
+            log "Found $s3cmd_count s3cmd processes and $test_buckets test buckets, waiting..."
+            sleep $check_interval
+            waited=$((waited + check_interval))
+        done
+        
+        if [ $waited -ge $max_wait ]; then
+            warning "Timeout waiting for MPU operations, proceeding with cleanup"
+        fi
+        
+        # Additional small grace period for any final v2 commit operations
+        log "Adding 3 second grace period for any final operations..."
+        sleep 3
+        
+        MPU_TESTS_RUNNING=false
+        log "Ready for cleanup"
+    fi
 }
 
 # S3cmd wrapper with our endpoint
@@ -95,6 +146,9 @@ cleanup() {
     
     set +e  # Disable exit on error for cleanup
     
+    # Wait for any MPU operations to complete
+    wait_for_mpu_operations
+    
     # Clean up any remaining test buckets
     local buckets_to_clean=(
         "$TEST_BUCKET"
@@ -109,6 +163,19 @@ cleanup() {
             local bucket_uri=$(echo "$line" | awk '{print $3}')
             if [ -n "$bucket_uri" ]; then
                 log "  Cleaning up bucket: $bucket_uri"
+                
+                # First try to abort any active multipart uploads
+                log "    Aborting any active multipart uploads..."
+                s3cmd_wrapper abortmp "$bucket_uri" 2>/dev/null || true
+                sleep 2
+                
+                # Then remove all objects
+                log "    Removing all objects..."
+                s3cmd_wrapper rm "$bucket_uri" --recursive --force 2>/dev/null || true
+                sleep 1
+                
+                # Finally remove the bucket
+                log "    Removing bucket..."
                 s3cmd_wrapper rb "$bucket_uri" --force 2>/dev/null || true
             fi
         done 2>/dev/null || true
@@ -233,6 +300,7 @@ test_s3cmd_delete_object() {
 # Multipart upload tests
 test_s3cmd_multipart_upload_basic() {
     log "Testing: S3cmd Basic Multipart Upload"
+    MPU_TESTS_RUNNING=true
     
     local mpu_bucket="s3cmd-mpu-test-$(date +%s)"
     local mpu_object="s3cmd-large-test-file.bin"
@@ -332,6 +400,7 @@ test_s3cmd_multipart_upload_basic() {
 
 test_s3cmd_multipart_upload_resume() {
     log "Testing: S3cmd Multipart Upload Resume"
+    MPU_TESTS_RUNNING=true
     
     local mpu_bucket="s3cmd-mpu-resume-test-$(date +%s)"
     local mpu_object="s3cmd-resume-test-file.bin"
@@ -359,10 +428,16 @@ test_s3cmd_multipart_upload_resume() {
     # Start upload in background and kill it after short time to simulate interruption
     s3cmd_wrapper put "$mpu_object" "s3://$mpu_bucket/" --multipart-chunk-size-mb=5 2>&1 &
     local upload_pid=$!
+
+
     sleep 2
     kill $upload_pid 2>/dev/null || true
     wait $upload_pid 2>/dev/null || true
-    
+
+    # Wait a moment for any pending operations to settle
+    log "  Waiting for upload interruption to settle..."
+    sleep 3
+
     # Now try to resume the upload
     log "  Resuming upload with s3cmd..."
     upload_result=$(s3cmd_wrapper put "$mpu_object" "s3://$mpu_bucket/" --multipart-chunk-size-mb=5 2>&1)
@@ -441,6 +516,7 @@ test_s3cmd_multipart_upload_resume() {
 
 test_s3cmd_multipart_upload_errors() {
     log "Testing: S3cmd Multipart Upload Error Handling"
+    MPU_TESTS_RUNNING=true
     
     local mpu_bucket="s3cmd-mpu-error-test-$(date +%s)"
     local mpu_object="s3cmd-error-test-file.bin"

@@ -100,3 +100,8 @@ This document describes all error codes, HTTP status codes, error messages, and 
 3. **Storage Exhaustion**: When storage nodes are unavailable, errors are mapped to `InternalError` with HTTP 500/503
 4. **Multipart States**: Complex state management with specific errors for each multipart operation phase
 5. **Authentication Chain**: Multiple authentication layers each produce specific error codes
+
+
+# References
+  
+- https://docs.aws.amazon.com/AmazonS3/latest/API/ErrorResponses.html 

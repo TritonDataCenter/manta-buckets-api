@@ -925,6 +925,32 @@ All error responses maintain S3 API compatibility:
 - **Direct Streaming**: No additional hops during assembly
 - **Resumable Uploads**: Failed parts can be re-uploaded independently
 
+### Shark Client Connection Timeout Configuration
+
+Multipart upload operations require increased connection timeouts compared to regular object uploads due to their assembly operations during v2 commit:
+
+**Regular Object Uploads:**
+- Contact sharks in parallel to replicate data
+- Simple data streaming operations
+- Standard connection timeouts are typically sufficient
+
+**Multipart Upload v2 Commit:**
+- Contacts ALL sharks in the replica set simultaneously for assembly operations
+- Each shark performs complex assembly of multiple parts into final object
+- Assembly operations take longer than simple data streaming
+- Requires longer timeouts to handle the increased processing overhead
+
+The shark client connection timeout is configured in `shark_client.js` with a default of 10,000ms (10 seconds):
+
+```javascript
+// For mpu we need more time as we are contacting a shark per
+// replica, then merging all the parts. Increasing this default value
+// helped to mitigate timeouts
+this.connectTimeout = options.connectTimeout || 10000;
+```
+
+This increased timeout helps prevent connection failures when storage nodes are performing the more complex multipart assembly operations compared to simple data streaming.
+
 ### Storage Efficiency
 
 - **Actual Size Calculation**: Eliminates size estimation errors

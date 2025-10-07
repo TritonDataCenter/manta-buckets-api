@@ -1213,19 +1213,3 @@ The system provides detailed logging for authorization decisions:
   "matchedRule": "CAN getobject test-bucket/*"
 }
 ```
-
-### Performance and Scalability
-
-#### Role Evaluation Efficiency
-
-- Mahi caches role and policy information
-- Authorization decisions are cached temporarily
-- Bulk operations benefit from shared authorization context
-
-#### Large-Scale Deployments
-
-- Use role templates for consistent permission patterns
-- Implement automated role provisioning for new users
-- Monitor authorization performance with detailed logging
-
-This RBAC system provides the foundation for secure, scalable multi-tenant S3 access while maintaining compatibility with standard AWS tools and SDKs.

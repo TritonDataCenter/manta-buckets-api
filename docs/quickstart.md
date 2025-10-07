@@ -583,12 +583,12 @@ sdc-policy get bucket-reader
 
 If you need custom roles beyond the standard S3 ACLs, zlogin into the cloudapi
 instance from the headnode and create the policy and role required.
+Also you could install rbac tools for Triton which is described  [https://docs.tritondatacenter.com/public-cloud/rbac/quickstart](here)
 For example here we create the required public-read role and read-public policy
 used by the canned acl 'public-read'
 
 ```bash
 # Create custom roles using Manta CLI
-manta-create-role --name custom-readers --members user1,user2
 
 [root@1d812d88-6e82-4b6d-8300-c7e5816f353a (us-central-a:cloudapi0) ~]#  sdc-policy create --name=read-public --rules='CAN getobject'
 {

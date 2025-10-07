@@ -884,29 +884,29 @@ The Manta Buckets API implements Role-Based Access Control (RBAC) to provide fin
 ```mermaid
 graph TB
     subgraph "Account Structure"
-        Account[Account Owner<br/>neirac]
-        Subuser1[Subuser<br/>s3qa]
-        Subuser2[Subuser<br/>app-user]
+        Account["Account Owner<br/>your_account_owner"]
+        Subuser1["Subuser<br/>s3qa"]
+        Subuser2["Subuser<br/>app-user"]
         Account --> Subuser1
         Account --> Subuser2
     end
     
     subgraph "Policy Definitions"
-        Policy1[bucket-reader<br/>CAN getbucket test-bucket<br/>CAN getobject test-bucket/*]
-        Policy2[bucket-admin<br/>CAN getbucket uploads<br/>CAN getobject uploads/*<br/>CAN putobject uploads/*<br/>CAN deleteobject uploads/*]
-        Policy3[multi-bucket<br/>CAN getbucket dev-*<br/>CAN getobject dev-*/*]
+        Policy1["bucket-reader<br/>CAN getbucket test-bucket<br/>CAN getobject test-bucket/*"]
+        Policy2["bucket-admin<br/>CAN getbucket uploads<br/>CAN getobject uploads/*<br/>CAN putobject uploads/*<br/>CAN deleteobject uploads/*"]
+        Policy3["multi-bucket<br/>CAN getbucket dev-*<br/>CAN getobject dev-*/*"]
     end
     
     subgraph "Role Assignment"
-        Role1[storage-reader<br/>members: [s3qa]<br/>default_members: [s3qa]<br/>policies: [bucket-reader]]
-        Role2[uploader<br/>members: [app-user]<br/>default_members: [app-user]<br/>policies: [bucket-admin]]
+        Role1["storage-reader<br/>members: s3qa<br/>default_members: s3qa<br/>policies: bucket-reader"]
+        Role2["uploader<br/>members: app-user<br/>default_members: app-user<br/>policies: bucket-admin"]
     end
     
     subgraph "S3 Authorization Flow"
-        S3Request[S3 Request<br/>GET /test-bucket/file.txt]
-        AuthCheck[Authorization Check<br/>Resource: test-bucket/file.txt<br/>Action: getobject]
-        PolicyEval[Policy Evaluation<br/>test-bucket/* matches<br/>test-bucket/file.txt]
-        Decision[✅ Allow Access]
+        S3Request["S3 Request<br/>GET /test-bucket/file.txt"]
+        AuthCheck["Authorization Check<br/>Resource: test-bucket/file.txt<br/>Action: getobject"]
+        PolicyEval["Policy Evaluation<br/>test-bucket/* matches<br/>test-bucket/file.txt"]
+        Decision["✅ Allow Access"]
     end
     
     Policy1 --> Role1
@@ -1024,20 +1024,6 @@ graph TB
     class PolicyRule,RegexMatch,MatchResult policyNode
 ```
 
-#### Code Implementation
-
-The fix for bucket-scoped permissions was implemented in `lib/buckets/buckets.js`:
-
-```javascript
-// Before fix (line 36):
-resource.key = req.bucketObject.name;  // Only "file.txt"
-
-// After fix (line 36):
-resource.key = req.bucket.name + '/' + req.bucketObject.name;  // "test-bucket/file.txt"
-```
-
-This ensures that authorization checks use the full path, enabling patterns like `test-bucket/*` to work correctly.
-
 ### Policy Examples and Use Cases
 
 #### Granular Bucket Access Policies
@@ -1127,8 +1113,10 @@ S3 operations map to specific authorization actions that must be granted in poli
 | **Delete Object** | `deleteobject` | `CAN deleteobject test-bucket/*` |
 | **Head Bucket** | `getbucket` | `CAN getbucket test-bucket` |
 | **Head Object** | `getobject` | `CAN getobject test-bucket/file.txt` |
+| **Create Bucket** | `putbucket` | `CAN putbucket *` |
 
 **Important Note**: Unlike traditional Manta routes that use separate `listbucket` permissions, S3 routes consolidate bucket operations under `getbucket` to align with AWS S3's permission model.
+
 
 ### Permission Scope and Wildcards
 
@@ -1142,6 +1130,8 @@ S3 operations map to specific authorization actions that must be granted in poli
 // Pattern-based bucket access  
 "CAN getbucket dev-*"                 // All buckets starting with dev-
 "CAN getobject dev-*/*"               // All objects in dev-* buckets
+// Can create buckets 
+"CAN putbucket *"
 
 // Multiple specific buckets
 "CAN getbucket bucket1"               // Access bucket1

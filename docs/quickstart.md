@@ -408,10 +408,13 @@ sdc-user create --login s3qa --email s3qa@example.com --password temp-password
 
 # Example response:
 {
-  "login": "s3qa",
-  "uuid": "04a54897-82c0-4ab9-a77a-bbf800ff371a",
-  "email": "s3qa@example.com"
-}
+    "id": "04a54897-82c0-4ab9-a77a-bbf800ff371a",
+    "login": "s3qa",
+    "email": "s3qa@localhost",
+    "firstName": "s3qa",
+    "updated": "2025-10-06T18:21:55.703Z",
+    "created": "2025-10-06T18:21:55.703Z"
+  } 
 ```
 
 #### Step 2: Generate Access Keys for the Subuser
@@ -421,23 +424,30 @@ sdc-user create --login s3qa --email s3qa@example.com --password temp-password
 cloudapi /your-account/users/s3qa/accesskeys -X POST
 
 # Example response:
-{
-  "accesskeyid": "b6856fbd3d5a3645e1347931fe8e9226",
-  "accesskeysecret": "77a041b549e8170fba994022c762a9e9e5be986454ef770d0f9e213082ecede4"
-}
+[
+  {
+    "dn": "accesskeyid=<b6856fbd3d5a3645e1347931fe8e9226>, uuid=04a54897-82c0-4ab9-a77a-bbf800ff371a, uuid=c116efce-086f-455e-9ae4-26d49551428d, ou=users, o=smartdc",
+    "controls": [],
+    "accesskeyid": <"your access key">,
+    "accesskeysecret": <"your secret key">,
+    "created": "2025-10-06T21:20:09.540Z",
+    "objectclass": "accesskey",
+    "status": "Active"
+  }
+]
 ```
 
 #### Step 3: Create Policies for Bucket Access
 
 ```bash
 # Policy for reading objects from a specific bucket
-sdc-policy create --name=bucket-reader --rules='CAN getbucket test-bucket' 'CAN getobject test-bucket/*'
+sdc-policy create --name=bucket-reader --rules='CAN getbucket test-bucket' --rules='CAN getobject test-bucket/*'
 
 # Policy for full access to a specific bucket
-sdc-policy create --name=bucket-admin --rules='CAN getbucket test-bucket' 'CAN getobject test-bucket/*' 'CAN putobject test-bucket/*' 'CAN deleteobject test-bucket/*'
+sdc-policy create --name=bucket-admin --rules='CAN getbucket test-bucket' --rules='CAN getobject test-bucket/*' --rules='CAN putobject test-bucket/*' --rules='CAN deleteobject test-bucket/*'
 
 # Policy for read-only access to multiple buckets
-sdc-policy create --name=multi-bucket-reader --rules='CAN getbucket dev-bucket' 'CAN getobject dev-bucket/*' 'CAN getbucket prod-bucket' 'CAN getobject prod-bucket/*'
+sdc-policy create --name=multi-bucket-reader --rules='CAN getbucket dev-bucket' --rules='CAN getobject dev-bucket/*' --rules='CAN getbucket prod-bucket' --rules='CAN getobject prod-bucket/*'
 ```
 
 #### Step 4: Create Roles and Assign to Subuser
@@ -458,9 +468,9 @@ sdc-role create --name=storage-admin --members=s3qa --default_members=s3qa --pol
 
 ```bash
 # Create policy
-sdc-policy create --name=readonly-mybucket --rules='CAN getbucket mybucket' 'CAN getobject mybucket/*'
+sdc-policy create --name=readonly-mybucket --rules='CAN getbucket mybucket' --rules='CAN getobject mybucket/*'
 
-# Create role with default activation
+# Create role with default activation for user s3qa
 sdc-role create --name=mybucket-reader --members=s3qa --default_members=s3qa --policies=readonly-mybucket
 ```
 
@@ -468,9 +478,9 @@ sdc-role create --name=mybucket-reader --members=s3qa --default_members=s3qa --p
 
 ```bash
 # Create policy
-sdc-policy create --name=readwrite-uploads --rules='CAN getbucket uploads' 'CAN getobject uploads/*' 'CAN putobject uploads/*'
+sdc-policy create --name=readwrite-uploads --rules='CAN getbucket uploads' --rules='CAN getobject uploads/*' --rules='CAN putobject uploads/*'
 
-# Create role with default activation
+# Create role with default activation for s3qa
 sdc-role create --name=uploads-user --members=s3qa --default_members=s3qa --policies=readwrite-uploads
 ```
 
@@ -493,8 +503,8 @@ sdc-role create --name=developer --members=s3qa --default_members=s3qa --policie
 
 ```bash
 # Configure AWS CLI with subuser credentials
-aws configure set aws_access_key_id b6856fbd3d5a3645e1347931fe8e9226
-aws configure set aws_secret_access_key 77a041b549e8170fba994022c762a9e9e5be986454ef770d0f9e213082ecede4
+aws configure set aws_access_key_id 'your_access_key'
+aws configure set aws_secret_access_key 'your_secret_key'
 
 # Test access
 aws s3 ls s3://test-bucket/ --endpoint-url https://your-manta-endpoint
@@ -565,7 +575,7 @@ sdc-policy get bucket-reader
 | Delete objects | `CAN deleteobject bucket-name/*` | `CAN deleteobject uploads/*` |
 | Bucket metadata | `CAN getbucket bucket-name` | `CAN getbucket uploads` |
 
-**Note**: `getbucket` permission is required for both bucket listing and bucket metadata operations in S3 compatibility mode.
+**Note**: `getbucket` permission is required for both bucket listing and bucket metadata operations for the S3 compatibility layer.
 
 ## Advanced Configuration
 

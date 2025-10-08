@@ -13,7 +13,7 @@ Before you begin, ensure you have:
 ### Step 1: Create Access Key and Secret
 
 The S3 layer uses your Manta your access keys and secret access key from your account.
-To create the access key and secret, we need to use cloudapi.
+To create the access key and secret, we need to use [cloudapi](https://docs.mnx.io/cloudapi/api-introduction).
 
 ```bash
 # Call cloudapi to generate access keys and secret

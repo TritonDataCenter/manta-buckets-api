@@ -125,14 +125,14 @@ The Manta Buckets API supports creating subusers with fine-grained permissions f
 
 ```bash
 # Create a subuser
-sdc-user create --login=s3qa --email=s3qa@example.com
+sdc-user create --login=<some user name>  --email=<some user email>
 ```
 [
   {
     "id": "04a54897-82c0-4ab9-a77a-bbf800ff371a",
-    "login": "s3qa",
-    "email": "s3qa@localhost",
-    "firstName": "s3qa",
+    "login": "someuser",
+    "email": "someuser@localhost",
+    "firstName": "someruser",
     "updated": "2025-10-06T21:15:04.278Z",
     "created": "2025-10-06T18:21:55.703Z"
   }
@@ -140,7 +140,7 @@ sdc-user create --login=s3qa --email=s3qa@example.com
 ```
 
 # Generate access keys for the subuser
-sdc-user upload-key  --name=s3qa-key  <user id>  ~/.ssh/s3qa_rsa.pub
+sdc-user upload-key  --name=<description of key name>  <user id>  <path for public ssh key>
 ```
 
 #### Step 2: Create Policies for Fine-Grained Access

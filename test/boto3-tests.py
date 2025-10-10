@@ -241,6 +241,185 @@ def run_suite(args) -> int:
         assert data == payload, "Content mismatch"
     tr.run("GetObject", t_get_object)
     
+    # --- Server-Side Copy Tests --------------------------------------------
+    def t_server_side_copy_basic():
+        """Basic server-side copy test."""
+        source_key = key  # Use existing uploaded object as source
+        dest_key = f"copy-{uuid.uuid4().hex[:8]}-{key}"
+        
+        # Perform server-side copy
+        copy_source = {'Bucket': bucket, 'Key': source_key}
+        s3.copy_object(
+            CopySource=copy_source,
+            Bucket=bucket,
+            Key=dest_key
+        )
+        info(f"Copied {source_key} to {dest_key}")
+        
+        # Verify copied object exists and has same content
+        source_resp = s3.get_object(Bucket=bucket, Key=source_key)
+        dest_resp = s3.get_object(Bucket=bucket, Key=dest_key)
+        
+        source_data = source_resp["Body"].read()
+        dest_data = dest_resp["Body"].read()
+        
+        assert source_data == dest_data, "Source and destination content mismatch"
+        assert len(dest_data) == len(payload), "Copied object size mismatch"
+        info(f"Copy verification successful: {len(dest_data)} bytes")
+        
+        # Cleanup copied object
+        s3.delete_object(Bucket=bucket, Key=dest_key)
+    
+    def t_server_side_copy_with_metadata():
+        """Server-side copy with metadata directive COPY (preserve metadata)."""
+        source_key = key
+        dest_key = f"copy-meta-{uuid.uuid4().hex[:8]}-{key}"
+        
+        # Add some metadata to source object first
+        test_metadata = {'test-key': 'test-value', 'copy-test': 'original'}
+        s3.put_object(
+            Bucket=bucket, 
+            Key=source_key, 
+            Body=payload,
+            Metadata=test_metadata,
+            ContentType='text/plain'
+        )
+        
+        # Copy with COPY metadata directive (preserve original metadata)
+        copy_source = {'Bucket': bucket, 'Key': source_key}
+        s3.copy_object(
+            CopySource=copy_source,
+            Bucket=bucket,
+            Key=dest_key,
+            MetadataDirective='COPY'
+        )
+        
+        # Verify metadata was preserved
+        dest_head = s3.head_object(Bucket=bucket, Key=dest_key)
+        dest_metadata = dest_head.get('Metadata', {})
+        
+        assert 'test-key' in dest_metadata, "Original metadata not preserved"
+        assert dest_metadata['test-key'] == 'test-value', "Original metadata value mismatch"
+        info("Metadata preserved successfully with COPY directive")
+        
+        # Cleanup
+        s3.delete_object(Bucket=bucket, Key=dest_key)
+    
+    def t_server_side_copy_replace_metadata():
+        """Server-side copy with metadata directive REPLACE (new metadata)."""
+        source_key = key
+        dest_key = f"copy-replace-{uuid.uuid4().hex[:8]}-{key}"
+        
+        # Copy with REPLACE metadata directive (replace with new metadata)
+        copy_source = {'Bucket': bucket, 'Key': source_key}
+        new_metadata = {'new-key': 'new-value', 'replaced': 'true'}
+        
+        s3.copy_object(
+            CopySource=copy_source,
+            Bucket=bucket,
+            Key=dest_key,
+            MetadataDirective='REPLACE',
+            Metadata=new_metadata,
+            ContentType='application/octet-stream'
+        )
+        
+        # Verify new metadata was applied
+        dest_head = s3.head_object(Bucket=bucket, Key=dest_key)
+        dest_metadata = dest_head.get('Metadata', {})
+        
+        assert 'new-key' in dest_metadata, "New metadata not applied"
+        assert dest_metadata['new-key'] == 'new-value', "New metadata value mismatch"
+        assert dest_metadata.get('replaced') == 'true', "Replacement metadata not found"
+        info("Metadata replaced successfully with REPLACE directive")
+        
+        # Cleanup
+        s3.delete_object(Bucket=bucket, Key=dest_key)
+    
+    def t_server_side_copy_nested_path():
+        """Server-side copy to nested object path."""
+        source_key = key
+        dest_key = f"nested/path/copy-{uuid.uuid4().hex[:8]}-{key}"
+        
+        # Copy to nested path
+        copy_source = {'Bucket': bucket, 'Key': source_key}
+        s3.copy_object(
+            CopySource=copy_source,
+            Bucket=bucket,
+            Key=dest_key
+        )
+        
+        # Verify object exists at nested path
+        dest_resp = s3.get_object(Bucket=bucket, Key=dest_key)
+        dest_data = dest_resp["Body"].read()
+        
+        assert dest_data == payload, "Nested path copy content mismatch"
+        info(f"Successfully copied to nested path: {dest_key}")
+        
+        # Cleanup
+        s3.delete_object(Bucket=bucket, Key=dest_key)
+    
+    def t_server_side_copy_large_object():
+        """Server-side copy of a larger object to test performance."""
+        # Create a larger test object
+        large_payload = b"Large object test data. " * 1000  # ~24KB
+        large_source_key = f"large-source-{uuid.uuid4().hex[:8]}.txt"
+        large_dest_key = f"large-copy-{uuid.uuid4().hex[:8]}.txt"
+        
+        # Upload large source object
+        s3.put_object(Bucket=bucket, Key=large_source_key, Body=large_payload)
+        
+        # Perform server-side copy
+        copy_source = {'Bucket': bucket, 'Key': large_source_key}
+        start_time = time.time()
+        
+        s3.copy_object(
+            CopySource=copy_source,
+            Bucket=bucket,
+            Key=large_dest_key
+        )
+        
+        copy_time = time.time() - start_time
+        info(f"Large object copy completed in {copy_time:.2f}s ({len(large_payload)} bytes)")
+        
+        # Verify content
+        dest_resp = s3.get_object(Bucket=bucket, Key=large_dest_key)
+        dest_data = dest_resp["Body"].read()
+        
+        assert dest_data == large_payload, "Large object copy content mismatch"
+        assert len(dest_data) == len(large_payload), "Large object copy size mismatch"
+        
+        # Cleanup
+        s3.delete_object(Bucket=bucket, Key=large_source_key)
+        s3.delete_object(Bucket=bucket, Key=large_dest_key)
+    
+    def t_server_side_copy_error_handling():
+        """Test server-side copy error handling."""
+        nonexistent_key = f"nonexistent-{uuid.uuid4().hex}.txt"
+        dest_key = f"copy-error-{uuid.uuid4().hex[:8]}.txt"
+        
+        # Try to copy non-existent object
+        copy_source = {'Bucket': bucket, 'Key': nonexistent_key}
+        
+        try:
+            s3.copy_object(
+                CopySource=copy_source,
+                Bucket=bucket,
+                Key=dest_key
+            )
+            assert False, "Expected ClientError for non-existent source object"
+        except ClientError as e:
+            error_code = e.response['Error']['Code']
+            assert error_code in ['NoSuchKey', '404'], f"Unexpected error code: {error_code}"
+            info(f"Correctly handled non-existent source error: {error_code}")
+    
+    # Run server-side copy tests
+    tr.run("Server-Side Copy - Basic copy", t_server_side_copy_basic)
+    tr.run("Server-Side Copy - Preserve metadata", t_server_side_copy_with_metadata)
+    tr.run("Server-Side Copy - Replace metadata", t_server_side_copy_replace_metadata)
+    tr.run("Server-Side Copy - Nested path", t_server_side_copy_nested_path)
+    tr.run("Server-Side Copy - Large object", t_server_side_copy_large_object)
+    tr.run("Server-Side Copy - Error handling", t_server_side_copy_error_handling)
+    
     # --- Multipart Upload Tests --------------------------------------------
     mpu_key = args.mpu_key or "autotest-mpu.bin"
     MIN_PART = 5 * 1024 * 1024  # 5 MiB minimum part size

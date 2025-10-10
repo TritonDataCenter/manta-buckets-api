@@ -376,6 +376,190 @@ test_delete_object() {
     fi
 }
 
+test_server_side_copy() {
+    log "Testing: Server-Side Copy Object"
+    
+    # Create source objects for copy tests
+    local source_object="source-object.txt"
+    local dest_object="dest-object.txt"
+    local copy_content="Content for server-side copy test - $(date +%s)"
+    
+    # Create source file and upload
+    echo "$copy_content" > "$source_object"
+    
+    set +e  # Temporarily disable exit on error
+    result=$(aws_s3api put-object --bucket "$TEST_BUCKET" --key "$source_object" --body "$source_object" 2>&1)
+    local put_exit_code=$?
+    set -e  # Re-enable exit on error
+    
+    if [ $put_exit_code -ne 0 ]; then
+        error "Server-side copy - Failed to upload source object: $result"
+        return 1
+    fi
+    
+    # Test 1: Basic server-side copy
+    log "  Testing basic server-side copy..."
+    set +e
+    result=$(aws_s3api copy-object \
+        --bucket "$TEST_BUCKET" \
+        --key "$dest_object" \
+        --copy-source "$TEST_BUCKET/$source_object" 2>&1)
+    local copy_exit_code=$?
+    set -e
+    
+    if [ $copy_exit_code -eq 0 ]; then
+        if echo "$result" | jq -e '.CopyObjectResult.ETag' >/dev/null 2>&1; then
+            success "Server-side copy - Basic copy successful with ETag"
+            
+            # Verify copied object exists and has correct content
+            local downloaded_copy="downloaded-$dest_object"
+            if aws_s3api get-object --bucket "$TEST_BUCKET" --key "$dest_object" "$downloaded_copy" 2>/dev/null; then
+                local copied_content=$(cat "$downloaded_copy")
+                if [ "$copied_content" = "$copy_content" ]; then
+                    success "Server-side copy - Copied content matches source"
+                else
+                    error "Server-side copy - Content mismatch. Expected: '$copy_content', Got: '$copied_content'"
+                fi
+                rm -f "$downloaded_copy"
+            else
+                error "Server-side copy - Failed to download copied object"
+            fi
+        else
+            error "Server-side copy - Response missing ETag: $result"
+        fi
+    else
+        error "Server-side copy - Failed to copy object: $result"
+        return 1
+    fi
+    
+    # Test 2: Server-side copy with metadata directive COPY (default)
+    log "  Testing server-side copy with metadata directive COPY..."
+    local dest_object_copy="dest-object-copy.txt"
+    
+    set +e
+    result=$(aws_s3api copy-object \
+        --bucket "$TEST_BUCKET" \
+        --key "$dest_object_copy" \
+        --copy-source "$TEST_BUCKET/$source_object" \
+        --metadata-directive COPY 2>&1)
+    local copy_directive_exit_code=$?
+    set -e
+    
+    if [ $copy_directive_exit_code -eq 0 ]; then
+        success "Server-side copy - Copy with COPY metadata directive successful"
+    else
+        error "Server-side copy - Failed with COPY metadata directive: $result"
+    fi
+    
+    # Test 3: Server-side copy with metadata directive REPLACE
+    log "  Testing server-side copy with metadata directive REPLACE..."
+    local dest_object_replace="dest-object-replace.txt"
+    
+    set +e
+    result=$(aws_s3api copy-object \
+        --bucket "$TEST_BUCKET" \
+        --key "$dest_object_replace" \
+        --copy-source "$TEST_BUCKET/$source_object" \
+        --metadata-directive REPLACE \
+        --content-type "text/plain" \
+        --metadata "test-key=test-value,copy-test=replaced" 2>&1)
+    local replace_exit_code=$?
+    set -e
+    
+    if [ $replace_exit_code -eq 0 ]; then
+        success "Server-side copy - Copy with REPLACE metadata directive successful"
+        
+        # Verify new metadata was applied
+        set +e
+        metadata_result=$(aws_s3api head-object --bucket "$TEST_BUCKET" --key "$dest_object_replace" 2>&1)
+        local head_exit_code=$?
+        set -e
+        
+        if [ $head_exit_code -eq 0 ]; then
+            if echo "$metadata_result" | jq -e '.Metadata."test-key"' | grep -q "test-value" && \
+               echo "$metadata_result" | jq -e '.Metadata."copy-test"' | grep -q "replaced"; then
+                success "Server-side copy - Custom metadata applied correctly"
+            else
+                warning "Server-side copy - Custom metadata might not be applied as expected: $metadata_result"
+            fi
+        else
+            error "Server-side copy - Failed to retrieve metadata for replaced object: $metadata_result"
+        fi
+    else
+        error "Server-side copy - Failed with REPLACE metadata directive: $result"
+    fi
+    
+    # Test 4: Cross-object copy (same bucket, different paths)
+    log "  Testing server-side copy to different path..."
+    local dest_nested_object="nested/path/dest-object.txt"
+    
+    set +e
+    result=$(aws_s3api copy-object \
+        --bucket "$TEST_BUCKET" \
+        --key "$dest_nested_object" \
+        --copy-source "$TEST_BUCKET/$source_object" 2>&1)
+    local nested_copy_exit_code=$?
+    set -e
+    
+    if [ $nested_copy_exit_code -eq 0 ]; then
+        success "Server-side copy - Copy to nested path successful"
+        
+        # Verify object exists at nested path
+        if aws_s3api head-object --bucket "$TEST_BUCKET" --key "$dest_nested_object" 2>/dev/null; then
+            success "Server-side copy - Object exists at nested path"
+        else
+            error "Server-side copy - Object not found at nested path"
+        fi
+    else
+        error "Server-side copy - Failed to copy to nested path: $result"
+    fi
+    
+    # Test 5: Copy with special characters in object name
+    log "  Testing server-side copy with special characters..."
+    local special_source="special source with spaces & symbols!.txt"
+    local special_dest="special dest with spaces & symbols!.txt"
+    
+    # Create source object with special characters
+    echo "Special character test content" > "special-temp.txt"
+    
+    set +e
+    aws_s3api put-object --bucket "$TEST_BUCKET" --key "$special_source" --body "special-temp.txt" 2>/dev/null
+    local special_put_exit_code=$?
+    set -e
+    
+    if [ $special_put_exit_code -eq 0 ]; then
+        set +e
+        result=$(aws_s3api copy-object \
+            --bucket "$TEST_BUCKET" \
+            --key "$special_dest" \
+            --copy-source "$TEST_BUCKET/$special_source" 2>&1)
+        local special_copy_exit_code=$?
+        set -e
+        
+        if [ $special_copy_exit_code -eq 0 ]; then
+            success "Server-side copy - Copy with special characters successful"
+        else
+            warning "Server-side copy - Copy with special characters failed (may be expected): $result"
+        fi
+    else
+        warning "Server-side copy - Failed to create source object with special characters"
+    fi
+    
+    # Cleanup test files
+    rm -f "$source_object" "special-temp.txt"
+    
+    # Clean up test objects (ignore errors for cleanup)
+    set +e
+    aws_s3api delete-object --bucket "$TEST_BUCKET" --key "$source_object" 2>/dev/null
+    aws_s3api delete-object --bucket "$TEST_BUCKET" --key "$dest_object" 2>/dev/null
+    aws_s3api delete-object --bucket "$TEST_BUCKET" --key "$dest_object_copy" 2>/dev/null
+    aws_s3api delete-object --bucket "$TEST_BUCKET" --key "$dest_object_replace" 2>/dev/null
+    aws_s3api delete-object --bucket "$TEST_BUCKET" --key "$dest_nested_object" 2>/dev/null
+    aws_s3api delete-object --bucket "$TEST_BUCKET" --key "$special_source" 2>/dev/null
+    aws_s3api delete-object --bucket "$TEST_BUCKET" --key "$special_dest" 2>/dev/null
+    set -e
+}
+
 test_conditional_headers() {
     log "Testing: Conditional Headers (If-Match, If-None-Match, If-Modified-Since, If-Unmodified-Since)"
     
@@ -2340,6 +2524,7 @@ run_tests() {
             test_get_object || true
             test_object_checksum_integrity || true
             test_list_bucket_objects_with_content || true
+            test_server_side_copy || true
             test_conditional_headers || true
             test_delete_object || true
             
@@ -2349,6 +2534,29 @@ run_tests() {
             aws_s3 rm "s3://$TEST_BUCKET" --recursive 2>/dev/null || true
             set -e
             
+            test_delete_bucket || true
+            
+            set -e  # Re-enable exit on error
+            ;;
+        "copy")
+            log "Starting S3 Server-Side Copy Tests for manta-buckets-api using AWS CLI"
+            log "====================================================================="
+            
+            set +e  # Disable exit on error for test execution
+            
+            # Create bucket for copy tests
+            test_create_bucket || true
+            
+            # Server-side copy tests only
+            test_server_side_copy || true
+            
+            # Clean up copy test objects before deleting bucket
+            log "Cleaning up copy test objects before bucket deletion..."
+            set +e
+            aws_s3 rm "s3://$TEST_BUCKET" --recursive 2>/dev/null || true
+            set -e
+            
+            # Cleanup bucket
             test_delete_bucket || true
             
             set -e  # Re-enable exit on error
@@ -2496,6 +2704,7 @@ run_tests() {
             test_get_object || true
             test_object_checksum_integrity || true
             test_list_bucket_objects_with_content || true
+            test_server_side_copy || true
             test_conditional_headers || true
             test_delete_object || true
             
@@ -2590,6 +2799,7 @@ main() {
             echo "Test Types:"
             echo "  all        - Run all tests including ACL (default)"
             echo "  basic      - Run basic S3 functionality tests only"
+            echo "  copy       - Run server-side copy tests only"
             echo "  mpu        - Run multipart upload tests only"
             echo "  multipart  - Alias for mpu"
             echo "  tagging    - Run object tagging tests only"
@@ -2608,6 +2818,7 @@ main() {
             echo "  $0                    # Run all tests including ACL"
             echo "  $0 mpu                # Run only multipart upload tests"
             echo "  $0 basic              # Run only basic functionality tests"
+            echo "  $0 copy               # Run only server-side copy tests"
             echo "  $0 tagging            # Run only object tagging tests"
             echo "  $0 acl                # Run only ACL tests"
             echo "  $0 errors             # Run only error handling tests"
@@ -2619,7 +2830,7 @@ main() {
             echo "Note: This script requires AWS CLI to be installed and configured."
             exit 0
             ;;
-        "mpu"|"multipart"|"basic"|"errors"|"auth"|"presigned"|"acl"|"tagging"|"all")
+        "mpu"|"multipart"|"basic"|"copy"|"errors"|"auth"|"presigned"|"acl"|"tagging"|"all")
             test_type="$1"
             ;;
         "")

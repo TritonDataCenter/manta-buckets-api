@@ -128,11 +128,6 @@ url = s3.generate_presigned_url('get_object', Params={'Bucket': 'my-bucket', 'Ke
 - **Manta**: No region concept, single deployment
 - **Impact**: Region-related operations not applicable
 
-### Data Consistency
-- **S3**: Eventually consistent for overwrite operations
-- **Manta**: Strong consistency for all operations
-- **Impact**: Stronger consistency guarantees than S3
-
 ## Compatibility Matrix
 
 ### High Compatibility ✅

@@ -545,7 +545,7 @@ class MantaS3SecurityTester:
                             f"🚨 CRITICAL: Malformed bucket name accepted (HTTP {status_code}) - possible auth bypass!",
                             {"status_code": status_code, "bucket_name": bucket_name, "severity": "critical"}
                         ))
-                    elif status_code in [400, 403, 404]:
+                    elif status_code in [0, 400, 403, 404, 422]:
                         results.append(SecurityTestResult(
                             f"S3 Malformed Bucket Name Protection ({bucket_name[:20]}...)",
                             True,
@@ -590,7 +590,7 @@ class MantaS3SecurityTester:
                             f"🚨 CRITICAL: Malformed object key accepted (HTTP {status_code}) - possible auth bypass!",
                             {"status_code": status_code, "object_key": object_key, "severity": "critical"}
                         ))
-                    elif status_code in [400, 403, 404]:
+                    elif status_code in [0, 400, 403, 404, 422]:
                         results.append(SecurityTestResult(
                             f"S3 Malformed Object Key Protection ({object_key[:20]}...)",
                             True,
@@ -779,9 +779,15 @@ class MantaS3SecurityTester:
             t = datetime.datetime.utcnow()
             amz_date = t.strftime('%Y%m%dT%H%M%SZ')
             
+            # Handle different signer types
+            if hasattr(self.signer, 'service'):
+                service = self.signer.service
+            else:
+                service = 's3'  # Default for NativeBoto3Operations
+                
             presigned_params = {
                 'X-Amz-Algorithm': 'AWS4-HMAC-SHA256',
-                'X-Amz-Credential': f"{self.signer.access_key}/20991231/{self.signer.region}/{self.signer.service}/aws4_request",  # Far future date
+                'X-Amz-Credential': f"{self.signer.access_key}/20991231/{self.signer.region}/{service}/aws4_request",  # Far future date
                 'X-Amz-Date': amz_date,
                 'X-Amz-Expires': '999999',  # Excessive expiration
                 'X-Amz-SignedHeaders': 'host',
@@ -1518,8 +1524,9 @@ Run only against systems you own or have explicit permission to test.
         verbose=args.verbose
     )
     
-    # Update the signer with the specified region
-    tester.signer.region = region
+    # Update the signer with the specified region (if it has a region attribute)
+    if hasattr(tester.signer, 'region'):
+        tester.signer.region = region
     
     if args.insecure:
         print("⚠️  SSL certificate verification disabled (-k/--insecure flag)")

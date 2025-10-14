@@ -45,7 +45,7 @@ Manta Buckets API provides S3-compatible storage functionality backed by Manta's
 | **LIST OBJECTS V2** | ✅ Supported | ✅ Supported | **IMPLEMENTED** | Preferred S3 listing API |
 | **GET OBJECT ACL** | ✅ Supported | ✅ Supported | **IMPLEMENTED** | Converts Manta roles to S3 ACL XML |
 | **PUT OBJECT ACL** | ✅ Supported | ✅ Supported | **IMPLEMENTED** | Supports canned ACLs and role mapping |
-| **COPY OBJECT** | ✅ Supported | ❌ Not Implemented | **NOT IMPLEMENTED** | No server-side copy functionality |
+| **COPY OBJECT** | ✅ Supported | ✅ Supported | **IMPLEMENTED** | Copy object between buckets |
 | **GET OBJECT TORRENT** | ✅ Supported | ❌ Not Implemented | **NOT IMPLEMENTED** | BitTorrent not supported |
 
 ## Presigned URL Operations
@@ -161,7 +161,9 @@ When migrating from AWS S3 or implementing S3-compatible applications:
 2. **Durability Levels**: Use `durability-level` header instead of storage classes
 3. **Role Mapping**: Understand how S3 ACLs map to Manta roles
 4. **Metadata Translation**: User metadata automatically converted between `x-amz-meta-*` and `m-*` formats
-5. **No Regional Concepts**: All buckets exist in the same Manta deployment
+5. **Strong Consistency**: Can rely on immediate consistency for all operations
+6. **No Regional Concepts**: All buckets exist in the same Manta deployment
+
 
 ## Error Handling
 

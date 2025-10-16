@@ -1394,8 +1394,6 @@ Examples:
   # Full example with SSL and verbose output
   python3 security_validation_test.py --host manta-api.example.com --port 443 --ssl --verbose --tests auth path
 
-Note: This tool is for defensive testing of S3 compatibility layer only.
-Run only against systems you own or have explicit permission to test.
         """
     )
     

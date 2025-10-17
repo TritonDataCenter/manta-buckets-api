@@ -322,14 +322,16 @@ Once a bucket is marked as public, browsers can access content directly:
 
 ## CORS Support
 
-For browser-based applications, CORS headers are automatically added:
+CORS headers are read from object metadata, not automatically added. To enable CORS for browser-based applications, set metadata on your objects:
 
-```javascript
-// Automatically added to public bucket responses
-'Access-Control-Allow-Origin': '*'
-'Access-Control-Allow-Methods': 'GET, HEAD, OPTIONS'
-'Access-Control-Allow-Headers': 'Content-Type, Range'
+```bash
+# Set CORS headers as object metadata
+s3cmd put --add-header="x-amz-meta-access-control-allow-origin:*" \
+          --add-header="x-amz-meta-access-control-allow-methods:GET,HEAD,OPTIONS" \
+          myfile.txt s3://public/
 ```
+
+CORS headers are applied from object metadata during response if present.
 
 ### Performance Considerations
 

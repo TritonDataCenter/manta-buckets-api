@@ -7,8 +7,6 @@ This document explains the production-ready anonymous access system in manta-buc
 The anonymous access system is **enabled by default** and provides secure access to public content while maintaining strict security controls. It supports:
 
 - Direct browser access to public bucket content
-- Static website hosting from Manta buckets
-- Public CDN-style content distribution
 - API access without authentication for public resources
 
 ## Architecture
@@ -19,7 +17,7 @@ The anonymous access system works by:
 2. **Anonymous User Context**: Create a temporary user context with `public-reader` role
 3. **Bypass Authentication**: Skip signature verification for anonymous public access
 4. **Role-Based Authorization**: Still enforce RBAC using the anonymous user's roles
-5. **Secure Access**: Only buckets explicitly marked as public are accessible
+5. **Secure Access**: Only objects explicitly marked as public are accessible
 
 ## Implementation Components
 
@@ -139,16 +137,12 @@ The system includes comprehensive security controls:
 
 #### **1. Strict Bucket Matching**
 - Only buckets named exactly `"public"` are accessible by default
-- No substring matching (prevents accidental exposure of `my-public-test` buckets)
-- Case-sensitive exact matching for maximum security
 
 #### **2. Configuration-Based Controls**
 ```bash
 # Environment variables for production control
 MANTA_ANONYMOUS_ACCESS_ENABLED=true           # Anonymous access enabled by default
 MANTA_ANONYMOUS_BUCKETS=public                # Allowed bucket names (comma-separated)
-MANTA_ANONYMOUS_STRICT_MODE=true              # Strict security mode (default: enabled)
-MANTA_ANONYMOUS_RATE_LIMIT=100                # Requests per minute limit (Not implemented)
 MANTA_ANONYMOUS_AUDIT_ALL=false               # Audit all attempts (default: disabled)
 ```
 
@@ -185,7 +179,6 @@ MANTA_ANONYMOUS_AUDIT_ALL=false               # Audit all attempts (default: dis
 MANTA_ANONYMOUS_ACCESS_ENABLED=true           # Feature enabled
 MANTA_ANONYMOUS_BUCKETS=public                # Only "public" bucket allowed
 MANTA_ANONYMOUS_STRICT_MODE=true              # Maximum security
-MANTA_ANONYMOUS_RATE_LIMIT=100                # Rate limiting active
 MANTA_ANONYMOUS_AUDIT_ALL=false               # Basic audit logging
 ```
 
@@ -294,7 +287,6 @@ MANTA ANONYMOUS ACCESS ENABLED - Configuration: {
   "enabled": true,
   "allowedBuckets": ["public"],
   "strictMode": true,
-  "maxRequestsPerMinute": 100,
   "auditAll": false
 }
 ```
@@ -339,7 +331,7 @@ Note that we don't support the OPTION method that's required for preflight reque
    - Verify bucket has `public-reader` role
    - Check bucket name extraction in logs
    - Ensure anonymous user context is created
-   - Confirm bucket name contains "public" (current simplified implementation)
+   - Confirm bucket name contains "public" 
 
 2. **Can't Remove Public Access**
    - Use `--acl-private` flag with s3cmd: `s3cmd --acl-private setacl s3://bucket`

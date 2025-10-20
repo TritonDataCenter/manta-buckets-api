@@ -11,8 +11,7 @@
 # manta-buckets-api S3 compat layer deployment
 
 ### Obtaining access keys 
-First we need to generate the access keys for an account, [CloudAPI](https://docs.mnx.io/cloudapi/api-introduction) The new REST endpoint that generates the keys is not used on the operator portal, so we need to generate
-the keys manually.
+First we need to generate the access keys for an account, [CloudAPI version 9.11.0](https://docs.mnx.io/cloudapi/api-introduction) The new REST endpoint that generates the keys is not used on the operator portal, so we need to generate the keys manually.
 
 ```
 cloudapi /your-manta-account/accesskeys -X POST

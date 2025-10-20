@@ -278,10 +278,6 @@ MANTA_ANONYMOUS_ACCESS_ENABLED=true           # Enable/disable anonymous access 
 MANTA_ANONYMOUS_BUCKETS=public                # Comma-separated list of allowed bucket names
 MANTA_ANONYMOUS_STRICT_MODE=true              # Enable strict security mode (default: true)
 
-# Security Controls  
-MANTA_ANONYMOUS_RATE_LIMIT=100                # Rate limit per minute (default: 100)
-MANTA_ANONYMOUS_AUDIT_ALL=false               # Audit all attempts (default: false)
-
 # Example: Multiple public buckets
 MANTA_ANONYMOUS_BUCKETS=public,cdn,assets
 
@@ -305,39 +301,35 @@ MANTA ANONYMOUS ACCESS ENABLED - Configuration: {
 
 ### Browser Access Examples
 
-Once a bucket is marked as public, browsers can access content directly:
+Browsers can access content directly to buckets that have the name 'public':
 
 ```html
 <!-- Direct image access -->
-<img src="https://manta.example.com/user/buckets/public-images/objects/logo.png">
+<img src="https://manta.example.com/user/buckets/public/objects/logo.png">
 
 <!-- Static website hosting -->
-<iframe src="https://manta.example.com/user/buckets/public-site/objects/index.html"></iframe>
+<iframe src="https://manta.example.com/user/buckets/public/objects/index.html"></iframe>
 
 <!-- Direct download links -->
-<a href="https://manta.example.com/user/buckets/public-docs/objects/manual.pdf">
+<a href="https://manta.example.com/user/buckets/public/objects/manual.pdf">
     Download Manual
 </a>
 ```
 
 ## CORS Support
 
-CORS headers are read from object metadata, not automatically added. To enable CORS for browser-based applications, set metadata on your objects:
+CORS is not supported. CORS headers are read from object metadata, not automatically added. To set the metadata on your objects:
 
 ```bash
 # Set CORS headers as object metadata
 s3cmd put --add-header="x-amz-meta-access-control-allow-origin:*" \
-          --add-header="x-amz-meta-access-control-allow-methods:GET,HEAD,OPTIONS" \
+          --add-header="x-amz-meta-access-control-allow-methods:GET,HEAD" \
           myfile.txt s3://public/
 ```
 
 CORS headers are applied from object metadata during response if present.
+Note that we don't support the OPTION method that's required for preflight requests, to fully support CORS, it must be implemented per bucket and the OPTION method should be supported as well.
 
-### Performance Considerations
-
-- **Bucket Role Caching**: Consider caching bucket public status to reduce metadata lookups
-- **CDN Integration**: Use with CDN for better performance of public content
-- **Load Balancing**: Distribute anonymous requests across multiple buckets-api instances
 
 ## Troubleshooting
 
@@ -361,12 +353,7 @@ CORS headers are applied from object metadata during response if present.
    - Check that bucket name contains "public" (current naming-based detection)
    - Ensure browser is not sending authentication headers (clear cookies/auth)
 
-4. **CORS Errors in Browser**
-   - Verify CORS headers are being set
-   - Check browser developer tools for CORS policy errors
-   - Ensure OPTIONS requests are handled
-
-5. **Bucket is named Public But Browser Access Fails**
+4. **Bucket is named Public But Browser Access Fails**
    - Check if bucket name is "public" (required for current implementation)
    - Verify the anonymous access middleware chain is complete
    - Look for authorization bypass logs: `authorize: allowing public access - bypassing Mahi authorization`

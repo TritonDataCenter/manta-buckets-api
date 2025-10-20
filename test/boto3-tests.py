@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Consolidated boto3 S3 tests with MPU resume and MD5 verification.
-Enhanced version combining basic S3 tests with advanced MPU functionality.
+version combining basic S3 tests with advanced MPU functionality.
 """
 
 import argparse

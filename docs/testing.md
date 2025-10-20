@@ -18,7 +18,7 @@ Pure unit tests with mocks that validate S3 functionality without external depen
 
 **Key Features:**
 - **Multipart Upload Tests** (`test/s3-multipart.test.js`) - Core MPU functionality
-- **Enhanced S3 Compatibility** (`test/s3-compat-enhanced.test.js`) - Advanced S3 operations  
+- **S3 Compatibility** (`test/s3-compat-enhanced.test.js`) - Advanced S3 operations  
 - **Route Handling** (`test/s3-routes.test.js`) - S3 request routing and middleware
 - **Role Mapping** (`test/s3-role-mapping.test.js`) - S3 ACL to Manta role translation
 - **AWS Chunked Decoding** (`test/aws-chunked-decoder.test.js`) - AWS chunked transfer encoding

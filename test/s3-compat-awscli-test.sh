@@ -1941,9 +1941,167 @@ test_presigned_url_expiry() {
     set -e
 }
 
-# Test specific SigV4 authentication error cases from lib/auth.js
+# Test invalid X-Amz-Date format validation
+test_presigned_invalid_date_format() {
+    log "Testing: Presigned URL Invalid X-Amz-Date Format Validation"
+    
+    local invalid_date_object="invalid-date-test.txt"
+    echo "Invalid date test content" > "$invalid_date_object"
+    
+    # Upload test object
+    set +e
+    aws_s3api put-object --bucket "$TEST_BUCKET" --key "$invalid_date_object" --body "$invalid_date_object" 2>/dev/null
+    local put_exit_code=$?
+    set -e
+    
+    if [ $put_exit_code -eq 0 ]; then
+        # Generate a valid presigned URL first to get the base URL structure
+        set +e
+        local valid_url=$(aws s3 presign "s3://$TEST_BUCKET/$invalid_date_object" --expires-in 3600 --endpoint-url="$S3_ENDPOINT" 2>&1)
+        local presign_exit_code=$?
+        set -e
+        
+        if [ $presign_exit_code -eq 0 ]; then
+            # Test various invalid X-Amz-Date formats by manually crafting URLs
+            local base_url="${valid_url%%\?*}"
+            local query_params="${valid_url#*\?}"
+            
+            # Test cases for invalid X-Amz-Date formats
+            local test_cases=(
+                "invaliddate"                    # Completely invalid format
+                "2023-01-01T12:00:00Z"          # ISO format with dashes (should be compact)
+                "20230101T120000"               # Missing Z suffix
+                "20230101T120000Y"              # Wrong suffix
+                "2023010T120000Z"               # Too short
+                "202301011T120000Z"             # Too long
+                "20230230T120000Z"              # Invalid date (Feb 30)
+                "20230101T250000Z"              # Invalid hour
+                "20230101T126000Z"              # Invalid minute
+                "20230101T120060Z"              # Invalid second
+                ""                              # Empty date
+            )
+            
+            local invalid_format_count=0
+            
+            for invalid_date in "${test_cases[@]}"; do
+                # Replace X-Amz-Date parameter in the URL
+                local modified_query=$(echo "$query_params" | sed "s/X-Amz-Date=[^&]*/X-Amz-Date=$invalid_date/")
+                local test_url="$base_url?$modified_query"
+                
+                log "  Testing invalid X-Amz-Date: '$invalid_date'"
+                
+                # Test the modified URL
+                set +e
+                local curl_response=$(curl -s -w "%{http_code}" --insecure "$test_url" 2>&1)
+                local curl_exit_code=$?
+                local http_code="${curl_response: -3}"
+                set -e
+                
+                # Should get 400 or 403 for invalid date format
+                if [ "$http_code" = "400" ] || [ "$http_code" = "403" ]; then
+                    success "Presigned URL validation - Invalid X-Amz-Date '$invalid_date' properly rejected (HTTP $http_code)"
+                    ((invalid_format_count++))
+                else
+                    error "Presigned URL validation - Invalid X-Amz-Date '$invalid_date' should be rejected, got HTTP $http_code"
+                fi
+            done
+            
+            log "  Successfully tested $invalid_format_count invalid X-Amz-Date formats"
+            
+        else
+            error "Presigned URL invalid date - Failed to generate base URL: $valid_url"
+        fi
+    else
+        error "Presigned URL invalid date - Failed to upload test object"
+    fi
+    
+    # Cleanup
+    set +e
+    aws_s3api delete-object --bucket "$TEST_BUCKET" --key "$invalid_date_object" 2>/dev/null || true
+    rm -f "$invalid_date_object"
+    set -e
+}
+
+# Test invalid X-Amz-Expires validation
+test_presigned_invalid_expires() {
+    log "Testing: Presigned URL Invalid X-Amz-Expires Validation"
+    
+    local invalid_expires_object="invalid-expires-test.txt"
+    echo "Invalid expires test content" > "$invalid_expires_object"
+    
+    # Upload test object
+    set +e
+    aws_s3api put-object --bucket "$TEST_BUCKET" --key "$invalid_expires_object" --body "$invalid_expires_object" 2>/dev/null
+    local put_exit_code=$?
+    set -e
+    
+    if [ $put_exit_code -eq 0 ]; then
+        # Generate a valid presigned URL first to get the base URL structure
+        set +e
+        local valid_url=$(aws s3 presign "s3://$TEST_BUCKET/$invalid_expires_object" --expires-in 3600 --endpoint-url="$S3_ENDPOINT" 2>&1)
+        local presign_exit_code=$?
+        set -e
+        
+        if [ $presign_exit_code -eq 0 ]; then
+            local base_url="${valid_url%%\?*}"
+            local query_params="${valid_url#*\?}"
+            
+            # Test cases for invalid X-Amz-Expires values
+            local test_cases=(
+                "-1"                            # Negative value
+                "0"                             # Zero value
+                "604801"                        # Over 7-day limit
+                "999999"                        # Way over limit
+                "abc"                           # Non-numeric
+                "3600.5"                        # Decimal (should be integer)
+                ""                              # Empty value
+                "3600abc"                       # Mixed numeric/text
+            )
+            
+            local invalid_expires_count=0
+            
+            for invalid_expires in "${test_cases[@]}"; do
+                # Replace X-Amz-Expires parameter in the URL
+                local modified_query=$(echo "$query_params" | sed "s/X-Amz-Expires=[^&]*/X-Amz-Expires=$invalid_expires/")
+                local test_url="$base_url?$modified_query"
+                
+                log "  Testing invalid X-Amz-Expires: '$invalid_expires'"
+                
+                # Test the modified URL
+                set +e
+                local curl_response=$(curl -s -w "%{http_code}" --insecure "$test_url" 2>&1)
+                local curl_exit_code=$?
+                local http_code="${curl_response: -3}"
+                set -e
+                
+                # Should get 400 or 403 for invalid expires value
+                if [ "$http_code" = "400" ] || [ "$http_code" = "403" ]; then
+                    success "Presigned URL validation - Invalid X-Amz-Expires '$invalid_expires' properly rejected (HTTP $http_code)"
+                    ((invalid_expires_count++))
+                else
+                    error "Presigned URL validation - Invalid X-Amz-Expires '$invalid_expires' should be rejected, got HTTP $http_code"
+                fi
+            done
+            
+            log "  Successfully tested $invalid_expires_count invalid X-Amz-Expires values"
+            
+        else
+            error "Presigned URL invalid expires - Failed to generate base URL: $valid_url"
+        fi
+    else
+        error "Presigned URL invalid expires - Failed to upload test object"
+    fi
+    
+    # Cleanup
+    set +e
+    aws_s3api delete-object --bucket "$TEST_BUCKET" --key "$invalid_expires_object" 2>/dev/null || true
+    rm -f "$invalid_expires_object"
+    set -e
+}
+
+# Test specific SigV4 authentication error cases
 test_sigv4_auth_errors() {
-    log "Testing: SigV4 Authentication Error Handling (lib/auth.js error cases)"
+    log "Testing: SigV4 Authentication Error Handling "
     
     local auth_test_bucket="auth-test-$(date +%s)"
     
@@ -2163,7 +2321,7 @@ test_sigv4_auth_errors() {
         error "SigV4 auth errors - Expected 403 for PUT request with application/x-directory and invalid auth, got $directory_put_http_code"
     fi
     
-    log "  All specific SigV4 authentication error cases from lib/auth.js tested successfully"
+    log "  All specific SigV4 authentication error cases were tested successfully"
 }
 
 # S3 Object Tagging Tests
@@ -2854,6 +3012,8 @@ run_tests() {
             # Presigned URL tests only
             test_aws_cli_presigned_urls || true
             test_presigned_url_expiry || true
+            test_presigned_invalid_date_format || true
+            test_presigned_invalid_expires || true
             
             # Clean up test objects before deleting bucket
             log "Cleaning up presigned URL test objects before bucket deletion..."
@@ -2940,6 +3100,8 @@ run_tests() {
             # Presigned URL tests
             test_aws_cli_presigned_urls || true
             test_presigned_url_expiry || true
+            test_presigned_invalid_date_format || true
+            test_presigned_invalid_expires || true
             
             # Clean up any test objects before deleting bucket
             log "Cleaning up ACL test objects before bucket deletion..."

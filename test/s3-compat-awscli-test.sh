@@ -16,6 +16,13 @@ AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID:-"AKIA123456789EXAMPLE"}
 AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY:-"wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"}
 S3_ENDPOINT=${S3_ENDPOINT:-"https://localhost:8080"}
 AWS_REGION=${AWS_REGION:-"us-east-1"}
+MANTA_USER=${MANTA_USER:-""}
+
+# Check required environment variables
+if [ -z "$MANTA_USER" ]; then
+    echo "ERROR: MANTA_USER environment variable is required for anonymous access tests"
+    exit 1
+fi
 
 # Test configuration
 TEST_BUCKET="s3-compat-test-$(date +%s)"
@@ -1648,6 +1655,173 @@ test_aws_list_objects_with_metadata() {
     fi
 }
 
+# Test anonymous access to objects in public bucket
+test_anonymous_access_public_bucket() {
+    log "Testing: Anonymous Access to Objects in 'public' Bucket"
+    
+    local public_bucket="public"
+    local test_object="anonymous-test-object.txt"
+    local test_content="Test content for anonymous access - $(date +%s)"
+    local download_file="anonymous-download.txt"
+    
+    # Create test file
+    echo "$test_content" > "$test_object"
+    
+    # Create public bucket
+    set +e
+    aws_s3api create-bucket --bucket "$public_bucket" 2>/dev/null
+    local bucket_exit_code=$?
+    set -e
+    
+    if [ $bucket_exit_code -ne 0 ]; then
+        warning "Anonymous access test - Failed to create public bucket (may already exist)"
+    fi
+    
+    # Upload object to public bucket
+    set +e
+    aws_s3api put-object --bucket "$public_bucket" --key "$test_object" --body "$test_object" 2>/dev/null
+    local put_exit_code=$?
+    set -e
+    
+    if [ $put_exit_code -ne 0 ]; then
+        error "Anonymous access test - Failed to upload object to public bucket"
+        rm -f "$test_object"
+        return 1
+    fi
+    
+    # Test anonymous access using curl (no AWS credentials) - use Manta URL format
+    set +e
+    local anonymous_url="${S3_ENDPOINT}/${MANTA_USER}/buckets/${public_bucket}/objects/${test_object}"
+    local curl_response=$(curl -s -w "%{http_code}" --insecure "$anonymous_url" -o "$download_file" 2>&1)
+    local curl_exit_code=$?
+    local http_code="${curl_response: -3}"
+    set -e
+    
+    if [ $curl_exit_code -eq 0 ] && [ "$http_code" = "200" ]; then
+        # Verify content matches
+        if [ -f "$download_file" ] && cmp -s "$test_object" "$download_file"; then
+            success "Anonymous access - Successfully accessed object in 'public' bucket"
+        else
+            error "Anonymous access - Downloaded content doesn't match original"
+        fi
+    else
+        error "Anonymous access - Failed to access object in 'public' bucket (HTTP: $http_code)"
+    fi
+    
+    # Clean up
+    rm -f "$test_object" "$download_file"
+    set +e
+    aws_s3api delete-object --bucket "$public_bucket" --key "$test_object" 2>/dev/null || true
+    aws_s3api delete-bucket --bucket "$public_bucket" 2>/dev/null || true
+    set -e
+}
+
+# Test anonymous access to objects with public-read ACL in private bucket
+test_anonymous_access_public_acl() {
+    log "Testing: Anonymous Access to Objects with public-read ACL in Private Bucket"
+    
+    local test_object="public-acl-test-object.txt"
+    local test_content="Test content for public ACL anonymous access - $(date +%s)"
+    local download_file="public-acl-download.txt"
+    
+    # Create test file
+    echo "$test_content" > "$test_object"
+    
+    # Upload object with public-read ACL to regular (private) bucket
+    set +e
+    aws_s3api put-object --bucket "$TEST_BUCKET" --key "$test_object" --body "$test_object" --acl "public-read" 2>/dev/null
+    local put_exit_code=$?
+    set -e
+    
+    if [ $put_exit_code -ne 0 ]; then
+        error "Public ACL anonymous access test - Failed to upload object with public-read ACL"
+        rm -f "$test_object"
+        return 1
+    fi
+    
+    # Verify the ACL was set correctly
+    set +e
+    local acl_result=$(aws_s3api get-object-acl --bucket "$TEST_BUCKET" --key "$test_object" 2>&1)
+    local acl_exit_code=$?
+    set -e
+    
+    if [ $acl_exit_code -eq 0 ]; then
+        log "  Object ACL set successfully"
+    else
+        warning "Public ACL anonymous access test - Could not verify ACL: $acl_result"
+    fi
+    
+    # Test anonymous access using curl (no AWS credentials) - use Manta URL format
+    set +e
+    local anonymous_url="${S3_ENDPOINT}/${MANTA_USER}/buckets/${TEST_BUCKET}/objects/${test_object}"
+    local curl_response=$(curl -s -w "%{http_code}" --insecure "$anonymous_url" -o "$download_file" 2>&1)
+    local curl_exit_code=$?
+    local http_code="${curl_response: -3}"
+    set -e
+    
+    if [ $curl_exit_code -eq 0 ] && [ "$http_code" = "200" ]; then
+        # Verify content matches
+        if [ -f "$download_file" ] && cmp -s "$test_object" "$download_file"; then
+            success "Public ACL anonymous access - Successfully accessed object with public-read ACL"
+        else
+            error "Public ACL anonymous access - Downloaded content doesn't match original"
+        fi
+    else
+        error "Public ACL anonymous access - Failed to access object with public-read ACL (HTTP: $http_code)"
+    fi
+    
+    # Clean up
+    rm -f "$test_object" "$download_file"
+    set +e
+    aws_s3api delete-object --bucket "$TEST_BUCKET" --key "$test_object" 2>/dev/null || true
+    set -e
+}
+
+# Test that anonymous access is denied for private objects
+test_anonymous_access_denied() {
+    log "Testing: Anonymous Access Denied for Private Objects"
+    
+    local test_object="private-test-object.txt"
+    local test_content="Private test content - $(date +%s)"
+    local download_file="private-download.txt"
+    
+    # Create test file
+    echo "$test_content" > "$test_object"
+    
+    # Upload object without public ACL to regular (private) bucket
+    set +e
+    aws_s3api put-object --bucket "$TEST_BUCKET" --key "$test_object" --body "$test_object" 2>/dev/null
+    local put_exit_code=$?
+    set -e
+    
+    if [ $put_exit_code -ne 0 ]; then
+        error "Private access test - Failed to upload private object"
+        rm -f "$test_object"
+        return 1
+    fi
+    
+    # Test anonymous access using curl (no AWS credentials) - should fail - use Manta URL format
+    set +e
+    local anonymous_url="${S3_ENDPOINT}/${MANTA_USER}/buckets/${TEST_BUCKET}/objects/${test_object}"
+    local curl_response=$(curl -s -w "%{http_code}" --insecure "$anonymous_url" -o "$download_file" 2>&1)
+    local curl_exit_code=$?
+    local http_code="${curl_response: -3}"
+    set -e
+    
+    # We expect this to fail (403 or 401)
+    if [ "$http_code" = "403" ] || [ "$http_code" = "401" ]; then
+        success "Anonymous access denied - Correctly denied access to private object (HTTP: $http_code)"
+    else
+        error "Anonymous access denied - Expected 403/401 but got HTTP: $http_code"
+    fi
+    
+    # Clean up
+    rm -f "$test_object" "$download_file"
+    set +e
+    aws_s3api delete-object --bucket "$TEST_BUCKET" --key "$test_object" 2>/dev/null || true
+    set -e
+}
+
 # Test AWS CLI presigned URL generation and usage
 test_aws_cli_presigned_urls() {
     log "Testing: AWS CLI Presigned URL Generation and Usage"
@@ -2627,8 +2801,38 @@ run_tests() {
             test_aws_bucket_acl_policy || true
             test_aws_list_objects_with_metadata || true
             
+            # Anonymous access tests
+            test_anonymous_access_public_bucket || true
+            test_anonymous_access_public_acl || true
+            test_anonymous_access_denied || true
+            
             # Clean up ACL test objects before deleting bucket
             log "Cleaning up ACL test objects before bucket deletion..."
+            set +e
+            aws_s3 rm "s3://$TEST_BUCKET" --recursive 2>/dev/null || true
+            set -e
+            
+            # Cleanup bucket
+            test_delete_bucket || true
+            
+            set -e  # Re-enable exit on error
+            ;;
+        "anonymous")
+            log "Starting S3 Anonymous Access Tests for manta-buckets-api using AWS CLI"
+            log "======================================================================="
+            
+            set +e  # Disable exit on error for test execution
+            
+            # Create bucket for anonymous access tests
+            test_create_bucket || true
+            
+            # Anonymous access tests only
+            test_anonymous_access_public_bucket || true
+            test_anonymous_access_public_acl || true
+            test_anonymous_access_denied || true
+            
+            # Clean up anonymous test objects before deleting bucket
+            log "Cleaning up anonymous test objects before bucket deletion..."
             set +e
             aws_s3 rm "s3://$TEST_BUCKET" --recursive 2>/dev/null || true
             set -e
@@ -2728,6 +2932,11 @@ run_tests() {
             test_aws_bucket_acl_policy || true
             test_aws_list_objects_with_metadata || true
             
+            # Anonymous access tests
+            test_anonymous_access_public_bucket || true
+            test_anonymous_access_public_acl || true
+            test_anonymous_access_denied || true
+            
             # Presigned URL tests
             test_aws_cli_presigned_urls || true
             test_presigned_url_expiry || true
@@ -2804,6 +3013,7 @@ main() {
             echo "  multipart  - Alias for mpu"
             echo "  tagging    - Run object tagging tests only"
             echo "  acl        - Run ACL tests only"
+            echo "  anonymous  - Run anonymous access tests only"
             echo "  errors     - Run error handling tests only"
             echo "  auth       - Run SigV4 authentication error tests only"
             echo "  presigned  - Run presigned URL tests only"
@@ -2813,6 +3023,7 @@ main() {
             echo "  AWS_SECRET_ACCESS_KEY - AWS secret key (default: wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY)"
             echo "  S3_ENDPOINT          - S3 endpoint URL (default: https://localhost:8080)"
             echo "  AWS_REGION           - AWS region (default: us-east-1)"
+            echo "  MANTA_USER           - Manta account name (required for anonymous access tests)"
             echo
             echo "Examples:"
             echo "  $0                    # Run all tests including ACL"
@@ -2821,6 +3032,7 @@ main() {
             echo "  $0 copy               # Run only server-side copy tests"
             echo "  $0 tagging            # Run only object tagging tests"
             echo "  $0 acl                # Run only ACL tests"
+            echo "  $0 anonymous          # Run only anonymous access tests"
             echo "  $0 errors             # Run only error handling tests"
             echo "  $0 auth               # Run only SigV4 authentication error tests"
             echo "  $0 presigned          # Run only presigned URL tests"
@@ -2830,7 +3042,7 @@ main() {
             echo "Note: This script requires AWS CLI to be installed and configured."
             exit 0
             ;;
-        "mpu"|"multipart"|"basic"|"copy"|"errors"|"auth"|"presigned"|"acl"|"tagging"|"all")
+        "mpu"|"multipart"|"basic"|"copy"|"errors"|"auth"|"presigned"|"acl"|"anonymous"|"tagging"|"all")
             test_type="$1"
             ;;
         "")

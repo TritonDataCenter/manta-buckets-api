@@ -124,14 +124,10 @@ graph TB
     subgraph "Supported ACLs"
         Private[private]
         PublicRead[public-read] 
-        PublicWrite[public-read-write]
-        AuthRead[authenticated-read]
     end
     
     Private --> EmptyRoles["[]"]
     PublicRead --> PublicReadRole["['public-read']"]
-    PublicWrite --> PublicWriteRoles["['public-read', 'public-writer']"]
-    AuthRead --> AuthRoles["['authenticated-reader']"]
 ```
 
 #### Metadata Translation
@@ -309,7 +305,7 @@ Errors are converted to S3-compatible XML format:
 
 ### Addressing Styles
 
-Currently only S3 Path-style addressing is supported:
+Only S3 Path-style addressing is supported:
 
 - **Path-style**: `https://domain.com/bucket/object`
 - **Virtual-hosted**: `https://bucket.domain.com/object`

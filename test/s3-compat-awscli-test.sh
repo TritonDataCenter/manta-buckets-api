@@ -383,6 +383,482 @@ test_delete_object() {
     fi
 }
 
+test_bulk_delete_objects() {
+    log "Testing: Bulk Delete Objects"
+    
+    # Create multiple test objects for bulk deletion
+    local bulk_objects=("bulk-test-1.txt" "bulk-test-2.txt" "bulk-test-3.txt")
+    local bulk_content="Bulk delete test content - $(date +%s)"
+    
+    # Create and upload test objects
+    log "Creating objects for bulk delete test..."
+    for obj in "${bulk_objects[@]}"; do
+        echo "$bulk_content" > "$TEMP_DIR/$obj"
+        
+        set +e
+        result=$(aws_s3api put-object --bucket "$TEST_BUCKET" --key "$obj" --body "$TEMP_DIR/$obj" 2>&1)
+        exit_code=$?
+        set -e
+        
+        if [ $exit_code -ne 0 ]; then
+            error "Bulk delete - Failed to create test object $obj: $result"
+            return
+        fi
+    done
+    
+    # Verify objects exist before deletion
+    log "Verifying objects exist before bulk deletion..."
+    for obj in "${bulk_objects[@]}"; do
+        if ! aws_s3api head-object --bucket "$TEST_BUCKET" --key "$obj" 2>/dev/null; then
+            error "Bulk delete - Test object $obj does not exist before deletion"
+            return
+        fi
+    done
+    success "Bulk delete - All test objects created successfully"
+    
+    # Create delete request JSON
+    local delete_json="$TEMP_DIR/bulk-delete.json"
+    cat > "$delete_json" << EOF
+{
+    "Objects": [
+        {"Key": "${bulk_objects[0]}"},
+        {"Key": "${bulk_objects[1]}"},
+        {"Key": "${bulk_objects[2]}"}
+    ],
+    "Quiet": false
+}
+EOF
+    
+    # Perform bulk delete
+    log "Performing bulk delete operation..."
+    set +e
+    result=$(aws_s3api delete-objects --bucket "$TEST_BUCKET" --delete "file://$delete_json" 2>&1)
+    exit_code=$?
+    set -e
+    
+    if [ $exit_code -eq 0 ]; then
+        success "Bulk delete - delete-objects command executed successfully"
+        
+        # Parse response to check for deleted objects
+        if echo "$result" | grep -q "Deleted"; then
+            success "Bulk delete - Response indicates objects were deleted"
+        else
+            error "Bulk delete - Response does not indicate successful deletion: $result"
+        fi
+        
+        # Verify objects are actually deleted
+        log "Verifying objects were deleted..."
+        all_deleted=true
+        for obj in "${bulk_objects[@]}"; do
+            if aws_s3api head-object --bucket "$TEST_BUCKET" --key "$obj" 2>/dev/null; then
+                error "Bulk delete - Object $obj still exists after bulk deletion"
+                all_deleted=false
+            fi
+        done
+        
+        if $all_deleted; then
+            success "Bulk delete - All objects successfully deleted"
+        fi
+    else
+        error "Bulk delete - delete-objects command failed: $result"
+    fi
+    
+    # Cleanup
+    rm -f "$delete_json"
+    for obj in "${bulk_objects[@]}"; do
+        rm -f "$TEMP_DIR/$obj"
+        # Try to delete in case bulk delete failed
+        aws_s3api delete-object --bucket "$TEST_BUCKET" --key "$obj" 2>/dev/null || true
+    done
+}
+
+test_bulk_delete_with_errors() {
+    log "Testing: Bulk Delete with Mixed Success/Errors"
+    
+    # Create some test objects and include non-existent ones
+    local existing_objects=("bulk-error-1.txt" "bulk-error-2.txt")
+    local nonexistent_objects=("nonexistent-1.txt" "nonexistent-2.txt")
+    local bulk_content="Bulk delete error test - $(date +%s)"
+    
+    # Create and upload existing objects
+    log "Creating objects for bulk delete error test..."
+    for obj in "${existing_objects[@]}"; do
+        echo "$bulk_content" > "$TEMP_DIR/$obj"
+        
+        set +e
+        result=$(aws_s3api put-object --bucket "$TEST_BUCKET" --key "$obj" --body "$TEMP_DIR/$obj" 2>&1)
+        exit_code=$?
+        set -e
+        
+        if [ $exit_code -ne 0 ]; then
+            error "Bulk delete errors - Failed to create test object $obj: $result"
+            return
+        fi
+    done
+    
+    # Create delete request JSON with mix of existing and non-existing objects
+    local delete_json="$TEMP_DIR/bulk-delete-errors.json"
+    cat > "$delete_json" << EOF
+{
+    "Objects": [
+        {"Key": "${existing_objects[0]}"},
+        {"Key": "${nonexistent_objects[0]}"},
+        {"Key": "${existing_objects[1]}"},
+        {"Key": "${nonexistent_objects[1]}"}
+    ],
+    "Quiet": false
+}
+EOF
+    
+    # Perform bulk delete
+    log "Performing bulk delete with mixed existing/non-existing objects..."
+    set +e
+    result=$(aws_s3api delete-objects --bucket "$TEST_BUCKET" --delete "file://$delete_json" 2>&1)
+    exit_code=$?
+    set -e
+    
+    if [ $exit_code -eq 0 ]; then
+        success "Bulk delete errors - delete-objects command completed"
+        
+        # Check response contains both deleted objects and errors
+        if echo "$result" | grep -q "Deleted"; then
+            success "Bulk delete errors - Response contains deleted objects"
+        else
+            warning "Bulk delete errors - Response does not show deleted objects"
+        fi
+        
+        if echo "$result" | grep -q "Errors\|Error"; then
+            success "Bulk delete errors - Response contains expected errors for non-existent objects"
+        else
+            warning "Bulk delete errors - Response does not show errors for non-existent objects"
+        fi
+        
+        # Verify existing objects were deleted
+        for obj in "${existing_objects[@]}"; do
+            if ! aws_s3api head-object --bucket "$TEST_BUCKET" --key "$obj" 2>/dev/null; then
+                success "Bulk delete errors - Existing object $obj was successfully deleted"
+            else
+                error "Bulk delete errors - Existing object $obj still exists"
+            fi
+        done
+    else
+        error "Bulk delete errors - delete-objects command failed: $result"
+    fi
+    
+    # Cleanup
+    rm -f "$delete_json"
+    for obj in "${existing_objects[@]}"; do
+        rm -f "$TEMP_DIR/$obj"
+        # Try to delete in case bulk delete failed
+        aws_s3api delete-object --bucket "$TEST_BUCKET" --key "$obj" 2>/dev/null || true
+    done
+}
+
+test_bulk_delete_special_chars() {
+    log "Testing: Bulk Delete with Special Characters in Object Names"
+    
+    # Create objects with special characters (URL encoding test)
+    local special_objects=("object with spaces.txt" "object(with)parentheses.txt" "object+with+plus.txt")
+    local bulk_content="Special chars bulk delete test - $(date +%s)"
+    local actual_stored_keys=()
+    
+    # Create and upload test objects
+    log "Creating objects with special characters for bulk delete test..."
+    for obj in "${special_objects[@]}"; do
+        echo "$bulk_content" > "$TEMP_DIR/special-temp.txt"
+        
+        set +e
+        result=$(aws_s3api put-object --bucket "$TEST_BUCKET" --key "$obj" --body "$TEMP_DIR/special-temp.txt" 2>&1)
+        exit_code=$?
+        set -e
+        
+        if [ $exit_code -ne 0 ]; then
+            error "Bulk delete special chars - Failed to create test object '$obj': $result"
+            continue
+        fi
+        
+        # Verify object was created and discover how it's actually stored
+        if aws_s3api head-object --bucket "$TEST_BUCKET" --key "$obj" 2>/dev/null; then
+            success "Bulk delete special chars - Object '$obj' created successfully"
+            actual_stored_keys+=("$obj")
+        else
+            error "Bulk delete special chars - Object '$obj' not found after upload"
+        fi
+    done
+    
+    # List objects to see how they're actually stored
+    log "Discovering actual stored object keys..."
+    set +e
+    list_result=$(aws_s3api list-objects --bucket "$TEST_BUCKET" 2>&1)
+    list_exit_code=$?
+    set -e
+    
+    if [ $list_exit_code -eq 0 ]; then
+        log "Current objects in bucket:"
+        echo "$list_result" | grep '"Key"' || echo "No objects with Key field found"
+    else
+        warning "Could not list objects to verify storage format: $list_result"
+    fi
+    
+    # Use the keys exactly as we created them for the delete operation
+    # This tests whether the simplified bulk delete approach works with special characters
+    local delete_json="$TEMP_DIR/bulk-delete-special.json"
+    
+    if [ ${#actual_stored_keys[@]} -gt 0 ]; then
+        # Build JSON dynamically based on successfully created objects
+        echo '{' > "$delete_json"
+        echo '    "Objects": [' >> "$delete_json"
+        for i in "${!actual_stored_keys[@]}"; do
+            if [ $i -gt 0 ]; then
+                echo ',' >> "$delete_json"
+            fi
+            echo "        {\"Key\": \"${actual_stored_keys[$i]}\"}" >> "$delete_json"
+        done
+        echo '' >> "$delete_json"
+        echo '    ],' >> "$delete_json"
+        echo '    "Quiet": false' >> "$delete_json"
+        echo '}' >> "$delete_json"
+        
+        # Perform bulk delete
+        log "Performing bulk delete with special character object names..."
+        set +e
+        result=$(aws_s3api delete-objects --bucket "$TEST_BUCKET" --delete "file://$delete_json" 2>&1)
+        exit_code=$?
+        set -e
+        
+        if [ $exit_code -eq 0 ]; then
+            success "Bulk delete special chars - delete-objects command completed"
+            
+            # Check if response indicates success
+            if echo "$result" | grep -q "Deleted"; then
+                success "Bulk delete special chars - Response indicates successful deletions"
+            else
+                warning "Bulk delete special chars - Response does not show 'Deleted' status: $result"
+            fi
+            
+            # Verify objects are deleted
+            log "Verifying special character objects were deleted..."
+            all_deleted=true
+            for obj in "${actual_stored_keys[@]}"; do
+                if aws_s3api head-object --bucket "$TEST_BUCKET" --key "$obj" 2>/dev/null; then
+                    error "Bulk delete special chars - Object '$obj' still exists after deletion"
+                    all_deleted=false
+                else
+                    success "Bulk delete special chars - Object '$obj' successfully deleted"
+                fi
+            done
+            
+            if $all_deleted; then
+                success "Bulk delete special chars - All special character objects deleted successfully"
+            else
+                error "Bulk delete special chars - Some objects were not deleted (expected with simplified approach if encoding mismatch)"
+            fi
+        else
+            error "Bulk delete special chars - delete-objects command failed: $result"
+        fi
+    else
+        warning "Bulk delete special chars - No objects were successfully created, skipping delete test"
+    fi
+    
+    # Cleanup
+    rm -f "$delete_json" "$TEMP_DIR/special-temp.txt"
+    for obj in "${special_objects[@]}"; do
+        # Try to delete in case bulk delete failed - try both original and encoded versions
+        aws_s3api delete-object --bucket "$TEST_BUCKET" --key "$obj" 2>/dev/null || true
+        # Also try URL-encoded versions
+        encoded_obj=$(echo "$obj" | sed 's/ /%20/g; s/(/%28/g; s/)/%29/g; s/+/%2B/g')
+        if [ "$encoded_obj" != "$obj" ]; then
+            aws_s3api delete-object --bucket "$TEST_BUCKET" --key "$encoded_obj" 2>/dev/null || true
+        fi
+    done
+}
+
+test_bulk_delete_empty_request() {
+    log "Testing: Bulk Delete with Empty Object List"
+    
+    # Create delete request JSON with empty object list
+    local delete_json="$TEMP_DIR/bulk-delete-empty.json"
+    cat > "$delete_json" << EOF
+{
+    "Objects": [],
+    "Quiet": false
+}
+EOF
+    
+    # Perform bulk delete with empty list
+    log "Performing bulk delete with empty object list..."
+    set +e
+    result=$(aws_s3api delete-objects --bucket "$TEST_BUCKET" --delete "file://$delete_json" 2>&1)
+    exit_code=$?
+    set -e
+    
+    # This should either succeed with empty response or fail with appropriate error
+    if [ $exit_code -eq 0 ]; then
+        success "Bulk delete empty - Empty delete request completed without error"
+    else
+        # Check if it's an expected error about empty object list
+        if echo "$result" | grep -i "empty\|no.*object\|invalid"; then
+            success "Bulk delete empty - Appropriate error returned for empty object list"
+        else
+            error "Bulk delete empty - Unexpected error for empty object list: $result"
+        fi
+    fi
+    
+    # Cleanup
+    rm -f "$delete_json"
+}
+
+test_bulk_delete_encoded_chars() {
+    log "Testing: Bulk Delete with encodeURIComponent Special Characters"
+    
+    # Create objects with characters that are encoded by encodeURIComponent
+    # This tests the full range of characters that require URL encoding
+    local encoded_objects=(
+        "object with spaces.txt"           # %20
+        "object(with)parentheses.txt"      # %28 %29
+        "object+with+plus.txt"             # %2B
+        "object[with]brackets.txt"         # %5B %5D
+        "object{with}braces.txt"           # %7B %7D
+        "object@with@at.txt"               # %40
+        "object#with#hash.txt"             # %23
+        "object\$with\$dollar.txt"         # %24
+        "object%with%percent.txt"          # %25
+        "object&with&ampersand.txt"        # %26
+        "object=with=equals.txt"           # %3D
+        "object?with?question.txt"         # %3F
+        "object/with/slash.txt"            # %2F
+        "object:with:colon.txt"            # %3A
+        "object;with;semicolon.txt"        # %3B
+        "object,with,comma.txt"            # %2C
+        "object'with'apostrophe.txt"       # %27
+        "object\"with\"quote.txt"          # %22
+        "object<with>angles.txt"           # %3C %3E
+        "object|with|pipe.txt"             # %7C
+        "object\\with\\backslash.txt"      # %5C
+        "object^with^caret.txt"            # %5E
+        "object\`with\`backtick.txt"       # %60
+        "object~with~tilde.txt"            # %7E
+    )
+    
+    local bulk_content="Encoded chars bulk delete test - $(date +%s)"
+    local actual_stored_keys=()
+    
+    # Create and upload test objects
+    log "Creating objects with encodeURIComponent special characters for bulk delete test..."
+    for obj in "${encoded_objects[@]}"; do
+        echo "$bulk_content" > "$TEMP_DIR/encoded-temp.txt"
+        
+        set +e
+        result=$(aws_s3api put-object --bucket "$TEST_BUCKET" --key "$obj" --body "$TEMP_DIR/encoded-temp.txt" 2>&1)
+        exit_code=$?
+        set -e
+        
+        if [ $exit_code -ne 0 ]; then
+            warning "Bulk delete encoded chars - Failed to create test object '$obj': $result"
+            continue
+        else
+            success "Bulk delete encoded chars - Created object: '$obj'"
+            actual_stored_keys+=("$obj")
+        fi
+    done
+    
+    if [ ${#actual_stored_keys[@]} -gt 0 ]; then
+        log "Successfully created ${#actual_stored_keys[@]} objects with encoded characters"
+        
+        # Verify objects exist before deletion
+        log "Verifying objects exist before bulk delete..."
+        for obj in "${actual_stored_keys[@]}"; do
+            if aws_s3api head-object --bucket "$TEST_BUCKET" --key "$obj" 2>/dev/null; then
+                success "Bulk delete encoded chars - Object '$obj' confirmed to exist"
+            else
+                warning "Bulk delete encoded chars - Object '$obj' not found before deletion"
+            fi
+        done
+        
+        # Create delete request JSON dynamically
+        local delete_json="$TEMP_DIR/bulk-delete-encoded.json"
+        cat > "$delete_json" << 'EOF'
+{
+    "Objects": [
+EOF
+        
+        for i in "${!actual_stored_keys[@]}"; do
+            # Escape quotes and backslashes for JSON
+            local escaped_key="${actual_stored_keys[i]}"
+            escaped_key="${escaped_key//\\/\\\\}"  # Escape backslashes
+            escaped_key="${escaped_key//\"/\\\"}"  # Escape quotes
+            
+            printf "        {\"Key\": \"%s\"}" "$escaped_key" >> "$delete_json"
+            if [ $i -lt $((${#actual_stored_keys[@]} - 1)) ]; then
+                echo ',' >> "$delete_json"
+            else
+                echo '' >> "$delete_json"
+            fi
+        done
+        
+        cat >> "$delete_json" << 'EOF'
+    ],
+    "Quiet": false
+}
+EOF
+        
+        # Perform bulk delete
+        log "Performing bulk delete with encoded character object names..."
+        set +e
+        result=$(aws_s3api delete-objects --bucket "$TEST_BUCKET" --delete "file://$delete_json" 2>&1)
+        exit_code=$?
+        set -e
+        
+        if [ $exit_code -eq 0 ]; then
+            success "Bulk delete encoded chars - delete-objects command completed"
+            
+            # Check if response indicates success
+            if echo "$result" | grep -q "Deleted"; then
+                success "Bulk delete encoded chars - Response indicates successful deletions"
+                
+                # Count successful deletions
+                local deleted_count=$(echo "$result" | grep -o '"Key"' | wc -l | tr -d ' ')
+                log "Bulk delete encoded chars - $deleted_count objects reported as deleted"
+            else
+                warning "Bulk delete encoded chars - Response does not show 'Deleted' status: $result"
+            fi
+            
+            # Verify objects are deleted
+            log "Verifying encoded character objects were deleted..."
+            local all_deleted=true
+            local successfully_deleted=0
+            for obj in "${actual_stored_keys[@]}"; do
+                if aws_s3api head-object --bucket "$TEST_BUCKET" --key "$obj" 2>/dev/null; then
+                    error "Bulk delete encoded chars - Object '$obj' still exists after deletion"
+                    all_deleted=false
+                else
+                    success "Bulk delete encoded chars - Object '$obj' successfully deleted"
+                    ((successfully_deleted++))
+                fi
+            done
+            
+            log "Bulk delete encoded chars - Successfully deleted $successfully_deleted out of ${#actual_stored_keys[@]} objects"
+            
+            if $all_deleted; then
+                success "Bulk delete encoded chars - All encoded character objects deleted successfully"
+            else
+                error "Bulk delete encoded chars - Some objects with encoded characters were not deleted"
+            fi
+        else
+            error "Bulk delete encoded chars - delete-objects command failed: $result"
+        fi
+    else
+        warning "Bulk delete encoded chars - No objects with encoded characters were successfully created, skipping delete test"
+    fi
+    
+    # Cleanup
+    rm -f "$delete_json" "$TEMP_DIR/encoded-temp.txt"
+    for obj in "${encoded_objects[@]}"; do
+        # Try to delete in case bulk delete failed
+        aws_s3api delete-object --bucket "$TEST_BUCKET" --key "$obj" 2>/dev/null || true
+    done
+}
+
 test_server_side_copy() {
     log "Testing: Server-Side Copy Object"
     
@@ -2859,6 +3335,11 @@ run_tests() {
             test_server_side_copy || true
             test_conditional_headers || true
             test_delete_object || true
+            test_bulk_delete_objects || true
+            test_bulk_delete_with_errors || true
+            test_bulk_delete_special_chars || true
+            test_bulk_delete_encoded_chars || true
+            test_bulk_delete_empty_request || true
             
             # Clean up any objects before deleting bucket
             log "Cleaning up test objects before bucket deletion..."
@@ -2909,6 +3390,36 @@ run_tests() {
             
             # Clean up error test objects before deleting bucket
             log "Cleaning up error test objects before bucket deletion..."
+            set +e
+            aws_s3 rm "s3://$TEST_BUCKET" --recursive 2>/dev/null || true
+            set -e
+            
+            # Cleanup bucket
+            test_delete_bucket || true
+            
+            set -e  # Re-enable exit on error
+            ;;
+        "bulk-delete")
+            log "Starting S3 Bulk Delete Tests for manta-buckets-api using AWS CLI"
+            log "================================================================="
+            
+            set +e  # Disable exit on error for test execution
+            
+            # Create bucket for bulk delete tests
+            test_create_bucket || true
+            
+            # Create a test object first (required for some bulk delete tests)
+            test_put_object || true
+            
+            # Bulk delete tests only
+            test_bulk_delete_objects || true
+            test_bulk_delete_with_errors || true
+            test_bulk_delete_special_chars || true
+            test_bulk_delete_encoded_chars || true
+            test_bulk_delete_empty_request || true
+            
+            # Clean up bulk delete test objects before deleting bucket
+            log "Cleaning up bulk delete test objects before bucket deletion..."
             set +e
             aws_s3 rm "s3://$TEST_BUCKET" --recursive 2>/dev/null || true
             set -e
@@ -3071,6 +3582,11 @@ run_tests() {
             test_server_side_copy || true
             test_conditional_headers || true
             test_delete_object || true
+            test_bulk_delete_objects || true
+            test_bulk_delete_with_errors || true
+            test_bulk_delete_special_chars || true
+            test_bulk_delete_encoded_chars || true
+            test_bulk_delete_empty_request || true
             
             # Multipart upload tests
             test_multipart_upload_basic || true
@@ -3176,6 +3692,7 @@ main() {
             echo "  tagging    - Run object tagging tests only"
             echo "  acl        - Run ACL tests only"
             echo "  anonymous  - Run anonymous access tests only"
+            echo "  bulk-delete - Run bulk delete object tests only"
             echo "  errors     - Run error handling tests only"
             echo "  auth       - Run SigV4 authentication error tests only"
             echo "  presigned  - Run presigned URL tests only"
@@ -3195,6 +3712,7 @@ main() {
             echo "  $0 tagging            # Run only object tagging tests"
             echo "  $0 acl                # Run only ACL tests"
             echo "  $0 anonymous          # Run only anonymous access tests"
+            echo "  $0 bulk-delete        # Run only bulk delete tests"
             echo "  $0 errors             # Run only error handling tests"
             echo "  $0 auth               # Run only SigV4 authentication error tests"
             echo "  $0 presigned          # Run only presigned URL tests"
@@ -3204,7 +3722,7 @@ main() {
             echo "Note: This script requires AWS CLI to be installed and configured."
             exit 0
             ;;
-        "mpu"|"multipart"|"basic"|"copy"|"errors"|"auth"|"presigned"|"acl"|"anonymous"|"tagging"|"all")
+        "mpu"|"multipart"|"basic"|"copy"|"errors"|"auth"|"presigned"|"acl"|"anonymous"|"tagging"|"bulk-delete"|"all")
             test_type="$1"
             ;;
         "")

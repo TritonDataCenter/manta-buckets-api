@@ -56,9 +56,34 @@ High-level testing using s3cmd client for real-world usage scenarios.
 - Error handling verification
 - Performance optimization testing
 
+### Python Boto3 Test Suite (`test/boto3-tests.py`)
+
+Comprehensive testing using Python's official AWS SDK (boto3) for advanced S3 operations and validation.
+
+**Key Features:**
+- Official AWS SDK testing for maximum compatibility validation
+- Advanced S3 operations (server-side copy, object tagging, presigned URLs)
+- Multipart upload with resume simulation
+- Pagination testing with large object sets
+- Content integrity verification with MD5 validation
+- Error handling and edge case testing
+
+### PHP AWS SDK Test Suite (`test/php-s3-tests.php`)
+
+Complete S3 compatibility testing using PHP's AWS SDK for PHP, providing equivalent functionality to the Python boto3 tests.
+
+**Key Features:**
+- PHP AWS SDK v3 compatibility testing
+- Full CRUD operations with content verification
+- Server-side copy operations with metadata handling
+- Multipart upload testing with configurable part sizes
+- Presigned URL generation and validation (GET/PUT)
+- Pagination testing with continuation tokens
+- Error handling and authentication testing
+
 ## Environment Variables
 
-Both test suites support the same environment variables for configuration:
+All test suites support the same environment variables for configuration:
 
 ### Required Variables
 None - all variables have sensible defaults for local testing.
@@ -98,7 +123,7 @@ export AWS_SECRET_ACCESS_KEY="your-secret-key"
 
 #### macOS (Homebrew)
 ```bash
-brew install awscli s3cmd jq
+brew install awscli s3cmd jq python3 php composer
 npm install -g json
 ```
 
@@ -110,8 +135,14 @@ unzip awscli.zip && sudo ./aws/install
 
 # Other tools
 sudo apt-get update
-sudo apt-get install s3cmd jq nodejs npm
+sudo apt-get install s3cmd jq nodejs npm python3 python3-pip php php-curl php-json composer
 sudo npm install -g json
+
+# Python dependencies
+pip3 install boto3 requests
+
+# PHP dependencies (for PHP tests)
+cd test && composer install
 ```
 
 #### RHEL/CentOS
@@ -122,8 +153,14 @@ unzip awscli.zip && sudo ./aws/install
 
 # Other tools
 sudo yum install epel-release
-sudo yum install s3cmd jq nodejs npm
+sudo yum install s3cmd jq nodejs npm python3 python3-pip php php-curl php-json composer
 sudo npm install -g json
+
+# Python dependencies
+pip3 install boto3 requests
+
+# PHP dependencies (for PHP tests)
+cd test && composer install
 ```
 
 ## Running Tests
@@ -177,6 +214,79 @@ cd /path/to/manta-buckets-api
 ./test/s3-compat-s3cmd-test.sh --help
 ```
 
+### Python Boto3 Test Suite
+
+#### Run All Tests
+```bash
+cd /path/to/manta-buckets-api
+python3 test/boto3-tests.py --endpoint-url https://localhost:8080 --bucket test-bucket
+```
+
+#### Specific Test Scenarios
+```bash
+# Test with custom configuration
+python3 test/boto3-tests.py \
+    --endpoint-url https://manta.example.com \
+    --bucket my-test-bucket \
+    --region us-west-2 \
+    --profile manta-profile \
+    --insecure \
+    --cleanup
+
+# Test with different object keys
+python3 test/boto3-tests.py \
+    --endpoint-url https://localhost:8080 \
+    --bucket test-bucket \
+    --key custom-test-object.txt \
+    --mpu-key custom-mpu-test.bin
+```
+
+#### Help and Options
+```bash
+# Show help and usage
+python3 test/boto3-tests.py --help
+```
+
+### PHP AWS SDK Test Suite
+
+#### Prerequisites
+```bash
+# Install Composer dependencies (one-time setup)
+cd test
+composer install
+```
+
+#### Run All Tests
+```bash
+cd /path/to/manta-buckets-api
+./test/php-s3-tests.php --endpoint-url https://localhost:8080 --bucket test-bucket
+```
+
+#### Specific Test Scenarios
+```bash
+# Test with custom configuration
+./test/php-s3-tests.php \
+    --endpoint-url https://manta.example.com \
+    --bucket my-test-bucket \
+    --region us-west-2 \
+    --profile manta-profile \
+    --insecure \
+    --cleanup
+
+# Test with different object keys
+./test/php-s3-tests.php \
+    --endpoint-url https://localhost:8080 \
+    --bucket test-bucket \
+    --key custom-test-object.txt \
+    --mpu-key custom-mpu-test.bin
+```
+
+#### Help and Options
+```bash
+# Show help and usage
+./test/php-s3-tests.php --help
+```
+
 ## Test Scenarios Covered
 
 ### AWS CLI Test Suite
@@ -222,9 +332,68 @@ cd /path/to/manta-buckets-api
 - ✅ **Non-existent Resources**: Bucket and object error handling
 - ✅ **Access Permissions**: Authentication and authorization testing
 
+### Python Boto3 Test Suite
+
+#### Basic Operations
+- ✅ **List Buckets**: Validate bucket listing functionality with boto3
+- ✅ **Create Bucket**: Test bucket creation with region constraints
+- ✅ **Put Object**: Upload objects with metadata and content validation
+- ✅ **Head Object**: Object metadata retrieval and validation
+- ✅ **Get Object**: Download and content integrity verification
+- ✅ **Delete Object**: Object removal with confirmation
+
+#### Server-Side Copy Operations
+- ✅ **Basic Copy**: Copy objects within bucket with content verification
+- ✅ **Preserve Metadata**: Copy with COPY metadata directive
+- ✅ **Replace Metadata**: Copy with REPLACE metadata directive and new metadata
+- ✅ **Nested Path Copy**: Copy to nested object paths
+- ✅ **Large Object Copy**: Performance testing with larger objects
+- ✅ **Error Handling**: Copy non-existent objects and error validation
+
+#### Multipart Upload Tests
+- ✅ **Basic MPU**: Complete multipart upload flow with MD5 verification
+- ✅ **MPU Resume**: Interrupt and resume multipart uploads with part validation
+- ✅ **Part Management**: Upload part validation and assembly
+
+#### Advanced Features
+- ✅ **List Objects Pagination**: Comprehensive pagination testing with continuation tokens
+- ✅ **Presigned URLs**: GET and PUT presigned URL generation and validation
+- ✅ **Object Tagging**: Complete object tagging operations (PUT/GET/DELETE tags)
+- ✅ **Content Integrity**: MD5 verification for uploads and downloads
+- ✅ **Error Scenarios**: Comprehensive error handling and edge cases
+
+### PHP AWS SDK Test Suite
+
+#### Basic Operations
+- ✅ **List Buckets**: Validate bucket listing with AWS SDK for PHP
+- ✅ **Create Bucket**: Test bucket creation with region support
+- ✅ **Put Object**: Upload objects with content verification
+- ✅ **Head Object**: Object metadata retrieval and size validation
+- ✅ **Get Object**: Download and content integrity verification
+- ✅ **Delete Object**: Object removal with confirmation
+
+#### Server-Side Copy Operations
+- ✅ **Basic Copy**: Copy objects within bucket with content verification
+- ✅ **Preserve Metadata**: Copy with COPY metadata directive validation
+- ✅ **Replace Metadata**: Copy with REPLACE metadata directive and new metadata
+- ✅ **Error Handling**: Copy non-existent objects and proper error handling
+
+#### Multipart Upload Tests
+- ✅ **Basic MPU**: Complete multipart upload using PHP SDK upload() method
+- ✅ **Part Size Configuration**: Configurable part sizes and concurrency settings
+- ✅ **Large File Handling**: Test with 16MB+ files using random data generation
+
+#### Advanced Features
+- ✅ **List Objects Pagination**: Comprehensive pagination with continuation tokens
+- ✅ **Presigned URLs**: GET and PUT presigned URL generation and validation
+- ✅ **Content Integrity**: Content verification through upload/download cycles
+- ✅ **Error Scenarios**: Comprehensive error handling and authentication testing
+
 ## Expected Test Results
 
 ### Successful Test Run
+
+#### AWS CLI / s3cmd Test Results
 ```
 =================================================================
 S3 Compatibility Test Results Summary
@@ -233,6 +402,16 @@ Tests Passed: 18
 Tests Failed: 0
 
 🎉 All tests passed! S3 compatibility is working correctly.
+```
+
+#### Python Boto3 Test Results
+```
+[ok] All 21 tests passed
+```
+
+#### PHP AWS SDK Test Results
+```
+[ok] All 15 tests passed
 ```
 
 ### Common Test Failures and Solutions
@@ -261,6 +440,38 @@ ERROR: json command not found
 ERROR: SSL certificate verify failed
 ```
 **Solution**: Tests use `--no-verify-ssl` and `--no-check-certificate` flags for localhost testing.
+
+#### 5. Python Dependencies Missing
+```
+ERROR: No module named 'boto3'
+ERROR: No module named 'requests'
+```
+**Solution**: Install Python dependencies: `pip3 install boto3 requests`
+
+#### 6. PHP Dependencies Missing
+```
+ERROR: Class 'Aws\S3\S3Client' not found
+ERROR: require_once 'vendor/autoload.php' failed
+```
+**Solution**: Install PHP Composer dependencies:
+```bash
+cd test
+composer install
+```
+
+#### 7. PHP Extensions Missing
+```
+ERROR: Call to undefined function curl_init()
+ERROR: Call to undefined function random_bytes()
+```
+**Solution**: Install required PHP extensions:
+```bash
+# Ubuntu/Debian
+sudo apt-get install php-curl php-json php-mbstring
+
+# RHEL/CentOS
+sudo yum install php-curl php-json php-mbstring
+```
 
 ## S3 Presigned URL Testing
 
@@ -295,41 +506,7 @@ The test suites include comprehensive validation of S3 presigned URL functionali
 5. **Test Expiry**: Generate short-lived URL and verify rejection after expiry
 6. **Cleanup**: Remove test objects and validate cleanup
 
-### Manual S3v4 Presigned URL Tests (`test/manual-presigned-url-test.sh`)
-
-For comprehensive presigned URL testing including PUT operations (which AWS CLI doesn't support natively), use the manual test script.
-
-#### Features Tested
-- ✅ **PUT Presigned URLs**: Manual S3v4 signature generation for uploads
-- ✅ **GET Presigned URLs**: Manual S3v4 signature generation for downloads
-- ✅ **Signature Validation**: Proper AWS Signature v4 implementation
-- ✅ **Expiry Validation**: Invalid and expired URL rejection
-- ✅ **Content Upload/Download**: Full round-trip testing via presigned URLs
-
-#### Running Manual Presigned URL Tests
-```bash
-# Run complete manual presigned URL test suite
-./test/manual-presigned-url-test.sh
-
-# Example output for successful tests
-✅ S3v4 presigned PUT - Object uploaded successfully
-✅ S3v4 presigned GET - Downloaded content matches uploaded content
-✅ Expired presigned URL - Properly rejected expired URL
-✅ Invalid signature URL - Properly rejected invalid signature
-```
-
-#### Manual Test Workflow
-1. **Create Test Bucket**: Set up isolated test environment
-2. **Generate PUT Presigned URL**: Manual AWS SigV4 signature calculation
-3. **Upload via Presigned URL**: Use curl to upload content
-4. **Generate GET Presigned URL**: Create download URL with fresh signature
-5. **Download and Verify**: Ensure content integrity through full cycle
-6. **Test Edge Cases**: Invalid signatures, expired URLs, malformed requests
-7. **Cleanup**: Remove all test artifacts
-
 ### Presigned URL Security Validation
-
-Both test suites validate critical security aspects:
 
 #### Signature Validation
 - ✅ **Valid Signatures**: Properly constructed URLs succeed

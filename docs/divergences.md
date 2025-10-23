@@ -165,6 +165,66 @@ When migrating from AWS S3 or implementing S3-compatible applications:
 6. **No Regional Concepts**: All buckets exist in the same Manta deployment
 
 
+## AWS SDK Compatibility
+
+While Manta Buckets API maintains high compatibility with standard S3 operations, certain SDK-specific behaviors require adjustments for optimal functionality.
+
+### Supported S3 Operations by SDK
+
+| S3 Operation | Python boto3 | PHP AWS SDK v3 | Notes |
+|--------------|---------------|-----------------|-------|
+| **Basic Operations** |  |  |  |
+| `list_buckets()` / `listBuckets()` | ✅ Supported | ✅ Supported | Full compatibility |
+| `create_bucket()` / `createBucket()` | ✅ Supported | ✅ Supported | Full compatibility |
+| `delete_bucket()` / `deleteBucket()` | ✅ Supported | ✅ Supported | Must be empty |
+| `head_bucket()` / `headBucket()` | ✅ Supported | ✅ Supported | Full compatibility |
+| **Object Operations** |  |  |  |
+| `put_object()` / `putObject()` | ✅ Supported | ✅ Supported | Full compatibility |
+| `get_object()` / `getObject()` | ✅ Supported | ✅ Supported | Full compatibility |
+| `head_object()` / `headObject()` | ✅ Supported | ✅ Supported | Full compatibility |
+| `delete_object()` / `deleteObject()` | ✅ Supported | ✅ Supported | Full compatibility |
+| `delete_objects()` / `deleteObjects()` | ✅ Supported | ✅ Supported | Bulk delete with XML |
+| `copy_object()` / `copyObject()` | ✅ Supported | ✅ Supported | Server-side copy |
+| **Listing Operations** |  |  |  |
+| `list_objects()` / `listObjects()` | ✅ Supported | ✅ Supported | V1 API |
+| `list_objects_v2()` / `listObjectsV2()` | ✅ Supported | ✅ Supported | V2 API with pagination |
+| **Multipart Upload** |  |  |  |
+| `create_multipart_upload()` / `createMultipartUpload()` | ✅ Supported | ✅ Supported | Initialize MPU |
+| `upload_part()` / `uploadPart()` | ✅ Supported | ✅ Supported | Upload individual parts |
+| `complete_multipart_upload()` / `completeMultipartUpload()` | ✅ Supported | ⚠️ ETag issues | Use server ETags from listParts |
+| `abort_multipart_upload()` / `abortMultipartUpload()` | ✅ Supported | ✅ Supported | Cleanup partial uploads |
+| `list_parts()` / `listParts()` | ✅ Supported | ✅ Supported | List uploaded parts |
+| `upload_file()` | ✅ Supported | N/A | High-level API |
+| `putObject()` with `@multipart_upload_threshold` | N/A | ✅ Supported | High-level API |
+| **Presigned URLs** |  |  |  |
+| `generate_presigned_url()` | ✅ Supported | N/A | Works seamlessly |
+| `createPresignedRequest()` | N/A | ❌ Signature issues | Use manual implementation |
+| **ACL Operations** |  |  |  |
+| `get_bucket_acl()` / `getBucketAcl()` | ✅ Supported | ✅ Supported | Maps to Manta roles |
+| `put_bucket_acl()` / `putBucketAcl()` | ✅ Supported | ✅ Supported | Canned ACLs supported |
+| `get_object_acl()` / `getObjectAcl()` | ✅ Supported | ✅ Supported | Maps to Manta roles |
+| `put_object_acl()` / `putObjectAcl()` | ✅ Supported | ✅ Supported | Canned ACLs supported |
+| **Unsupported Operations** |  |  |  |
+| `list_multipart_uploads()` / `listMultipartUploads()` | ❌ Not Implemented | ❌ Not Implemented | No cross-upload listing |
+| `upload_part_copy()` / `uploadPartCopy()` | ❌ Not Implemented | ❌ Not Implemented | No server-side copy for parts |
+| `get_bucket_versioning()` / `getBucketVersioning()` | ❌ Not Implemented | ❌ Not Implemented | No versioning support |
+| `put_bucket_versioning()` / `putBucketVersioning()` | ❌ Not Implemented | ❌ Not Implemented | No versioning support |
+| `get_bucket_location()` / `getBucketLocation()` | ❌ Not Implemented | ❌ Not Implemented | No region concept |
+| `get_bucket_policy()` / `getBucketPolicy()` | ❌ Not Implemented | ❌ Not Implemented | Use Manta roles |
+| `put_bucket_policy()` / `putBucketPolicy()` | ❌ Not Implemented | ❌ Not Implemented | Use Manta roles |
+| `get_bucket_lifecycle()` / `getBucketLifecycle()` | ❌ Not Implemented | ❌ Not Implemented | No lifecycle management |
+| `put_bucket_lifecycle()` / `putBucketLifecycle()` | ❌ Not Implemented | ❌ Not Implemented | No lifecycle management |
+| `get_bucket_cors()` / `getBucketCors()` | ❌ Not Implemented | ❌ Not Implemented | CORS at HTTP level |
+| `put_bucket_cors()` / `putBucketCors()` | ❌ Not Implemented | ❌ Not Implemented | CORS at HTTP level |
+| `get_bucket_notification()` / `getBucketNotification()` | ❌ Not Implemented | ❌ Not Implemented | No notification system |
+| `put_bucket_notification()` / `putBucketNotification()` | ❌ Not Implemented | ❌ Not Implemented | No notification system |
+
+**Legend:**
+- ✅ **Supported**: Full compatibility, works as expected
+- ⚠️ **Partial**: Works with limitations or workarounds needed  
+- ❌ **Not Implemented**: Operation not supported by Manta Buckets API
+- **N/A**: SDK doesn't provide this specific method
+
 ## Error Handling
 
 Manta Buckets API returns S3-compatible error responses with proper HTTP status codes and XML error bodies. Common S3 client libraries should work without modification for supported operations.

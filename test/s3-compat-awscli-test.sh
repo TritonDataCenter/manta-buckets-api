@@ -3316,6 +3316,29 @@ run_tests() {
             
             set -e  # Re-enable exit on error
             ;;
+        "mpu-resume")
+            log "Starting S3 Multipart Upload Resume Tests for manta-buckets-api using AWS CLI"
+            log "================================================================="
+            
+            set +e  # Disable exit on error for test execution
+            
+            # Create bucket for MPU resume tests
+            test_create_bucket || true
+            
+            # Multipart upload resume tests only
+            test_multipart_upload_resume || true
+            
+            # Clean up any objects before deleting bucket
+            log "Cleaning up test objects before bucket deletion..."
+            set +e
+            aws_s3 rm "s3://$TEST_BUCKET" --recursive 2>/dev/null || true
+            set -e
+            
+            # Cleanup bucket
+            test_delete_bucket || true
+            
+            set -e  # Re-enable exit on error
+            ;;
         "basic")
             log "Starting S3 Basic Functionality Tests for manta-buckets-api using AWS CLI"
             log "================================================================="
@@ -3689,6 +3712,7 @@ main() {
             echo "  copy       - Run server-side copy tests only"
             echo "  mpu        - Run multipart upload tests only"
             echo "  multipart  - Alias for mpu"
+            echo "  mpu-resume - Run only multipart upload resume tests"
             echo "  tagging    - Run object tagging tests only"
             echo "  acl        - Run ACL tests only"
             echo "  anonymous  - Run anonymous access tests only"
@@ -3707,6 +3731,7 @@ main() {
             echo "Examples:"
             echo "  $0                    # Run all tests including ACL"
             echo "  $0 mpu                # Run only multipart upload tests"
+            echo "  $0 mpu-resume         # Run only multipart upload resume tests"
             echo "  $0 basic              # Run only basic functionality tests"
             echo "  $0 copy               # Run only server-side copy tests"
             echo "  $0 tagging            # Run only object tagging tests"
@@ -3722,7 +3747,7 @@ main() {
             echo "Note: This script requires AWS CLI to be installed and configured."
             exit 0
             ;;
-        "mpu"|"multipart"|"basic"|"copy"|"errors"|"auth"|"presigned"|"acl"|"anonymous"|"tagging"|"bulk-delete"|"all")
+        "mpu"|"multipart"|"mpu-resume"|"basic"|"copy"|"errors"|"auth"|"presigned"|"acl"|"anonymous"|"tagging"|"bulk-delete"|"all")
             test_type="$1"
             ;;
         "")

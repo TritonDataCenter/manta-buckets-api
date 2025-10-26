@@ -972,7 +972,7 @@ This increased timeout helps prevent connection failures when storage nodes are 
   - S3 API handlers for initiate, upload part, complete, abort
   - Upload record management and cleanup logic
 
-- **`lib/s3-multipart-v2.js`**: Native v2 commit implementation  
+- **`lib/s3-mako-v2-commit.js`**: Native Mako v2 commit implementation  
   - v2 commit request building and execution
   - Space validation before assembly
   - nginx integration for native assembly

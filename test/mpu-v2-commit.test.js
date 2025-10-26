@@ -45,7 +45,7 @@ test('v2 commit module loading', function (t) {
     var v2Module;
 
     try {
-        v2Module = require('../lib/s3-multipart-v2');
+        v2Module = require('../lib/s3-mako-v2-commit');
         t.ok(v2Module, 'v2 multipart module loaded');
         t.ok(typeof (v2Module.tryMakoV2Commit) === 'function',
              'tryMakoV2Commit function exists');

@@ -402,7 +402,7 @@ helper.test('Enhanced EntityTooSmall MultiError unwrapping', function (t) {
 helper.test('SharkResponseError 409 size mismatch conversion', function (t) {
     // Test detection of 409 errors with size mismatch message
     // Test conversion to InvalidPart with statusCode 400
-    // This covers the s3-multipart-v2.js fix at lines 328-342
+    // This covers the s3-mako-v2-commit.js fix at lines 328-342
 
     function testSizeMismatchDetection(postErr, res) {
         // Check for 409 errors indicating size mismatches
@@ -473,7 +473,7 @@ helper.test('v2 commit InvalidPart extraction from parallel errors',
             function (t) {
     // Test extraction of InvalidPart errors from vasync ase_errors
     // Test behavior when all sharks return InvalidPart vs mixed errors
-    // This covers the s3-multipart-v2.js fix at lines 399-415
+    // This covers the s3-mako-v2-commit.js fix at lines 399-415
 
     function testInvalidPartExtraction(vasyncErr) {
         // Check if this is an InvalidPart error (size mismatch)

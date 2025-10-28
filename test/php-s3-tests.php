@@ -570,8 +570,14 @@ function run_suite($args) {
                 $is_truncated = $response['IsTruncated'] ?? false;
                 $continuation_token = $response['NextContinuationToken'] ?? null;
                 
-                if (!$is_truncated || !$continuation_token) {
+                if (!$is_truncated) {
                     info("No more pages, pagination complete");
+                    break;
+                }
+                
+                // Safety check to prevent infinite loops
+                if ($page_count > 100) {
+                    warn("Stopping pagination after 100 pages to prevent infinite loop");
                     break;
                 }
                 

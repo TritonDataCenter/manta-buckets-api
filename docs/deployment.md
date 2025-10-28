@@ -312,3 +312,307 @@ aws --debug --endpoint-url=https://manta.example.com s3 ls s3://my-bucket/
 
 **Note**: Role and policy changes may take 5-10 seconds to propagate through the authentication system.
 
+
+## User Access Control for Buckets and Objects
+
+This section explains how to create subusers and grant them specific access to buckets and objects using Manta's Role-Based Access Control (RBAC) system.
+
+**⚠️ Important Note**: Role and policy changes take a few seconds to become effective. After creating or modifying roles and policies, wait 5-10 seconds before testing access.
+
+### Creating Subusers with Bucket-Specific Access
+
+#### Step 1: Create a Subuser
+
+```bash
+# Create a subuser for S3 access
+sdc-user create --login s3qa --email s3qa@example.com --password temp-password
+
+# Example response:
+{
+    "id": "04a54897-82c0-4ab9-a77a-bbf800ff371a",
+    "login": "s3qa",
+    "email": "s3qa@localhost",
+    "firstName": "s3qa",
+    "updated": "2025-10-06T18:21:55.703Z",
+    "created": "2025-10-06T18:21:55.703Z"
+  } 
+```
+
+#### Step 2: Generate Access Keys for the Subuser
+
+```bash
+# Generate S3 access keys for the subuser
+cloudapi /your-account/users/s3qa/accesskeys -X POST
+
+# Example response:
+[
+  {
+    "dn": "accesskeyid=<b6856fbd3d5a3645e1347931fe8e9226>, uuid=04a54897-82c0-4ab9-a77a-bbf800ff371a, uuid=c116efce-086f-455e-9ae4-26d49551428d, ou=users, o=smartdc",
+    "controls": [],
+    "accesskeyid": <"your access key">,
+    "accesskeysecret": <"your secret key">,
+    "created": "2025-10-06T21:20:09.540Z",
+    "objectclass": "accesskey",
+    "status": "Active"
+  }
+]
+```
+
+#### Step 3: Create Policies for Bucket Access
+
+```bash
+# Policy for reading objects from a specific bucket
+sdc-policy create --name=bucket-reader --rules='CAN getbucket test-bucket' --rules='CAN getobject test-bucket/*'
+
+# Policy for full access to a specific bucket
+sdc-policy create --name=bucket-admin --rules='CAN getbucket test-bucket' --rules='CAN getobject test-bucket/*' --rules='CAN putobject test-bucket/*' --rules='CAN deleteobject test-bucket/*'
+
+# Policy for read-only access to multiple buckets
+sdc-policy create --name=multi-bucket-reader --rules='CAN getbucket dev-bucket' --rules='CAN getobject dev-bucket/*' --rules='CAN getbucket prod-bucket' --rules='CAN getobject prod-bucket/*'
+```
+
+#### Step 4: Create Roles and Assign to Subuser
+
+**Critical for S3 clients**: Subusers must be in both `members` AND `default_members` arrays for S3 compatibility, as S3 clients cannot send role headers.
+
+```bash
+# Create role for bucket reading access
+sdc-role create --name=storage-reader --members=s3qa --default_members=s3qa --policies=bucket-reader
+
+# Create role for full bucket access
+sdc-role create --name=storage-admin --members=s3qa --default_members=s3qa --policies=bucket-admin
+```
+
+### Common Access Patterns
+
+#### Read-Only Access to Specific Bucket
+
+```bash
+# Create policy
+sdc-policy create --name=readonly-mybucket --rules='CAN getbucket mybucket' --rules='CAN getobject mybucket/*'
+
+# Create role with default activation for user s3qa
+sdc-role create --name=mybucket-reader --members=s3qa --default_members=s3qa --policies=readonly-mybucket
+```
+
+#### Upload and Download Access to Specific Bucket
+
+```bash
+# Create policy
+sdc-policy create --name=readwrite-uploads --rules='CAN getbucket uploads' --rules='CAN getobject uploads/*' --rules='CAN putobject uploads/*'
+
+# Create role with default activation for s3qa
+sdc-role create --name=uploads-user --members=s3qa --default_members=s3qa --policies=readwrite-uploads
+```
+
+#### Multiple Bucket Access with Different Permissions
+
+```bash
+# Policy for development environment (full access)
+sdc-policy create --name=dev-full-access --rules='CAN getbucket dev-*' 'CAN getobject dev-*/*' 'CAN putobject dev-*/*' 'CAN deleteobject dev-*/*'
+
+# Policy for production environment (read-only)
+sdc-policy create --name=prod-readonly --rules='CAN getbucket prod-*' 'CAN getobject prod-*/*'
+
+# Combined role
+sdc-role create --name=developer --members=s3qa --default_members=s3qa --policies=dev-full-access,prod-readonly
+```
+
+### Testing Subuser Access
+
+#### Configure S3 Client with Subuser Credentials
+
+```bash
+# Configure AWS CLI with subuser credentials
+aws configure set aws_access_key_id 'your_access_key'
+aws configure set aws_secret_access_key 'your_secret_key'
+
+# Test access
+aws s3 ls s3://test-bucket/ --endpoint-url https://your-manta-endpoint
+aws s3 cp localfile.txt s3://test-bucket/ --endpoint-url https://your-manta-endpoint
+```
+
+#### Verify Permissions
+
+```bash
+# Should succeed (if user has getbucket permission)
+aws s3 ls s3://test-bucket/ --endpoint-url https://your-manta-endpoint
+
+# Should succeed (if user has getobject permission)  
+aws s3 cp s3://test-bucket/file.txt downloaded.txt --endpoint-url https://your-manta-endpoint
+
+# Should fail (if user lacks permission for different bucket)
+aws s3 ls s3://other-bucket/ --endpoint-url https://your-manta-endpoint
+```
+
+### Troubleshooting Access Issues
+
+#### Common Issues
+
+1. **403 Forbidden Errors**
+   - Verify user is in both `members` and `default_members` of role
+   - Check that policy includes required permissions (`getbucket`, `getobject`, `putobject`)
+   - Wait 5-10 seconds after role/policy changes
+
+2. **Empty activeRoles**
+   - User must be in `default_members` for automatic role activation
+   - S3 clients cannot send Role headers, so default activation is required
+
+3. **Bucket-scoped permissions not working**
+   - Use bucket-scoped patterns: `bucketname/*` for objects
+   - Ensure bucket name in policy matches exactly
+
+#### Debugging Commands
+
+```bash
+# Check user's roles and permissions
+sdc-user get s3qa
+
+# List all roles for account
+sdc-role list
+
+# View specific role details
+sdc-role get storage-reader
+
+# Check policy rules
+sdc-policy get bucket-reader
+```
+
+### Security Best Practices
+
+1. **Principle of Least Privilege**: Grant minimum required permissions
+2. **Bucket-Specific Access**: Use bucket-scoped permissions rather than wildcards
+3. **Regular Audit**: Periodically review user permissions and active roles
+4. **Access Key Rotation**: Regularly rotate subuser access keys
+5. **Default Role Management**: Only add users to `default_members` when necessary for S3 compatibility
+
+### Permission Reference
+
+| Operation | Required Permission | Example |
+|-----------|-------------------|---------|
+| List bucket contents | `CAN getbucket bucket-name` | `CAN getbucket uploads` |
+| Download objects | `CAN getobject bucket-name/*` | `CAN getobject uploads/*` |
+| Upload objects | `CAN putobject bucket-name/*` | `CAN putobject uploads/*` |
+| Delete objects | `CAN deleteobject bucket-name/*` | `CAN deleteobject uploads/*` |
+| Bucket metadata | `CAN getbucket bucket-name` | `CAN getbucket uploads` |
+
+**Note**: `getbucket` permission is required for both bucket listing and bucket metadata operations for the S3 compatibility layer.
+
+## Advanced Configuration
+
+### Custom Role Management
+
+If you need custom roles beyond the standard S3 ACLs, zlogin into the cloudapi
+instance from the headnode and create the policy and role required.
+Also you could install rbac tools for Triton which is described  [https://docs.tritondatacenter.com/public-cloud/rbac/quickstart](here)
+For example here we create the required public-read role and read-public policy
+used by the canned acl 'public-read'
+
+```bash
+# Create custom roles using Manta CLI
+
+[root@1d812d88-6e82-4b6d-8300-c7e5816f353a (us-central-a:cloudapi0) ~]#  sdc-policy create --name=read-public --rules='CAN getobject'
+{
+  "name": "read-public",
+  "id": "48617132-dd3d-4a87-ab7d-1f125db1512f",
+  "rules": [
+    "CAN getobject"
+  ]
+}
+[root@1d812d88-6e82-4b6d-8300-c7e5816f353a (us-central-a:cloudapi0) ~]# sdc-role create   --name=public-read        --policies=read-public
+{
+  "name": "public-read",
+  "id": "cdc6c74c-9c75-4200-bfc8-fdbe9fd94a22",
+  "members": [],
+  "default_members": [],
+  "policies": [
+    "read-public"
+  ]
+}
+
+# test the policy/role
+aws s3 cp file.txt s3://bucket/ --acl=public-read --endpoint-url https://your-manta-endpoint
+```
+
+
+## Troubleshooting
+
+
+### Mahi is not picking up changes
+
+Authcache must be rebuild to pickup the new structure for accesskeys 
+https://github.com/TritonDataCenter/mahi/blob/master/docs/index.md
+
+
+### Where is my bucket object stored? 
+https://github.com/TritonDataCenter/manta/blob/master/docs/operator-guide/maintenance.md#pickerstorinfo-toggle
+
+For manta-buckets-api there is /opt/smartdc/buckets-api/bin/mlocate 
+
+```
+[root@c7aaf162 (buckets-api) /opt/smartdc/buckets-api]$ ./bin/mlocate neirac/test5/sopa.txt  | json
+{"name":"mlocate","hostname":"c7aaf162-6a9b-4873-b82e-19b8cb35490e","pid":26684,"component":"CueBallDNSResolver","domain":"nameservice.coal.joyent.us","level":30,"removed":["10.99.99.11"],"msg":"removed 1 resolvers from bootstrap","time":"2025-07-30T16:30:08.560Z","v":0}
+{"name":"mlocate","hostname":"c7aaf162-6a9b-4873-b82e-19b8cb35490e","pid":26684,"component":"BucketsMdapiClient","domain":"buckets-mdplacement.coal.joyent.us","local":"10.77.77.22:44521","remote":"10.77.77.25:2021","key":"R4yi9i8ue6tXRAS1Z41aOM6BhFE=.1","level":30,"msg":"new connection","time":"2025-07-30T16:30:08.580Z","v":0}
+{"name":"mlocate","hostname":"c7aaf162-6a9b-4873-b82e-19b8cb35490e","pid":26684,"component":"BucketsMdapiClient","domain":"1.buckets-mdapi.coal.joyent.us","local":"10.77.77.22:43654","remote":"10.77.77.26:2030","key":"YxCC9C7ibWSuMQh7MiERHMTSHB8=.1","level":30,"msg":"new connection","time":"2025-07-30T16:30:08.615Z","v":0}
+{"name":"mlocate","hostname":"c7aaf162-6a9b-4873-b82e-19b8cb35490e","pid":26684,"component":"BucketsMdapiClient","domain":"1.buckets-mdapi.coal.joyent.us","local":"10.77.77.22:46025","remote":"10.77.77.26:2030","key":"YxCC9C7ibWSuMQh7MiERHMTSHB8=.1","level":30,"msg":"new connection","time":"2025-07-30T16:30:08.626Z","v":0}
+{
+  "bucket_id": "afc19bda-99de-461c-81f5-8b0633c88259",
+  "content_length": 6,
+  "content_md5": "R4EsbxCWGllPX3vFgGxy4Q==",
+  "content_type": "text/plain",
+  "created": "2025-07-30T16:15:14.559859Z",
+  "headers": {
+    "m-s3cmd-attrs": "atime:1753892103/ctime:1753892103/gid:0/gname:wheel/md5:47812c6f10961a594f5f7bc5806c72e1/mode:33188/mtime:1753892103/uid:501/uname:carlosneira"
+  },
+  "id": "56ccac05-c9c6-4e6b-8a8e-5daad7d4e44f",
+  "modified": "2025-07-30T16:15:14.559859Z",
+  "name": "sopa.txt",
+  "owner": "c116efce-086f-455e-9ae4-26d49551428d",
+  "properties": {},
+  "sharks": [
+    {
+      "datacenter": "coal",
+      "manta_storage_id": "1.stor.coal.joyent.us"
+    },
+    {
+      "datacenter": "coal",
+      "manta_storage_id": "3.stor.coal.joyent.us"
+    }
+  ],
+  "_key": "c116efce-086f-455e-9ae4-26d49551428d:afc19bda-99de-461c-81f5-8b0633c88259:4116ddb8d538f4db68253ca6a6fb9bee",
+  "_node": {
+    "pnode": "tcp://1.buckets-mdapi.coal.joyent.us:2030",
+    "vnode": 3,
+    "data": 1
+  },
+  "_bucket_name": "test5",
+  "_buckets_mdplacement": "buckets-mdplacement.coal.joyent.us"
+}
+
+```
+
+The important part here is the _key_  and id , the file name that contains the data is a concatenation of id and the last element from _key_ (we split by  ':' ) . For example to obtain the file we just concatenate these values adding ',' between them: 
+```
+id : 56ccac05-c9c6-4e6b-8a8e-5daad7d4e44f
+last element from key: 4116ddb8d538f4db68253ca6a6fb9bee
+
+So the filename is called 
+56ccac05-c9c6-4e6b-8a8e-5daad7d4e44f,4116ddb8d538f4db68253ca6a6fb9bee
+
+```
+
+The file is should be located in storage node 3, under directory
+```
+/manta/v2/<owneruuid>/<second element from _key>/<2 first bytes of id>/
+```
+
+For example 
+
+```
+[root@b948d68a (storage) /manta/v2/c116efce-086f-455e-9ae4-26d49551428d/afc19bda-99de-461c-81f5-8b0633c88259/56]$ ls -lrt
+total 1
+-rw-r--r-- 1 nobody nobody 6 Jul 30 16:15 56ccac05-c9c6-4e6b-8a8e-5daad7d4e44f,4116ddb8d538f4db68253ca6a6fb9bee
+[root@b948d68a (storage) /manta/v2/c116efce-086f-455e-9ae4-26d49551428d/afc19bda-99de-461c-81f5-8b0633c88259/56]$ cat 56ccac05-c9c6-4e6b-8a8e-5daad7d4e44f,4116ddb8d538f4db68253ca6a6fb9bee
+sopa1
+
+```

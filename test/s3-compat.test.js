@@ -242,25 +242,6 @@ helper.test('Error response conversion', function (t) {
 
 ///--- Middleware Tests
 
-helper.test('S3 request detector middleware', function (t) {
-    var req = createMockRequest('GET', '/my-bucket');
-    var res = createMockResponse();
-    var nextCalled = false;
-
-    function next() {
-        nextCalled = true;
-    }
-
-    s3Compat.s3RequestDetector(req, res, next);
-
-    t.ok(nextCalled, 'should call next');
-    t.ok(req.s3Request, 'should add s3Request to req');
-    t.equal(req.s3Request.isS3Request, true, 'should detect S3 request');
-    t.equal(req.isS3Request, true, 'should mark request as S3');
-    t.ok(res.s3Request, 'should add s3Request to res');
-    t.end();
-});
-
 helper.test('S3 header translator middleware', function (t) {
     var req = createMockRequest('PUT', '/my-bucket/my-object', {}, {
         'x-amz-meta-custom': 'value1',

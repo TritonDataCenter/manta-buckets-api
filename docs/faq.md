@@ -3,6 +3,11 @@
 This document will try to cover things that are usually needed to know when
 dealing with a manta-buckets-api deployment.
 
+
+
+
+
+
 ### How to locate a file in manta-buckets-api
 
 For manta-buckets-api there is /opt/smartdc/buckets-api/bin/mlocate 

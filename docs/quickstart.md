@@ -20,7 +20,7 @@ brew install awscli s3cmd jq node
 npm install -g json
 ```
 
-#### SmartOS (pkgsrc)
+#### SmartOS/macOS (pkgsrc)
 ```bash
 pkgin in jq py310-awscli-1.36.10 curl nodejs 
 npm install -g json

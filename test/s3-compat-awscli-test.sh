@@ -1028,6 +1028,57 @@ test_server_side_copy() {
         warning "Server-side copy - Failed to create source object with special characters"
     fi
     
+    # Test 6: Server-side copy with file larger than 5GiB (should fail with 400)
+    log "  Testing server-side copy with file larger than 5GiB (should fail)..."
+    local large_source="large-source-file.bin"
+    local large_dest="large-dest-file.bin"
+    
+    # Create a large file (5GiB + 1MB = 5369781248 bytes)
+    # Using sparse file for efficiency - creates a file that appears large but doesn't use disk space
+    log "    Creating sparse file larger than 5GiB..."
+    dd if=/dev/zero of="$large_source" bs=1024 count=0 seek=$((5*1024*1024+1024)) 2>/dev/null
+    
+    # Upload the large file
+    set +e
+    log "    Uploading large file (this may take time)..."
+    result=$(aws_s3api put-object --bucket "$TEST_BUCKET" --key "$large_source" --body "$large_source" 2>&1)
+    local large_put_exit_code=$?
+    set -e
+    
+    if [ $large_put_exit_code -eq 0 ]; then
+        log "    Large file uploaded successfully, now testing copy (should fail)..."
+        
+        # Attempt server-side copy (should fail with 400)
+        set +e
+        result=$(aws_s3api copy-object \
+            --bucket "$TEST_BUCKET" \
+            --key "$large_dest" \
+            --copy-source "$TEST_BUCKET/$large_source" 2>&1)
+        local large_copy_exit_code=$?
+        set -e
+        
+        if [ $large_copy_exit_code -ne 0 ]; then
+            # Check if it's a 400 error as expected
+            if echo "$result" | grep -q "400\|InvalidRequest\|larger than the maximum allowable size"; then
+                success "Server-side copy - Large file copy correctly rejected with 400 error"
+            else
+                warning "Server-side copy - Large file copy failed but not with expected 400 error: $result"
+            fi
+        else
+            error "Server-side copy - Large file copy should have failed but succeeded: $result"
+        fi
+        
+        # Clean up large file from bucket
+        set +e
+        aws_s3api delete-object --bucket "$TEST_BUCKET" --key "$large_source" 2>/dev/null
+        set -e
+    else
+        warning "Server-side copy - Failed to upload large file for testing: $result"
+    fi
+    
+    # Clean up local large file
+    rm -f "$large_source"
+    
     # Cleanup test files
     rm -f "$source_object" "special-temp.txt"
     
@@ -1040,6 +1091,7 @@ test_server_side_copy() {
     aws_s3api delete-object --bucket "$TEST_BUCKET" --key "$dest_nested_object" 2>/dev/null
     aws_s3api delete-object --bucket "$TEST_BUCKET" --key "$special_source" 2>/dev/null
     aws_s3api delete-object --bucket "$TEST_BUCKET" --key "$special_dest" 2>/dev/null
+    aws_s3api delete-object --bucket "$TEST_BUCKET" --key "$large_dest" 2>/dev/null
     set -e
 }
 

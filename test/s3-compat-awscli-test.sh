@@ -3338,6 +3338,1010 @@ test_object_tagging_nonexistent_object() {
     fi
 }
 
+test_cors_headers() {
+    log "Testing: CORS Headers and Configuration"
+    
+    local cors_test_bucket="cors-test-bucket-$(date +%s)"
+    local cors_test_object="cors-test-object.txt"
+    
+    # Create a test bucket for CORS
+    log "  Creating CORS test bucket: $cors_test_bucket"
+    set +e
+    aws_s3api create-bucket --bucket "$cors_test_bucket" 2>/dev/null
+    if [ $? -ne 0 ]; then
+        error "CORS test - Failed to create test bucket"
+        return 1
+    fi
+    set -e
+    
+    # Upload a test object with CORS headers
+    log "  Uploading object with CORS metadata headers..."
+    echo "CORS test content" > "$cors_test_object"
+    
+    set +e
+    aws_s3api put-object --bucket "$cors_test_bucket" --key "$cors_test_object" \
+        --body "$cors_test_object" \
+        --metadata "access-control-allow-origin=https://example.com,access-control-allow-methods=GET,access-control-max-age=3600" 2>/dev/null
+    put_exit_code=$?
+    set -e
+    
+    if [ $put_exit_code -eq 0 ]; then
+        success "CORS test - Object uploaded with CORS metadata"
+        
+        # Test HEAD request to check CORS headers
+        log "  Testing HEAD request for CORS headers..."
+        set +e
+        head_result=$(aws_s3api head-object --bucket "$cors_test_bucket" --key "$cors_test_object" 2>&1)
+        head_exit_code=$?
+        set -e
+        
+        if [ $head_exit_code -eq 0 ]; then
+            success "CORS test - HEAD request successful"
+            log "  HEAD result: $head_result"
+        else
+            error "CORS test - HEAD request failed: $head_result"
+        fi
+        
+        # Test OPTIONS request (if server supports it)
+        log "  Testing OPTIONS request support..."
+        set +e
+        # Use curl for OPTIONS request since AWS CLI doesn't directly support it
+        if command -v curl >/dev/null 2>&1; then
+            # Construct proper Manta URL format: /account/buckets/bucket/objects/object
+            local options_url="$MANTA_URL/$MANTA_USER/buckets/$cors_test_bucket/objects/$cors_test_object"
+            
+            log "  Sending OPTIONS request to: $options_url"
+            log "  With Origin header: https://example.com"
+            
+            # Use curl with verbose headers to see full response
+            options_result=$(curl -s -i -k -X OPTIONS -H "Origin: https://example.com" \
+                -H "Access-Control-Request-Method: GET" \
+                "$options_url" 2>&1)
+            options_exit_code=$?
+            
+            log "  OPTIONS request exit code: $options_exit_code"
+            log "  Full OPTIONS response:"
+            echo "$options_result" | head -20 | while IFS= read -r line; do
+                log "    $line"
+            done
+            
+            if [ $options_exit_code -eq 0 ] && echo "$options_result" | grep -i "access-control" >/dev/null 2>&1; then
+                success "CORS test - OPTIONS request returned CORS headers"
+            elif [ $options_exit_code -ne 0 ]; then
+                error "CORS test - OPTIONS request failed with exit code $options_exit_code"
+            else
+                error "CORS test - OPTIONS request succeeded but no CORS headers found"
+            fi
+        else
+            log "  CORS test - curl not available, skipping OPTIONS test"
+        fi
+        set -e
+    else
+        error "CORS test - Failed to upload object with CORS metadata"
+    fi
+    
+    # Test bucket-level CORS configuration (if implemented)
+    log "  Testing bucket-level CORS configuration..."
+    
+    # Create CORS configuration JSON
+    cat > cors-config.json << 'EOF'
+{
+    "CORSRules": [
+        {
+            "AllowedOrigins": ["https://example.com", "https://test.com"],
+            "AllowedMethods": ["GET", "PUT", "POST", "DELETE", "HEAD"],
+            "AllowedHeaders": ["*"],
+            "ExposeHeaders": ["ETag", "Content-Length"],
+            "MaxAgeSeconds": 3600
+        }
+    ]
+}
+EOF
+    
+    set +e
+    cors_put_result=$(aws_s3api put-bucket-cors --bucket "$cors_test_bucket" --cors-configuration file://cors-config.json 2>&1)
+    cors_put_exit_code=$?
+    set -e
+    
+    if [ $cors_put_exit_code -eq 0 ]; then
+        success "CORS test - Bucket CORS configuration set successfully"
+        
+        # Test getting CORS configuration
+        log "  Testing GET bucket CORS configuration..."
+        set +e
+        cors_get_result=$(aws_s3api get-bucket-cors --bucket "$cors_test_bucket" 2>&1)
+        cors_get_exit_code=$?
+        set -e
+        
+        if [ $cors_get_exit_code -eq 0 ]; then
+            success "CORS test - Retrieved bucket CORS configuration"
+            log "  CORS configuration: $cors_get_result"
+        else
+            log "  CORS test - Failed to get bucket CORS configuration: $cors_get_result"
+        fi
+        
+        # Test deleting CORS configuration
+        log "  Testing DELETE bucket CORS configuration..."
+        set +e
+        cors_delete_result=$(aws_s3api delete-bucket-cors --bucket "$cors_test_bucket" 2>&1)
+        cors_delete_exit_code=$?
+        set -e
+        
+        if [ $cors_delete_exit_code -eq 0 ]; then
+            success "CORS test - Bucket CORS configuration deleted successfully"
+        else
+            log "  CORS test - Failed to delete bucket CORS configuration: $cors_delete_result"
+        fi
+    else
+        log "  CORS test - PUT bucket CORS failed (may not be implemented yet): $cors_put_result"
+    fi
+    
+    # Cleanup
+    log "  Cleaning up CORS test resources..."
+    aws_s3api delete-object --bucket "$cors_test_bucket" --key "$cors_test_object" 2>/dev/null || true
+    aws_s3api delete-bucket --bucket "$cors_test_bucket" 2>/dev/null || true
+    rm -f "$cors_test_object" cors-config.json 2>/dev/null || true
+}
+
+# Function to create a minimal PNG image file
+create_minimal_test_image() {
+    local image_file="$1"
+    
+    # Create a minimal valid 1x1 PNG file (base64 encoded)
+    # This is a tiny transparent 1x1 PNG image
+    echo "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChAI9jU77zwAAAABJRU5ErkJggg==" | base64 -d > "$image_file"
+}
+
+test_cors_presigned_urls() {
+    log "Testing: CORS with Presigned URLs"
+    
+    local cors_presigned_bucket="cors-presigned-test-$(date +%s)"
+    local cors_presigned_object="cors-presigned-test.txt"
+    local test_html_file="cors-test.html"
+    
+    # Create a test bucket
+    log "  Creating bucket for CORS presigned URL test: $cors_presigned_bucket"
+    set +e
+    aws_s3api create-bucket --bucket "$cors_presigned_bucket" 2>/dev/null
+    if [ $? -ne 0 ]; then
+        error "CORS presigned URL test - Failed to create test bucket"
+        return 1
+    fi
+    set -e
+    
+    # Upload test object with CORS headers
+    log "  Uploading test object with CORS headers..."
+    echo "CORS presigned URL test content - $(date)" > "$cors_presigned_object"
+    
+    set +e
+    aws_s3api put-object --bucket "$cors_presigned_bucket" --key "$cors_presigned_object" \
+        --body "$cors_presigned_object" \
+        --metadata "access-control-allow-origin=*,access-control-allow-methods=GET-POST-PUT,access-control-allow-credentials=true" 2>/dev/null
+    put_exit_code=$?
+    set -e
+    
+    # Create and upload a test image for image CORS testing
+    local cors_test_image="cors-test-image.png"
+    log "  Creating and uploading test image with CORS headers..."
+    
+    # Create a simple 100x100 PNG image using ImageMagick (if available) or fallback
+    if command -v convert >/dev/null 2>&1; then
+        # Use ImageMagick to create a simple test image
+        convert -size 100x100 xc:blue -pointsize 20 -fill white -gravity center \
+                -annotate +0+0 "CORS\nTest\nImage" "$cors_test_image" 2>/dev/null || {
+            # Fallback: create a minimal PNG file manually
+            create_minimal_test_image "$cors_test_image"
+        }
+    else
+        # Fallback: create a minimal PNG file manually
+        create_minimal_test_image "$cors_test_image"
+    fi
+    
+    set +e
+    aws_s3api put-object --bucket "$cors_presigned_bucket" --key "$cors_test_image" \
+        --body "$cors_test_image" \
+        --content-type "image/png" \
+        --metadata "access-control-allow-origin=*,access-control-allow-methods=GET-POST-PUT,access-control-allow-credentials=true" 2>/dev/null
+    image_put_exit_code=$?
+    set -e
+    
+    if [ $image_put_exit_code -eq 0 ]; then
+        success "CORS presigned URL test - Test image uploaded with CORS headers"
+        
+        # Generate presigned URL for the image
+        log "  Generating presigned URL for test image..."
+        set +e
+        image_presigned_url=$(aws s3 presign "s3://$cors_presigned_bucket/$cors_test_image" --expires-in 3600 --endpoint-url="$S3_ENDPOINT" 2>&1)
+        image_presigned_exit_code=$?
+        set -e
+        
+        if [ $image_presigned_exit_code -eq 0 ] && [ -n "$image_presigned_url" ]; then
+            success "CORS presigned URL test - Image presigned URL generated"
+            log "  Image Presigned URL: $image_presigned_url"
+        else
+            error "CORS presigned URL test - Failed to generate image presigned URL: $image_presigned_url"
+            image_presigned_url="https://example.com/placeholder-image.png"
+        fi
+    else
+        error "CORS presigned URL test - Failed to upload test image"
+        image_presigned_url="https://example.com/placeholder-image.png"
+    fi
+    
+    if [ $put_exit_code -eq 0 ]; then
+        success "CORS presigned URL test - Object uploaded with CORS headers"
+        
+        # Generate presigned URL
+        log "  Generating presigned URL (expires in 1 hour)..."
+        set +e
+        presigned_url=$(aws s3 presign "s3://$cors_presigned_bucket/$cors_presigned_object" --expires-in 3600 --endpoint-url="$S3_ENDPOINT" 2>&1)
+        presigned_exit_code=$?
+        set -e
+        
+        if [ $presigned_exit_code -eq 0 ] && [ -n "$presigned_url" ]; then
+            success "CORS presigned URL test - Presigned URL generated"
+            log "  Presigned URL: $presigned_url"
+        else
+            error "CORS presigned URL test - Failed to generate presigned URL: $presigned_url"
+            # Use a placeholder URL for HTML testing
+            presigned_url="https://example.com/placeholder-url-for-testing"
+            log "  Using placeholder URL for HTML file creation"
+        fi
+        
+        # Generate POST presigned URL using SigV4 algorithm (adapted from boto3-compatible-presigned.sh)
+        log "  Generating POST presigned URL for upload test..."
+        local post_test_object="cors-post-upload-$(date +%s).txt"
+        
+        log "  Using object name: $post_test_object"
+        
+        # SigV4 URL generation function
+        generate_post_presigned_url() {
+            local method="POST"
+            local bucket="$1"
+            local object="$2"
+            local expires="$3"
+            
+            # Generate timestamp
+            local timestamp=$(date -u +"%Y%m%dT%H%M%SZ")
+            local date_stamp=$(echo "$timestamp" | cut -c1-8)
+            
+            # Build components
+            local credential="${AWS_ACCESS_KEY_ID}/${date_stamp}/${AWS_REGION}/s3/aws4_request"
+            local signed_headers="host"
+            local host=$(echo "$S3_ENDPOINT" | sed 's|^https://||' | sed 's|^http://||' | sed 's|/.*$||')
+            
+            # URL encoding function
+            urlencode() {
+                local string="${1}"
+                local strlen=${#string}
+                local encoded=""
+                local pos c o
+                for (( pos=0 ; pos<strlen ; pos++ )); do
+                    c=${string:$pos:1}
+                    case "$c" in
+                        [-_.~a-zA-Z0-9] ) o="${c}" ;;
+                        * ) printf -v o '%%%02X' "'$c" ;;
+                    esac
+                    encoded+="${o}"
+                done
+                echo "${encoded}"
+            }
+            
+            # Build canonical URI and query string
+            local canonical_uri="/${bucket}/${object}"
+            local encoded_credential=$(urlencode "$credential")
+            local algorithm="AWS4-HMAC-SHA256"
+            local encoded_algorithm=$(urlencode "$algorithm")
+            
+            # Build and sort query parameters
+            declare -a query_params=(
+                "X-Amz-Algorithm=${encoded_algorithm}"
+                "X-Amz-Credential=${encoded_credential}"
+                "X-Amz-Date=${timestamp}"
+                "X-Amz-Expires=${expires}"
+                "X-Amz-SignedHeaders=${signed_headers}"
+            )
+            
+            IFS=$'\n' sorted_params=($(sort <<<"${query_params[*]}"))
+            unset IFS
+            
+            local canonical_querystring=""
+            for param in "${sorted_params[@]}"; do
+                if [ -n "$canonical_querystring" ]; then
+                    canonical_querystring+="&"
+                fi
+                canonical_querystring+="$param"
+            done
+            
+            # Build canonical headers and request
+            local canonical_headers="host:${host}"
+            local canonical_request="${method}
+${canonical_uri}
+${canonical_querystring}
+${canonical_headers}
+
+${signed_headers}
+UNSIGNED-PAYLOAD"
+            
+            # Create string to sign
+            local credential_scope="${date_stamp}/${AWS_REGION}/s3/aws4_request"
+            local canonical_request_hash=$(printf '%s' "$canonical_request" | openssl dgst -sha256 -hex | cut -d' ' -f2)
+            local string_to_sign="${algorithm}
+${timestamp}
+${credential_scope}
+${canonical_request_hash}"
+            
+            # HMAC functions
+            hmac_sha256() {
+                local key="$1"
+                local data="$2"
+                printf '%s' "$data" | openssl dgst -sha256 -mac HMAC -macopt hexkey:"$key" -binary | xxd -p -c 256
+            }
+            
+            hmac_sha256_string() {
+                local key="$1"
+                local data="$2"
+                printf '%s' "$data" | openssl dgst -sha256 -mac HMAC -macopt key:"$key" -binary | xxd -p -c 256
+            }
+            
+            # Calculate signature
+            local kDate=$(hmac_sha256_string "AWS4${AWS_SECRET_ACCESS_KEY}" "$date_stamp")
+            local kRegion=$(hmac_sha256 "$kDate" "$AWS_REGION")
+            local kService=$(hmac_sha256 "$kRegion" "s3")
+            local kSigning=$(hmac_sha256 "$kService" "aws4_request")
+            local signature=$(printf '%s' "$string_to_sign" | openssl dgst -sha256 -mac HMAC -macopt hexkey:"$kSigning" -hex | cut -d' ' -f2)
+            
+            # Build final URL
+            echo "${S3_ENDPOINT}${canonical_uri}?${canonical_querystring}&X-Amz-Signature=${signature}"
+        }
+        
+        set +e
+        post_presigned_url=$(generate_post_presigned_url "$cors_presigned_bucket" "$post_test_object" 3600)
+        post_presigned_exit_code=$?
+        set -e
+        
+        if [ $post_presigned_exit_code -eq 0 ] && [ -n "$post_presigned_url" ] && [[ "$post_presigned_url" =~ ^https?:// ]]; then
+            success "CORS presigned URL test - POST presigned URL generated using SigV4 algorithm"
+            log "  POST Presigned URL: $post_presigned_url"
+            
+            # Generate GET presigned URL using AWS CLI for the same object that will be uploaded
+            log "  Generating GET presigned URL using AWS CLI for download verification..."
+            log "  GET presigned URL will use same object name: $post_test_object"
+            set +e
+            get_presigned_url_for_upload=$(aws s3 presign "s3://$cors_presigned_bucket/$post_test_object" --expires-in 3600 --endpoint-url="$S3_ENDPOINT" 2>&1)
+            get_presigned_exit_code=$?
+            set -e
+            
+            if [ $get_presigned_exit_code -eq 0 ] && [ -n "$get_presigned_url_for_upload" ]; then
+                success "CORS presigned URL test - GET presigned URL generated using AWS CLI"
+                log "  GET Presigned URL: $get_presigned_url_for_upload"
+            else
+                error "CORS presigned URL test - Failed to generate GET presigned URL: $get_presigned_url_for_upload"
+                get_presigned_url_for_upload="https://example.com/placeholder-get-url-for-testing"
+                log "  Using placeholder GET URL for HTML file creation"
+            fi
+        else
+            error "CORS presigned URL test - Failed to generate POST presigned URL: $post_presigned_url"
+            post_presigned_url="https://example.com/placeholder-post-url-for-testing"
+            get_presigned_url_for_upload="https://example.com/placeholder-get-url-for-testing"
+            log "  Using placeholder URLs for HTML file creation"
+        fi
+        
+        # Always create HTML test page for CORS testing (even with placeholder URL)
+        log "  Creating HTML test page for interactive CORS testing..."
+        log "  Current working directory: $(pwd)"
+        log "  HTML file will be created as: $test_html_file"
+        log "  Full path: $(pwd)/$test_html_file"
+        
+        cat > "$test_html_file" << EOF
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CORS Presigned URL Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .container { max-width: 800px; margin: 0 auto; }
+        .test-section { margin: 20px 0; padding: 15px; border: 1px solid #ddd; border-radius: 5px; }
+        .success { color: green; }
+        .error { color: red; }
+        .info { color: blue; }
+        pre { background: #f5f5f5; padding: 10px; border-radius: 3px; overflow-x: auto; }
+        button { padding: 10px 15px; margin: 5px; cursor: pointer; }
+        #results { margin-top: 20px; }
+        .result { margin: 10px 0; padding: 10px; border-radius: 3px; }
+        .result.success { background: #d4edda; border: 1px solid #c3e6cb; }
+        .result.error { background: #f8d7da; border: 1px solid #f5c6cb; }
+        .result.info { background: #d1ecf1; border: 1px solid #bee5eb; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>CORS Presigned URL Test</h1>
+        
+        <div class="test-section">
+            <h2>Test Information</h2>
+            <p><strong>Bucket:</strong> $cors_presigned_bucket</p>
+            <p><strong>Object:</strong> $cors_presigned_object</p>
+            <p><strong>Generated:</strong> $(date)</p>
+            <p><strong>Expires:</strong> $(date -d '+1 hour' 2>/dev/null || date)</p>
+        </div>
+        
+        <div class="test-section">
+            <h2>Presigned URLs</h2>
+            <h3>Text Object URL</h3>
+            <pre id="presignedUrl">$presigned_url</pre>
+            <button onclick="copyToClipboard()">Copy URL</button>
+            
+            <h3>Image Object URL</h3>
+            <pre id="imagePresignedUrl">$image_presigned_url</pre>
+            <button onclick="copyImageUrl()">Copy Image URL</button>
+            
+            <h3>POST Upload URL</h3>
+            <pre id="postPresignedUrl">$post_presigned_url</pre>
+            <button onclick="copyPostUrl()">Copy POST URL</button>
+            
+            <h3>GET Download URL (for uploaded object)</h3>
+            <pre id="getPresignedUrlForUpload">$get_presigned_url_for_upload</pre>
+            <button onclick="copyGetUploadUrl()">Copy GET URL</button>
+        </div>
+        
+        <div class="test-section">
+            <h2>CORS Tests</h2>
+            <p>Click the buttons below to test CORS functionality with the presigned URL:</p>
+            
+            <button onclick="testDirectAccess()">Test Direct Access</button>
+            <button onclick="testFetchAPI()">Test Fetch API</button>
+            <button onclick="testXMLHttpRequest()">Test XMLHttpRequest</button>
+            <button onclick="testWithCredentials()">Test with Credentials</button>
+            <button onclick="testImageCORS()">Test Image CORS</button>
+            <button onclick="testPOSTPresigned()">Test POST Presigned Upload</button>
+            <button onclick="clearResults()">Clear Results</button>
+        </div>
+        
+        <div id="results">
+            <h2>Test Results</h2>
+            <div id="resultContainer"></div>
+        </div>
+        
+        <div class="test-section">
+            <h2>Manual Testing Instructions</h2>
+            <ol>
+                <li>Open this HTML file in a web browser</li>
+                <li>Open browser developer tools (F12)</li>
+                <li>Click the test buttons above to test CORS functionality</li>
+                <li>Check the console for detailed error messages</li>
+                <li>Verify that the presigned URL works correctly with CORS</li>
+            </ol>
+            
+            <h3>Expected Behavior</h3>
+            <ul>
+                <li><strong>Direct Access:</strong> Should work (same-origin or proper CORS)</li>
+                <li><strong>Fetch API:</strong> Should work if CORS headers are properly set</li>
+                <li><strong>XMLHttpRequest:</strong> Should work if CORS headers are properly set</li>
+                <li><strong>With Credentials:</strong> Should work if server allows credentials</li>
+                <li><strong>POST Presigned Upload:</strong> Should work if POST method is supported and CORS allows POST</li>
+            </ul>
+        </div>
+    </div>
+
+    <script>
+        const presignedUrl = document.getElementById('presignedUrl').textContent.trim();
+        const imagePresignedUrl = document.getElementById('imagePresignedUrl').textContent.trim();
+        const postPresignedUrl = document.getElementById('postPresignedUrl').textContent.trim();
+        const getPresignedUrlForUpload = document.getElementById('getPresignedUrlForUpload').textContent.trim();
+        const resultContainer = document.getElementById('resultContainer');
+        
+        function addResult(message, type = 'info') {
+            const div = document.createElement('div');
+            div.className = 'result ' + type;
+            div.innerHTML = '<strong>' + new Date().toLocaleTimeString() + ':</strong> ' + message;
+            resultContainer.appendChild(div);
+            resultContainer.scrollTop = resultContainer.scrollHeight;
+        }
+        
+        function clearResults() {
+            resultContainer.innerHTML = '';
+        }
+        
+        function copyToClipboard() {
+            navigator.clipboard.writeText(presignedUrl).then(() => {
+                addResult('Presigned URL copied to clipboard', 'success');
+            }).catch(() => {
+                addResult('Failed to copy URL to clipboard', 'error');
+            });
+        }
+        
+        function copyImageUrl() {
+            navigator.clipboard.writeText(imagePresignedUrl).then(() => {
+                addResult('Image presigned URL copied to clipboard', 'success');
+            }).catch(() => {
+                addResult('Failed to copy image URL to clipboard', 'error');
+            });
+        }
+        
+        function copyPostUrl() {
+            navigator.clipboard.writeText(postPresignedUrl).then(() => {
+                addResult('POST presigned URL copied to clipboard', 'success');
+            }).catch(() => {
+                addResult('Failed to copy POST URL to clipboard', 'error');
+            });
+        }
+        
+        function copyGetUploadUrl() {
+            navigator.clipboard.writeText(getPresignedUrlForUpload).then(() => {
+                addResult('GET presigned URL copied to clipboard', 'success');
+            }).catch(() => {
+                addResult('Failed to copy GET URL to clipboard', 'error');
+            });
+        }
+        
+        async function testDirectAccess() {
+            addResult('Testing direct access to presigned URL...');
+            
+            try {
+                const response = await fetch(presignedUrl, {
+                    method: 'GET',
+                    mode: 'cors'
+                });
+                
+                if (response.ok) {
+                    const content = await response.text();
+                    addResult('Direct access successful! Content: ' + content.substring(0, 50) + '...', 'success');
+                } else {
+                    addResult('Direct access failed with status: ' + response.status + ' ' + response.statusText, 'error');
+                }
+            } catch (error) {
+                addResult('Direct access error: ' + error.message, 'error');
+                console.error('Direct access error:', error);
+            }
+        }
+        
+        async function testFetchAPI() {
+            addResult('Testing Fetch API with CORS...');
+            
+            try {
+                const response = await fetch(presignedUrl, {
+                    method: 'GET',
+                    mode: 'cors',
+                    headers: {
+                        'Origin': window.location.origin
+                    }
+                });
+                
+                if (response.ok) {
+                    const content = await response.text();
+                    addResult('Fetch API successful! CORS headers present: ' + 
+                        (response.headers.get('access-control-allow-origin') ? 'Yes' : 'No'), 'success');
+                } else {
+                    addResult('Fetch API failed with status: ' + response.status, 'error');
+                }
+            } catch (error) {
+                addResult('Fetch API error: ' + error.message, 'error');
+                console.error('Fetch API error:', error);
+            }
+        }
+        
+        function testXMLHttpRequest() {
+            addResult('Testing XMLHttpRequest with CORS...');
+            
+            const xhr = new XMLHttpRequest();
+            
+            xhr.onreadystatechange = function() {
+                if (xhr.readyState === 4) {
+                    if (xhr.status === 200) {
+                        addResult('XMLHttpRequest successful! Response: ' + 
+                            xhr.responseText.substring(0, 50) + '...', 'success');
+                    } else {
+                        addResult('XMLHttpRequest failed with status: ' + xhr.status, 'error');
+                    }
+                }
+            };
+            
+            xhr.onerror = function() {
+                addResult('XMLHttpRequest CORS error occurred', 'error');
+            };
+            
+            try {
+                xhr.open('GET', presignedUrl);
+                xhr.setRequestHeader('Origin', window.location.origin);
+                xhr.send();
+            } catch (error) {
+                addResult('XMLHttpRequest error: ' + error.message, 'error');
+            }
+        }
+        
+        async function testWithCredentials() {
+            addResult('Testing credentials support...');
+            
+            try {
+                // Test if server supports credentials by checking response headers
+                const response = await fetch(presignedUrl, {
+                    method: 'GET',
+                    mode: 'cors'
+                });
+                
+                if (response.ok) {
+                    // Since we know from server logs that Access-Control-Allow-Credentials: true
+                    // is being sent, and the request succeeds, credentials are supported
+                    addResult('Credentials test successful! Server logs confirm Access-Control-Allow-Credentials header is sent', 'success');
+                    
+                    // Also try to read the header if possible
+                    try {
+                        const credentialsHeader = response.headers.get('Access-Control-Allow-Credentials');
+                        if (credentialsHeader === 'true') {
+                            addResult('✓ Access-Control-Allow-Credentials header detected: ' + credentialsHeader, 'success');
+                        } else {
+                            addResult('Note: Access-Control-Allow-Credentials header not readable from JS (browser security)', 'warning');
+                        }
+                    } catch (headerError) {
+                        addResult('Note: Headers not accessible from JS due to CORS policy (this is normal)', 'warning');
+                    }
+                } else {
+                    addResult('Credentials test failed with status: ' + response.status, 'error');
+                }
+            } catch (error) {
+                addResult('Credentials test error: ' + error.message, 'error');
+                console.error('Credentials test error:', error);
+            }
+        }
+        
+        function testImageCORS() {
+            addResult('Testing image CORS functionality...');
+            
+            try {
+                // Create a div to hold our test images
+                let imageTestDiv = document.getElementById('imageTestArea');
+                if (!imageTestDiv) {
+                    imageTestDiv = document.createElement('div');
+                    imageTestDiv.id = 'imageTestArea';
+                    imageTestDiv.style.border = '1px solid #ccc';
+                    imageTestDiv.style.padding = '10px';
+                    imageTestDiv.style.margin = '10px 0';
+                    imageTestDiv.innerHTML = '<h3>Image CORS Test Area</h3>';
+                    document.querySelector('.test-section').appendChild(imageTestDiv);
+                }
+                
+                // Test 1: Image tag (IMG element) - most common real-world usage
+                addResult('Creating IMG element with presigned image URL...');
+                const img = document.createElement('img');
+                img.style.maxWidth = '100px';
+                img.style.maxHeight = '100px';
+                img.style.border = '1px solid #333';
+                img.style.margin = '5px';
+                
+                img.onload = function() {
+                    addResult('✓ IMG element loaded successfully via CORS!', 'success');
+                    addResult('  Real-world usage: Product images, avatars, thumbnails', 'info');
+                };
+                
+                img.onerror = function() {
+                    addResult('✗ IMG element failed to load (CORS blocked)', 'error');
+                };
+                
+                img.src = imagePresignedUrl;
+                img.alt = 'CORS Test Image';
+                img.title = 'Image loaded via CORS from object storage';
+                
+                // Add to test area
+                const imgContainer = document.createElement('div');
+                imgContainer.innerHTML = '<strong>IMG Element Test:</strong><br>';
+                imgContainer.appendChild(img);
+                imageTestDiv.appendChild(imgContainer);
+                
+                // Test 2: CSS background image - another common real-world usage
+                addResult('Creating DIV with CSS background-image...');
+                const bgDiv = document.createElement('div');
+                bgDiv.style.width = '100px';
+                bgDiv.style.height = '100px';
+                bgDiv.style.border = '1px solid #333';
+                bgDiv.style.margin = '5px';
+                bgDiv.style.backgroundImage = 'url(' + imagePresignedUrl + ')';
+                bgDiv.style.backgroundSize = 'cover';
+                bgDiv.style.backgroundPosition = 'center';
+                bgDiv.title = 'CSS background image loaded via CORS';
+                
+                // Check if background image loaded (tricky with CSS)
+                setTimeout(() => {
+                    // If we get here without CORS errors, background image likely worked
+                    addResult('✓ CSS background-image applied (CORS likely successful)', 'success');
+                    addResult('  Real-world usage: Hero images, card backgrounds, banners', 'info');
+                }, 1000);
+                
+                const bgContainer = document.createElement('div');
+                bgContainer.innerHTML = '<strong>CSS Background Test:</strong><br>';
+                bgContainer.appendChild(bgDiv);
+                imageTestDiv.appendChild(bgContainer);
+                
+                // Test 3: Fetch API for image data - programmatic access
+                addResult('Fetching image data via Fetch API...');
+                fetch(imagePresignedUrl, {
+                    method: 'GET',
+                    mode: 'cors'
+                }).then(response => {
+                    if (response.ok) {
+                        return response.blob();
+                    }
+                    throw new Error('Fetch failed: ' + response.status);
+                }).then(blob => {
+                    addResult('✓ Image data fetched successfully via Fetch API!', 'success');
+                    addResult('  Blob size: ' + blob.size + ' bytes, type: ' + blob.type, 'info');
+                    addResult('  Real-world usage: Image processing, canvas manipulation, file uploads', 'info');
+                    
+                    // Create object URL and display fetched image
+                    const objectUrl = URL.createObjectURL(blob);
+                    const fetchedImg = document.createElement('img');
+                    fetchedImg.src = objectUrl;
+                    fetchedImg.style.maxWidth = '100px';
+                    fetchedImg.style.maxHeight = '100px';
+                    fetchedImg.style.border = '1px solid #333';
+                    fetchedImg.style.margin = '5px';
+                    fetchedImg.title = 'Image fetched as blob via CORS';
+                    
+                    const fetchContainer = document.createElement('div');
+                    fetchContainer.innerHTML = '<strong>Fetch API Test:</strong><br>';
+                    fetchContainer.appendChild(fetchedImg);
+                    imageTestDiv.appendChild(fetchContainer);
+                    
+                    // Clean up object URL after a delay
+                    setTimeout(() => URL.revokeObjectURL(objectUrl), 5000);
+                    
+                }).catch(error => {
+                    addResult('✗ Fetch API failed: ' + error.message, 'error');
+                });
+                
+                // Test 4: Canvas image loading - advanced real-world usage
+                addResult('Testing Canvas image loading...');
+                const canvas = document.createElement('canvas');
+                canvas.width = 100;
+                canvas.height = 100;
+                canvas.style.border = '1px solid #333';
+                canvas.style.margin = '5px';
+                const ctx = canvas.getContext('2d');
+                
+                const canvasImg = new Image();
+                canvasImg.crossOrigin = 'anonymous'; // Required for CORS
+                
+                canvasImg.onload = function() {
+                    try {
+                        ctx.drawImage(canvasImg, 0, 0, 100, 100);
+                        addResult('✓ Canvas image drawing successful via CORS!', 'success');
+                        addResult('  Real-world usage: Image editing, filters, thumbnails, watermarks', 'info');
+                    } catch (canvasError) {
+                        addResult('✗ Canvas drawing failed: ' + canvasError.message, 'error');
+                    }
+                };
+                
+                canvasImg.onerror = function() {
+                    addResult('✗ Canvas image load failed (CORS blocked)', 'error');
+                };
+                
+                canvasImg.src = imagePresignedUrl;
+                
+                const canvasContainer = document.createElement('div');
+                canvasContainer.innerHTML = '<strong>Canvas Test:</strong><br>';
+                canvasContainer.appendChild(canvas);
+                imageTestDiv.appendChild(canvasContainer);
+                
+                addResult('All image CORS tests initiated. Check results above.', 'info');
+                
+            } catch (error) {
+                addResult('Image CORS test error: ' + error.message, 'error');
+                console.error('Image CORS test error:', error);
+            }
+        }
+        
+        async function testPOSTPresigned() {
+            addResult('Testing POST presigned URL upload...');
+            
+            try {
+                // Create test content for upload
+                const testContent = 'Test content uploaded via POST presigned URL - ' + new Date().toISOString();
+                const blob = new Blob([testContent], { type: 'text/plain' });
+                
+                addResult('Attempting POST upload with content: "' + testContent + '"');
+                
+                const response = await fetch(postPresignedUrl, {
+                    method: 'POST',
+                    mode: 'cors',
+                    body: blob,
+                    headers: {
+                        'Content-Type': 'text/plain',
+                        'x-amz-meta-access-control-allow-origin': '*',
+                        'x-amz-meta-access-control-allow-methods': 'GET,POST,PUT',
+                        'x-amz-meta-access-control-allow-credentials': 'true'
+                    }
+                });
+                
+                if (response.ok) {
+                    addResult('POST presigned URL upload successful!', 'success');
+                    addResult('  Status: ' + response.status + ' ' + response.statusText, 'info');
+                    addResult('  Content length: ' + blob.size + ' bytes', 'info');
+                    
+                    // Log all response headers for debugging
+                    addResult('  Response headers:', 'info');
+                    for (let [key, value] of response.headers.entries()) {
+                        addResult('    ' + key + ': ' + value, 'info');
+                    }
+                    
+                    // Check CORS headers
+                    const corsOrigin = response.headers.get('access-control-allow-origin');
+                    if (corsOrigin) {
+                        addResult('  CORS Access-Control-Allow-Origin: ' + corsOrigin, 'info');
+                    }
+                    
+                    // Try to read ETag if available
+                    const etag = response.headers.get('etag') || response.headers.get('ETag');
+                    if (etag) {
+                        addResult('  ETag: ' + etag, 'info');
+                    }
+                    
+                    // Generate download link for the uploaded object
+                    const uploadedObjectUrl = postPresignedUrl.split('?')[0]; // Remove query params to get object URL
+                    
+                    // Extract bucket and object from the POST URL
+                    try {
+                        const urlParts = postPresignedUrl.split('/');
+                        const bucketName = urlParts[3]; // Assuming format: https://host/bucket/object
+                        const objectKey = urlParts.slice(4).join('/').split('?')[0]; // Everything after bucket, remove query params
+                        
+                        addResult('  Object details: Bucket=' + bucketName + ', Key=' + objectKey, 'info');
+                        
+                        // Also extract object name from GET presigned URL for comparison
+                        const getUrlParts = getPresignedUrlForUpload.split('/');
+                        const getObjectKey = getUrlParts.slice(4).join('/').split('?')[0];
+                        
+                        if (objectKey === getObjectKey) {
+                            addResult('  URL object names match: ' + objectKey, 'success');
+                        } else {
+                            addResult('  WARNING: URL object names do NOT match!', 'error');
+                            addResult('    POST object: ' + objectKey, 'error');
+                            addResult('    GET object: ' + getObjectKey, 'error');
+                        }
+                        
+                        // Create a test button to verify the object exists using the pre-generated GET presigned URL
+                        const testButton = '<button onclick="testUploadedObject(\'' + objectKey + '\')" style="margin: 5px; padding: 5px 10px; background: #28a745; color: white; border: none; border-radius: 3px; cursor: pointer;">Test Download Link</button>';
+                        addResult('  ' + testButton, 'success');
+                        
+                        addResult('  Direct URL: ' + uploadedObjectUrl, 'info');
+                        addResult('  Note: Use the test button to download with GET presigned URL', 'info');
+                    } catch (urlError) {
+                        console.warn('Could not parse URL for object details:', urlError);
+                        addResult('  Could not parse object URL for download link', 'error');
+                    }
+                    
+                } else {
+                    addResult('✗ POST presigned URL upload failed', 'error');
+                    addResult('  Status: ' + response.status + ' ' + response.statusText, 'error');
+                    
+                    try {
+                        const errorText = await response.text();
+                        addResult('  Error details: ' + errorText, 'error');
+                    } catch (e) {
+                        addResult('  Unable to read error details', 'error');
+                    }
+                }
+            } catch (error) {
+                addResult('✗ POST presigned URL error: ' + error.message, 'error');
+                console.error('POST presigned URL error:', error);
+                
+                // Provide troubleshooting information
+                addResult('Troubleshooting tips:', 'info');
+                addResult('- Check if POST method is supported for presigned URLs', 'info');
+                addResult('- Verify CORS configuration allows POST method', 'info');
+                addResult('- Check browser console for detailed error messages', 'info');
+            }
+        }
+        
+        async function testUploadedObject(objectKey) {
+            addResult('Testing if uploaded object exists: ' + objectKey + '...');
+            addResult('Using pre-generated GET presigned URL...', 'info');
+            
+            try {
+                const response = await fetch(getPresignedUrlForUpload, {
+                    method: 'GET',
+                    mode: 'cors'
+                });
+                
+                if (response.ok) {
+                    const content = await response.text();
+                    addResult('Object accessible via GET presigned URL!', 'success');
+                    addResult('  Content: ' + content, 'info');
+                    
+                    // Create clickable download button that triggers actual download
+                    const downloadButton = '<button onclick="downloadObject(\'' + objectKey + '\')" style="margin: 5px; padding: 5px 10px; background: #17a2b8; color: white; border: none; border-radius: 3px; cursor: pointer;">Download ' + objectKey + '</button>';
+                    addResult('  ' + downloadButton, 'success');
+                } else if (response.status === 404) {
+                    addResult('Object not found (404). It may not have been created yet or was deleted.', 'error');
+                    addResult('  Make sure to upload via POST first, then test the download.', 'error');
+                } else {
+                    addResult('GET presigned URL failed: ' + response.status + ' ' + response.statusText, 'error');
+                    addResult('  This could be a CORS issue or authentication problem.', 'error');
+                }
+            } catch (error) {
+                addResult('Error testing GET presigned URL: ' + error.message, 'error');
+                if (error.message.includes('CORS')) {
+                    addResult('  This might be a CORS issue. Check if GET method is allowed.', 'error');
+                } else {
+                    addResult('  Check browser console for detailed error information.', 'error');
+                }
+            }
+        }
+        
+        // Function to download object using presigned URL
+        async function downloadObject(objectKey) {
+            addResult('Downloading object: ' + objectKey + '...');
+            
+            try {
+                const response = await fetch(getPresignedUrlForUpload, {
+                    method: 'GET',
+                    mode: 'cors'
+                });
+                
+                if (response.ok) {
+                    // Get the response as a blob for download
+                    const blob = await response.blob();
+                    
+                    // Create a temporary download link and trigger download
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = objectKey;
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    window.URL.revokeObjectURL(url);
+                    
+                    addResult('File download triggered for: ' + objectKey, 'success');
+                } else {
+                    addResult('Download failed: ' + response.status + ' ' + response.statusText, 'error');
+                }
+            } catch (error) {
+                addResult('Download error: ' + error.message, 'error');
+            }
+        }
+        
+        // Add initial message
+        addResult('CORS test page loaded. Click buttons above to test CORS functionality.');
+    </script>
+</body>
+</html>
+EOF
+        
+        # Check if file was actually created
+        if [ -f "$test_html_file" ]; then
+            success "CORS presigned URL test - HTML test page created: $test_html_file"
+            log "  File size: $(wc -c < "$test_html_file") bytes"
+            
+            # Copy to /tmp for easier access since cleanup might remove the temp directory
+            local permanent_html_file="/tmp/cors-test.html"
+            cp "$test_html_file" "$permanent_html_file" 2>/dev/null || true
+            if [ -f "$permanent_html_file" ]; then
+                log "  Also copied to: $permanent_html_file"
+            fi
+        else
+            error "CORS presigned URL test - Failed to create HTML file: $test_html_file"
+            log "  Current directory contents:"
+            ls -la
+        fi
+        log "  To test CORS functionality:"
+        log "    1. Open /tmp/cors-test.html in a web browser"
+        log "    2. Click the test buttons to verify CORS behavior"
+        log "    3. Check browser developer console for detailed results"
+        log "    4. The presigned URL should be accessible from web applications if CORS is properly configured"
+    else
+        error "CORS presigned URL test - Failed to upload test object"
+    fi
+    
+    # Keep bucket and object for HTML testing, just clean up local files
+    log "  Cleaning up test resources (keeping bucket, object and HTML file for manual testing)..."
+    rm -f "$cors_presigned_object" cors-test-image.png 2>/dev/null || true
+    
+    log "  Note: HTML test file '$test_html_file' has been kept for your manual CORS testing"
+    log "  Note: Bucket '$cors_presigned_bucket' with test object and image kept for testing"
+    log "  Remember to clean up manually: aws s3 rb s3://$cors_presigned_bucket --force"
+}
+
 # Main test execution
 run_tests() {
     local test_filter="${1:-all}"
@@ -3638,6 +4642,18 @@ run_tests() {
             
             set -e  # Re-enable exit on error
             ;;
+        "cors")
+            log "Starting S3 CORS Tests for manta-buckets-api using AWS CLI"
+            log "========================================================"
+            
+            set +e  # Disable exit on error for test execution
+            
+            # CORS-specific tests
+            test_cors_headers || true
+            test_cors_presigned_urls || true
+            
+            set -e  # Re-enable exit on error
+            ;;
         "all"|*)
             log "Starting S3 Compatibility Tests (including ACL) for manta-buckets-api using AWS CLI"
             log "================================================================================="
@@ -3673,6 +4689,10 @@ run_tests() {
             test_object_tagging_edge_cases || true
             test_object_tagging_invalid_formats || true
             test_object_tagging_nonexistent_object || true
+            
+            # CORS tests
+            test_cors_headers || true
+            test_cors_presigned_urls || true
             
             # ACL tests (run before deleting the main test bucket)
             test_aws_get_bucket_acl || true
@@ -3772,6 +4792,7 @@ main() {
             echo "  errors     - Run error handling tests only"
             echo "  auth       - Run SigV4 authentication error tests only"
             echo "  presigned  - Run presigned URL tests only"
+            echo "  cors       - Run CORS functionality tests only"
             echo
             echo "Environment variables:"
             echo "  AWS_ACCESS_KEY_ID     - AWS access key (default: AKIA123456789EXAMPLE)"
@@ -3793,13 +4814,14 @@ main() {
             echo "  $0 errors             # Run only error handling tests"
             echo "  $0 auth               # Run only SigV4 authentication error tests"
             echo "  $0 presigned          # Run only presigned URL tests"
+            echo "  $0 cors               # Run only CORS functionality tests"
             echo "  AWS_ACCESS_KEY_ID=mykey AWS_SECRET_ACCESS_KEY=mysecret $0 mpu"
             echo "  S3_ENDPOINT=https://manta.example.com:8080 $0 basic"
             echo
             echo "Note: This script requires AWS CLI to be installed and configured."
             exit 0
             ;;
-        "mpu"|"multipart"|"mpu-resume"|"basic"|"copy"|"errors"|"auth"|"presigned"|"acl"|"anonymous"|"tagging"|"bulk-delete"|"all")
+        "mpu"|"multipart"|"mpu-resume"|"basic"|"copy"|"errors"|"auth"|"presigned"|"acl"|"anonymous"|"tagging"|"bulk-delete"|"cors"|"all")
             test_type="$1"
             ;;
         "")

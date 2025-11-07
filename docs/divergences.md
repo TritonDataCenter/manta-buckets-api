@@ -25,8 +25,9 @@ Manta Buckets API provides S3-compatible storage functionality backed by Manta's
 | **PUT BUCKET LIFECYCLE** | ✅ Supported | ❌ Not Implemented | **NOT IMPLEMENTED** | No lifecycle management |
 | **GET BUCKET POLICY** | ✅ Supported | ❌ Not Implemented | **NOT IMPLEMENTED** | Uses Manta roles instead |
 | **PUT BUCKET POLICY** | ✅ Supported | ❌ Not Implemented | **NOT IMPLEMENTED** | Uses Manta roles instead |
-| **GET BUCKET CORS** | ✅ Supported | ❌ Not Implemented | **NOT IMPLEMENTED** | CORS handled at HTTP level |
-| **PUT BUCKET CORS** | ✅ Supported | ❌ Not Implemented | **NOT IMPLEMENTED** | CORS handled at HTTP level |
+| **GET BUCKET CORS** | ✅ Supported | ✅ Supported | **IMPLEMENTED** | AWS S3 compatible XML response |
+| **PUT BUCKET CORS** | ✅ Supported | ✅ Supported | **IMPLEMENTED** | AWS S3 compatible XML and JSON parsing |
+| **DELETE BUCKET CORS** | ✅ Supported | ✅ Supported | **IMPLEMENTED** | Removes bucket-level CORS configuration |
 | **GET BUCKET WEBSITE** | ✅ Supported | ❌ Not Implemented | **NOT IMPLEMENTED** | No static website hosting |
 | **PUT BUCKET WEBSITE** | ✅ Supported | ❌ Not Implemented | **NOT IMPLEMENTED** | No static website hosting |
 | **GET BUCKET LOGGING** | ✅ Supported | ❌ Not Implemented | **NOT IMPLEMENTED** | Manta has built-in audit logging |
@@ -54,7 +55,7 @@ Manta Buckets API provides S3-compatible storage functionality backed by Manta's
 |-----------|--------|------------------|--------|-------|
 | **PRESIGNED GET URL** | ✅ Supported | ✅ Supported | **IMPLEMENTED** | Time-limited download URLs with AWS SigV4 |
 | **PRESIGNED PUT URL** | ✅ Supported | ✅ Supported | **IMPLEMENTED** | Time-limited upload URLs with AWS SigV4 |
-| **PRESIGNED POST** | ✅ Supported | ❌ Not Implemented | **NOT IMPLEMENTED** | HTML form-based uploads not supported |
+| **PRESIGNED POST** | ✅ Supported | ✅ Supported | **IMPLEMENTED** | SigV4 POST uploads with custom metadata |
 | **PRESIGNED DELETE URL** | ✅ Supported | ❌ Not Implemented | **NOT IMPLEMENTED** | Presigned DELETE operations not supported |
 
 ### Presigned URL Implementation Details
@@ -63,9 +64,11 @@ Manta Buckets API provides S3-compatible storage functionality backed by Manta's
 - **AWS Signature Version 4** - Full SigV4 signature validation using Mahi
 - **GET Operations** - Time-limited download URLs for object retrieval
 - **PUT Operations** - Time-limited upload URLs for object creation
+- **POST Operations** - Time-limited upload URLs with custom metadata support
 - **Configurable Expiry** - URLs expire after specified time period
 - **Authentication Bypass** - Valid presigned URLs work without additional credentials
 - **Security Validation** - Signature verification, expiry checking, and access control
+- **CORS Integration** - Presigned URLs work seamlessly with CORS for browser uploads
 
 **Usage Examples:**
 ```bash
@@ -79,7 +82,7 @@ url = s3.generate_presigned_url('get_object', Params={'Bucket': 'my-bucket', 'Ke
 ```
 
 **❌ Not Supported:**
-- **Presigned POST** - HTML form-based uploads with policy documents
+- **Presigned POST with Policies** - HTML form-based uploads with complex policy documents
 - **Presigned DELETE** - Time-limited deletion URLs  
 - **Advanced Conditions** - Complex policy conditions beyond basic expiry
 - **Custom Query Parameters** - Additional non-AWS query parameters in presigned URLs
@@ -95,6 +98,128 @@ url = s3.generate_presigned_url('get_object', Params={'Bucket': 'my-bucket', 'Ke
 | **LIST PARTS** | ✅ Supported | ✅ Supported | **IMPLEMENTED** | Lists uploaded parts for an upload |
 | **LIST MULTIPART UPLOADS** | ✅ Supported | ❌ Not Implemented | **NOT IMPLEMENTED** | No cross-upload listing |
 | **UPLOAD PART COPY** | ✅ Supported | ❌ Not Implemented | **NOT IMPLEMENTED** | No server-side copy functionality |
+
+## CORS (Cross-Origin Resource Sharing)
+
+| Operation | AWS S3 | Manta Buckets API | Status | Notes |
+|-----------|--------|------------------|--------|-------|
+| **PUT BUCKET CORS** | ✅ Supported | ✅ Supported | **IMPLEMENTED** | AWS S3 compatible XML and JSON parsing |
+| **GET BUCKET CORS** | ✅ Supported | ✅ Supported | **IMPLEMENTED** | Returns S3 compatible XML response |
+| **DELETE BUCKET CORS** | ✅ Supported | ✅ Supported | **IMPLEMENTED** | Removes bucket-level CORS configuration |
+| **CORS Preflight (OPTIONS)** | ✅ Supported | ✅ Supported | **IMPLEMENTED** | Full CORS specification compliance |
+| **Object-level CORS** | ❌ Not Supported | ✅ Supported | **ENHANCED** | CORS via object metadata (m-access-control-*) |
+
+### CORS Feature Comparison
+
+| Feature | AWS S3 | Manta Buckets API | Implementation Details |
+|---------|--------|------------------|----------------------|
+| **Configuration Scope** |  |  |  |
+| Bucket-level CORS rules | ✅ Supported | ✅ Supported | Identical AWS S3 API compatibility |
+| Object-level CORS rules | ❌ Not Available | ✅ Supported | **Manta Enhancement**: via `m-access-control-*` metadata |
+| **Configuration Format** |  |  |  |
+| XML configuration (AWS CLI) | ✅ Supported | ✅ Supported | Full AWS S3 XML schema compatibility |
+| JSON configuration | ❌ XML Only | ✅ Supported | **Manta Enhancement**: programmatic JSON API |
+| **CORS Rule Elements** |  |  |  |
+| AllowedOrigins | ✅ Supported | ✅ Supported | Identical: exact domains + wildcard (*) |
+| AllowedMethods | ✅ Supported | ✅ Supported | Identical: GET, PUT, POST, DELETE, HEAD |
+| AllowedHeaders | ✅ Supported | ✅ Supported | Identical: custom headers + wildcard (*) |
+| ExposeHeaders | ✅ Supported | ✅ Supported | Identical: headers accessible to JavaScript |
+| MaxAgeSeconds | ✅ Supported | ✅ Supported | Identical: preflight cache duration |
+| ID (rule identifier) | ✅ Supported | ✅ Supported | Identical: optional rule naming |
+| **Origin Matching** |  |  |  |
+| Exact origin matching | ✅ Supported | ✅ Supported | `https://example.com` matches exactly |
+| Wildcard origins (*) | ✅ Supported | ✅ Supported | `*` allows any origin |
+| 'star' wildcard format | ❌ Not Supported | ✅ Supported | **Manta Enhancement**: 'star' = '*' for metadata encoding |
+| **Request Processing** |  |  |  |
+| OPTIONS preflight handling | ✅ Supported | ✅ Supported | Full CORS specification compliance |
+| Actual request CORS headers | ✅ Supported | ✅ Supported | Proper origin reflection for security |
+| Multiple rules per bucket | ✅ Supported | ✅ Supported | First matching rule wins |
+| **Browser Compatibility** |  |  |  |
+| fetch() API | ✅ Supported | ✅ Supported | Modern JavaScript fetch() works |
+| XMLHttpRequest | ✅ Supported | ✅ Supported | Legacy AJAX requests work |
+| Presigned URL CORS | ✅ Supported | ✅ Supported | **Critical**: Browser access to presigned URLs |
+| Credentials support | ✅ Supported | ✅ Supported | `Access-Control-Allow-Credentials` |
+| **Configuration Storage** |  |  |  |
+| Storage location | AWS Internal | Bucket metadata | Stored as `.cors-configuration` object |
+| Storage format | AWS Proprietary | JSON in metadata | Efficient access and retrieval |
+| Configuration persistence | ✅ Persistent | ✅ Persistent | Survives service restarts |
+| **Advanced Features** |  |  |  |
+| Rule priority/ordering | ✅ First match | ✅ First match | Identical behavior |
+| Configuration validation | ✅ Strict | ✅ Strict | Required fields: AllowedOrigins, AllowedMethods |
+| Error responses | ✅ Standard S3 | ✅ Standard S3 | MalformedXML, NoSuchCORSConfiguration |
+
+### CORS Implementation Details
+
+**✅ Fully Compatible Features:**
+- **AWS S3 CORS API** - Complete PutBucketCors, GetBucketCors, DeleteBucketCors support
+- **XML Configuration** - Accepts AWS CLI XML format for maximum compatibility
+- **CORS Preflight** - Full OPTIONS request handling per CORS specification
+- **Origin Validation** - Exact origin matching and wildcard (*) support
+- **Method Validation** - HTTP method checking against allowed methods
+- **Browser Compatibility** - Works with fetch(), XMLHttpRequest, and modern web APIs
+- **Presigned URL CORS** - CORS headers work with presigned URLs for browser access
+
+**✅ Enhanced Features (Beyond AWS S3):**
+- **Object-Level CORS** - Set CORS headers on individual objects via metadata
+- **JSON Configuration** - Alternative to XML for programmatic access
+- **Mixed Configuration** - Object-level CORS overrides bucket-level configuration
+- **Wildcard Formats** - Supports both '*' and 'star' for wildcard origins
+
+**Configuration Storage:**
+```
+Bucket-Level: /:owner/buckets/:bucket/.cors-configuration
+Object-Level: /:owner/buckets/:bucket/objects/:object (metadata: m-access-control-*)
+Priority: Object-level CORS takes precedence over bucket-level
+```
+
+**Example Configurations:**
+
+*Bucket-level CORS (AWS CLI compatible):*
+```bash
+aws s3api put-bucket-cors --bucket my-bucket --cors-configuration file://cors.json
+```
+
+```json
+{
+  "CORSRules": [
+    {
+      "ID": "AllowWebApp",
+      "AllowedOrigins": ["https://myapp.com", "https://cdn.myapp.com"],
+      "AllowedMethods": ["GET", "PUT", "POST"],
+      "AllowedHeaders": ["*"],
+      "ExposeHeaders": ["ETag", "x-amz-meta-*"],
+      "MaxAgeSeconds": 3600
+    }
+  ]
+}
+```
+
+*Object-level CORS (Manta enhancement):*
+```bash
+aws s3api put-object --bucket my-bucket --key file.txt --body file.txt \
+  --metadata "access-control-allow-origin=https://example.com,access-control-allow-methods=GET-PUT"
+```
+
+**Browser Integration:**
+```javascript
+// Works seamlessly with modern web APIs
+const response = await fetch(presignedUrl, {
+  method: 'GET',
+  mode: 'cors'
+});
+
+// CORS headers are automatically applied for cross-origin requests
+```
+
+**⚠️ Minor Differences from AWS S3:**
+- **Object-Level CORS** - Not available in AWS S3, Manta-specific enhancement
+- **JSON Configuration** - AWS S3 only accepts XML, Manta accepts both XML and JSON
+- **Wildcard Support** - Accepts 'star' as well as '*' for metadata encoding compatibility
+- **Mixed Separators** - Supports both comma and dash separators in metadata
+
+**❌ Not Supported:**
+- **CORS Bucket Policies** - Use CORS configuration instead of IAM policies
+- **Dynamic CORS Rules** - Rules are static configuration, not computed dynamically
 
 ## Key Architectural Differences
 
@@ -133,6 +258,7 @@ url = s3.generate_presigned_url('get_object', Params={'Bucket': 'my-bucket', 'Ke
 ### High Compatibility ✅
 - Basic CRUD operations (GET, PUT, DELETE, HEAD)
 - Multipart uploads for large objects
+- **Cors management with AWS S3 API compatibility**
 - **Presigned URLs for GET and PUT operations**
 - ACL management with role translation
 - Conditional headers and ETags
@@ -214,8 +340,9 @@ While Manta Buckets API maintains high compatibility with standard S3 operations
 | `put_bucket_policy()` / `putBucketPolicy()` | ❌ Not Implemented | ❌ Not Implemented | Use Manta roles |
 | `get_bucket_lifecycle()` / `getBucketLifecycle()` | ❌ Not Implemented | ❌ Not Implemented | No lifecycle management |
 | `put_bucket_lifecycle()` / `putBucketLifecycle()` | ❌ Not Implemented | ❌ Not Implemented | No lifecycle management |
-| `get_bucket_cors()` / `getBucketCors()` | ❌ Not Implemented | ❌ Not Implemented | CORS at HTTP level |
-| `put_bucket_cors()` / `putBucketCors()` | ❌ Not Implemented | ❌ Not Implemented | CORS at HTTP level |
+| `get_bucket_cors()` / `getBucketCors()` | ✅ Supported | ✅ Supported | AWS S3 compatible XML response |
+| `put_bucket_cors()` / `putBucketCors()` | ✅ Supported | ✅ Supported | AWS S3 compatible XML and JSON parsing |
+| `delete_bucket_cors()` / `deleteBucketCors()` | ✅ Supported | ✅ Supported | Removes bucket-level CORS configuration |
 | `get_bucket_notification()` / `getBucketNotification()` | ❌ Not Implemented | ❌ Not Implemented | No notification system |
 | `put_bucket_notification()` / `putBucketNotification()` | ❌ Not Implemented | ❌ Not Implemented | No notification system |
 

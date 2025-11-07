@@ -111,6 +111,11 @@ The main S3 route handlers include:
 - `s3SetObjectACLHandler()` - Set object ACL
 - `s3GetObjectACLHandler()` - Get object ACL
 
+#### CORS Operations
+- `s3GetBucketCorsHandler()` - Get bucket CORS configuration
+- `s3PutBucketCorsHandler()` - Set bucket CORS configuration
+- `s3DeleteBucketCorsHandler()` - Delete bucket CORS configuration
+
 ### S3 Compatibility Layer (`s3-compat.js`)
 
 Handles translation between S3 and Manta concepts:
@@ -242,6 +247,262 @@ sequenceDiagram
     Handler-->>API: XML with deleted/error results
     API-->>Client: 200 OK + XML response
 ```
+
+## CORS (Cross-Origin Resource Sharing) Architecture
+
+The manta-buckets-api implements comprehensive CORS support to enable web browsers to make cross-origin requests to Manta storage. This is essential for web applications that need to upload or download files directly from browsers without going through backend proxies.
+
+### CORS Architecture Overview
+
+```mermaid
+graph TB
+    Browser[Web Browser] --> CORS[CORS Middleware]
+    CORS --> Preflight{OPTIONS Request?}
+    Preflight -->|Yes| PreflightHandler[Handle Preflight]
+    Preflight -->|No| RequestProcessor[Process Regular Request]
+    
+    PreflightHandler --> BucketCORS[Get Bucket CORS Config]
+    RequestProcessor --> BucketCORS
+    BucketCORS --> ObjectCORS[Check Object CORS Headers]
+    ObjectCORS --> Validation[Validate Origin/Method/Headers]
+    Validation --> Response[Add CORS Response Headers]
+    
+    subgraph "CORS Configuration Sources"
+        BucketLevel[Bucket-Level CORS<br/>.cors-configuration metadata]
+        ObjectLevel[Object-Level CORS<br/>m-access-control-* headers]
+    end
+    
+    BucketCORS --> BucketLevel
+    ObjectCORS --> ObjectLevel
+```
+
+### CORS Request Processing Flow
+
+#### 1. Preflight Request Processing (OPTIONS)
+
+```mermaid
+sequenceDiagram
+    participant Browser as Web Browser
+    participant API as manta-buckets-api
+    participant CORS as CORS Middleware
+    participant Bucket as Bucket Storage
+    participant Object as Object Metadata
+    
+    Browser->>API: OPTIONS /bucket/object<br/>Origin: https://app.example.com<br/>Access-Control-Request-Method: PUT
+    API->>CORS: handleCorsOptions()
+    CORS->>Bucket: Get bucket CORS configuration
+    Bucket-->>CORS: CORS rules (if any)
+    CORS->>Object: Check object CORS headers
+    Object-->>CORS: Object CORS metadata (if any)
+    CORS->>CORS: Validate origin against rules
+    CORS->>CORS: Check allowed methods
+    CORS->>CORS: Validate requested headers
+    CORS-->>API: CORS response headers
+    API-->>Browser: 200 OK<br/>Access-Control-Allow-Origin: https://app.example.com<br/>Access-Control-Allow-Methods: PUT<br/>Access-Control-Allow-Headers: Content-Type
+```
+
+#### 2. Actual Request Processing (GET/PUT/DELETE)
+
+```mermaid
+sequenceDiagram
+    participant Browser as Web Browser
+    participant API as manta-buckets-api
+    participant CORS as CORS Middleware
+    participant S3Routes as S3 Route Handler
+    participant Storage as Manta Storage
+    
+    Browser->>API: PUT /bucket/object<br/>Origin: https://app.example.com<br/>Content-Type: image/jpeg
+    API->>CORS: addCustomHeaders()
+    CORS->>CORS: Validate origin and method
+    CORS-->>API: Add CORS response headers
+    API->>S3Routes: Process S3 request
+    S3Routes->>Storage: Store object with metadata
+    Storage-->>S3Routes: Object stored successfully
+    S3Routes-->>API: Success response
+    API-->>Browser: 200 OK<br/>Access-Control-Allow-Origin: https://app.example.com<br/>ETag: "abc123"
+```
+
+### CORS Configuration Storage
+
+#### Bucket-Level CORS Configuration
+Bucket CORS rules are stored as metadata objects with empty sharks arrays:
+
+```javascript
+// Bucket CORS configuration object
+{
+    sharks: [],  // Empty - metadata only
+    headers: {
+        'cors-configuration': JSON.stringify({
+            CORSRules: [
+                {
+                    ID: 'rule1',
+                    AllowedOrigins: ['https://app.example.com'],
+                    AllowedMethods: ['GET', 'PUT'],
+                    AllowedHeaders: ['Content-Type'],
+                    ExposeHeaders: ['ETag'],
+                    MaxAgeSeconds: 3600
+                }
+            ]
+        })
+    }
+}
+```
+
+#### Object-Level CORS Headers
+Individual objects can have CORS metadata that overrides bucket-level configuration:
+
+```javascript
+// Object metadata headers
+{
+    'm-access-control-allow-origin': 'https://specific.example.com',
+    'm-access-control-allow-methods': 'GET,HEAD',
+    'm-access-control-expose-headers': 'ETag,Last-Modified',
+    'm-access-control-max-age': '7200'
+}
+```
+
+### CORS Integration Points
+
+#### 1. Server Middleware Chain
+CORS is integrated into the main server middleware chain:
+
+```javascript
+// In server.js
+app.use(corsMiddleware.handleCorsOptions);      // Handle OPTIONS requests
+app.use(corsMiddleware.addCustomHeaders);       // Add CORS headers to responses
+```
+
+#### 2. S3 Route Integration
+S3 routes automatically include CORS processing:
+
+```javascript
+// In s3-routes.js
+function s3CreateBucketObjectHandler() {
+    return [
+        buckets.loadRequest,
+        corsMiddleware.addCustomHeaders,  // CORS headers added here
+        buckets.authorizationHandler,
+        // ... other middleware
+    ];
+}
+```
+
+### Presigned URL CORS Support
+
+The CORS implementation fully supports presigned URL uploads from browsers:
+
+#### Browser Upload Flow with Presigned URLs
+
+```javascript
+// 1. Backend generates presigned URL
+const presignedUrl = await s3.getSignedUrl('putObject', {
+    Bucket: 'uploads',
+    Key: 'photo.jpg',
+    Expires: 3600,
+    ContentType: 'image/jpeg'
+});
+
+// 2. Browser uploads directly to Manta
+const response = await fetch(presignedUrl, {
+    method: 'PUT',
+    mode: 'cors',  // Enable CORS
+    body: fileInput.files[0],
+    headers: {
+        'Content-Type': 'image/jpeg'
+    }
+});
+
+// 3. CORS middleware processes request
+// - Handles missing Origin header (presigned URLs)
+// - Applies bucket or object-level CORS rules
+// - Returns proper Access-Control-* headers
+```
+
+#### Presigned URL CORS Handling
+
+```mermaid
+sequenceDiagram
+    participant Browser as Web Browser
+    participant Backend as Application Backend
+    participant API as manta-buckets-api
+    participant Storage as Manta Storage
+    
+    Browser->>Backend: Request upload URL
+    Backend->>Backend: Generate presigned URL
+    Backend-->>Browser: Presigned PUT URL
+    
+    Browser->>API: PUT presigned-url<br/>Origin: null (or missing)<br/>Body: file data
+    API->>API: Detect presigned URL request
+    API->>API: Apply CORS rules (origin-agnostic)
+    API->>Storage: Store object
+    Storage-->>API: Success
+    API-->>Browser: 200 OK<br/>Access-Control-Allow-Origin: *<br/>(or specific origin if configured)
+```
+
+### CORS Security Model
+
+#### Origin Validation
+- **Wildcard Support**: Both `*` and `star` formats supported for compatibility
+- **Exact Match**: Specific origins matched exactly (case-sensitive)
+- **Protocol Enforcement**: Origins must include protocol (https://)
+- **Port Handling**: Origins with ports are matched including port number
+
+#### Method Validation
+- **Preflight Methods**: OPTIONS requests validate Access-Control-Request-Method
+- **Actual Methods**: Regular requests validate HTTP method against allowed methods
+- **Default Methods**: GET and HEAD typically allowed by default
+
+#### Header Validation
+- **Simple Headers**: Content-Type, Accept, etc. typically allowed
+- **Custom Headers**: Must be explicitly listed in AllowedHeaders
+- **Response Headers**: ExposeHeaders controls which response headers browsers can access
+
+### AWS S3 Compatibility
+
+The CORS implementation provides full compatibility with AWS S3 CORS API:
+
+| AWS S3 Feature | Manta Implementation | Status |
+|----------------|---------------------|---------|
+| PutBucketCors | s3PutBucketCorsHandler | ✅ Implemented |
+| GetBucketCors | s3GetBucketCorsHandler | ✅ Implemented |
+| DeleteBucketCors | s3DeleteBucketCorsHandler | ✅ Implemented |
+| CORSRule.ID | Unique rule identifier | ✅ Implemented |
+| AllowedOrigins | Origin whitelist | ✅ Implemented |
+| AllowedMethods | HTTP method whitelist | ✅ Implemented |
+| AllowedHeaders | Request header whitelist | ✅ Implemented |
+| ExposeHeaders | Response header exposure | ✅ Implemented |
+| MaxAgeSeconds | Preflight cache duration | ✅ Implemented |
+
+### Manta-Specific CORS Extensions
+
+Beyond AWS S3 compatibility, Manta provides additional CORS features:
+
+#### Object-Level CORS Override
+Objects can specify individual CORS policies that take precedence over bucket settings:
+
+```bash
+# Set object-specific CORS during upload
+mput -H 'm-access-control-allow-origin: https://myapp.com' \
+     -H 'm-access-control-allow-methods: GET' \
+     photo.jpg ~~/uploads/photo.jpg
+```
+
+#### Enhanced Wildcard Support
+Supports both AWS standard (`*`) and legacy (`star`) wildcard formats:
+
+```xml
+<CORSRule>
+    <AllowedOrigin>*</AllowedOrigin>          <!-- AWS standard -->
+    <AllowedOrigin>star</AllowedOrigin>       <!-- Legacy support -->
+</CORSRule>
+```
+
+#### Flexible Origin Matching
+- Case-insensitive domain matching
+- Automatic protocol inference for local development
+- Support for `origin: null` (file:// and data: URLs)
+
+This CORS architecture enables seamless browser integration while maintaining security and AWS S3 compatibility, making it ideal for modern web applications that need direct browser-to-storage file operations.
 
 ## Error Handling
 

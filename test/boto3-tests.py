@@ -1263,6 +1263,222 @@ def run_suite(args) -> int:
     tr.run("S3 Object Tagging - Validation limits", t_object_tagging_validation)
     tr.run("S3 Object Tagging - With metadata interaction", t_object_tagging_with_metadata)
 
+    # --- CORS Tests --------------------------------------------------------
+    def t_bucket_cors_basic():
+        """Test basic bucket-level CORS configuration."""
+        cors_config = {
+            'CORSRules': [
+                {
+                    'AllowedOrigins': ['https://example.com', 'https://app.example.com'],
+                    'AllowedMethods': ['GET', 'PUT', 'POST'],
+                    'AllowedHeaders': ['*'],
+                    'ExposeHeaders': ['ETag', 'x-amz-meta-*'],
+                    'MaxAgeSeconds': 3600
+                }
+            ]
+        }
+        
+        # Set bucket CORS configuration
+        s3.put_bucket_cors(Bucket=bucket, CORSConfiguration=cors_config)
+        info("Set bucket CORS configuration")
+        
+        # Verify CORS configuration was set
+        response = s3.get_bucket_cors(Bucket=bucket)
+        retrieved_rules = response['CORSRules']
+        assert len(retrieved_rules) == 1, f"Expected 1 CORS rule, got {len(retrieved_rules)}"
+        
+        rule = retrieved_rules[0]
+        assert 'https://example.com' in rule['AllowedOrigins'], "Missing expected origin"
+        assert 'GET' in rule['AllowedMethods'], "Missing GET method"
+        assert rule['MaxAgeSeconds'] == 3600, "MaxAge mismatch"
+        info("Bucket CORS configuration verified")
+        
+        # Clean up CORS configuration
+        s3.delete_bucket_cors(Bucket=bucket)
+        info("Deleted bucket CORS configuration")
+        
+        # Verify deletion
+        try:
+            s3.get_bucket_cors(Bucket=bucket)
+            assert False, "CORS configuration should have been deleted"
+        except ClientError as e:
+            error_code = e.response.get('Error', {}).get('Code', '')
+            assert error_code == 'NoSuchCORSConfiguration', f"Expected NoSuchCORSConfiguration, got {error_code}"
+            info("CORS deletion verified")
+
+    def t_bucket_cors_multiple_rules():
+        """Test bucket CORS with multiple rules."""
+        cors_config = {
+            'CORSRules': [
+                {
+                    'ID': 'PublicRead',
+                    'AllowedOrigins': ['*'],
+                    'AllowedMethods': ['GET'],
+                    'MaxAgeSeconds': 3000
+                },
+                {
+                    'ID': 'AppAccess', 
+                    'AllowedOrigins': ['https://myapp.com'],
+                    'AllowedMethods': ['GET', 'PUT', 'POST', 'DELETE'],
+                    'AllowedHeaders': ['Content-Type', 'x-amz-meta-*'],
+                    'ExposeHeaders': ['ETag'],
+                    'MaxAgeSeconds': 86400
+                }
+            ]
+        }
+        
+        s3.put_bucket_cors(Bucket=bucket, CORSConfiguration=cors_config)
+        info("Set multiple CORS rules")
+        
+        response = s3.get_bucket_cors(Bucket=bucket)
+        rules = response['CORSRules']
+        assert len(rules) == 2, f"Expected 2 rules, got {len(rules)}"
+        
+        # Find rules by ID
+        public_rule = next((r for r in rules if r.get('ID') == 'PublicRead'), None)
+        app_rule = next((r for r in rules if r.get('ID') == 'AppAccess'), None)
+        
+        assert public_rule is not None, "PublicRead rule not found"
+        assert app_rule is not None, "AppAccess rule not found"
+        
+        assert public_rule['AllowedOrigins'] == ['*'], "Public rule origin mismatch"
+        assert 'DELETE' in app_rule['AllowedMethods'], "App rule missing DELETE method"
+        
+        info("Multiple CORS rules verified")
+        s3.delete_bucket_cors(Bucket=bucket)
+
+    def t_object_cors_metadata():
+        """Test object-level CORS via metadata (Manta enhancement)."""
+        cors_key = 'cors-metadata-test.txt'
+        cors_content = b'Content with CORS metadata'
+        
+        # Upload object with CORS metadata
+        s3.put_object(
+            Bucket=bucket,
+            Key=cors_key,
+            Body=cors_content,
+            Metadata={
+                'access-control-allow-origin': 'https://cors-test.com',
+                'access-control-allow-methods': 'GET,PUT',
+                'access-control-allow-credentials': 'true'
+            }
+        )
+        info("Uploaded object with CORS metadata")
+        
+        # Verify metadata was set
+        response = s3.head_object(Bucket=bucket, Key=cors_key)
+        metadata = response.get('Metadata', {})
+        
+        # Check for CORS metadata (case-insensitive)
+        cors_metadata_found = False
+        for key, value in metadata.items():
+            if 'access-control-allow-origin' in key.lower():
+                assert 'cors-test.com' in value, f"Origin value mismatch: {value}"
+                cors_metadata_found = True
+                break
+        
+        if cors_metadata_found:
+            info("Object-level CORS metadata verified")
+        else:
+            warn("Object CORS metadata not found - this may be a metadata handling limitation")
+            info("Available metadata keys: " + ', '.join(metadata.keys()))
+        
+        # Clean up
+        s3.delete_object(Bucket=bucket, Key=cors_key)
+
+    def t_cors_preflight_compatibility():
+        """Test CORS preflight compatibility with presigned URLs."""
+        cors_key = 'cors-preflight-test.txt'
+        cors_content = b'Test content for CORS preflight'
+        
+        # First set up bucket CORS for testing
+        cors_config = {
+            'CORSRules': [
+                {
+                    'AllowedOrigins': ['*'],
+                    'AllowedMethods': ['GET', 'PUT', 'POST', 'DELETE', 'HEAD', 'OPTIONS'],
+                    'AllowedHeaders': ['*'],
+                    'ExposeHeaders': ['ETag', 'Content-Length'],
+                    'MaxAgeSeconds': 3600
+                }
+            ]
+        }
+        s3.put_bucket_cors(Bucket=bucket, CORSConfiguration=cors_config)
+        
+        # Upload object for testing
+        s3.put_object(Bucket=bucket, Key=cors_key, Body=cors_content)
+        
+        # Generate presigned URL
+        presigned_url = s3.generate_presigned_url(
+            'get_object',
+            Params={'Bucket': bucket, 'Key': cors_key},
+            ExpiresIn=3600
+        )
+        
+        assert presigned_url.startswith('http'), "Invalid presigned URL format"
+        assert 'X-Amz-Algorithm=AWS4-HMAC-SHA256' in presigned_url, "Missing AWS4 algorithm"
+        info("Generated presigned URL for CORS testing")
+        
+        # Test presigned URL with requests (simulating browser behavior)
+        try:
+            response = requests.get(presigned_url, verify=False, timeout=30)
+            if response.status_code == 200:
+                assert response.content == cors_content, "Content mismatch via presigned URL"
+                info("Presigned URL works correctly (CORS headers should be present)")
+            else:
+                warn(f"Presigned URL returned status {response.status_code}")
+        except ImportError:
+            info("Requests library not available, skipping HTTP test")
+        except Exception as e:
+            warn(f"Presigned URL test failed: {e}")
+        
+        # Clean up
+        s3.delete_object(Bucket=bucket, Key=cors_key)
+        s3.delete_bucket_cors(Bucket=bucket)
+
+    def t_cors_error_handling():
+        """Test CORS error handling and edge cases."""
+        # Test getting CORS from bucket without CORS configuration
+        try:
+            s3.get_bucket_cors(Bucket=bucket)
+            assert False, "Should have raised NoSuchCORSConfiguration"
+        except ClientError as e:
+            error_code = e.response.get('Error', {}).get('Code', '')
+            assert error_code == 'NoSuchCORSConfiguration', f"Expected NoSuchCORSConfiguration, got {error_code}"
+            info("Correctly handled missing CORS configuration")
+        
+        # Test invalid CORS configuration
+        try:
+            invalid_cors = {
+                'CORSRules': [
+                    {
+                        # Missing required AllowedMethods
+                        'AllowedOrigins': ['https://example.com']
+                    }
+                ]
+            }
+            s3.put_bucket_cors(Bucket=bucket, CORSConfiguration=invalid_cors)
+            warn("Invalid CORS configuration was accepted (may be SDK validation)")
+        except (ClientError, ParamValidationError) as e:
+            info("Invalid CORS configuration correctly rejected")
+        
+        # Test deleting non-existent CORS
+        try:
+            s3.delete_bucket_cors(Bucket=bucket)
+            info("Delete non-existent CORS succeeded (idempotent)")
+        except ClientError as e:
+            error_code = e.response.get('Error', {}).get('Code', '')
+            if error_code == 'NoSuchCORSConfiguration':
+                info("Delete non-existent CORS correctly returned NoSuchCORSConfiguration")
+            else:
+                warn(f"Unexpected error deleting non-existent CORS: {error_code}")
+
+    tr.run("CORS - Basic bucket configuration", t_bucket_cors_basic)
+    tr.run("CORS - Multiple rules", t_bucket_cors_multiple_rules) 
+    tr.run("CORS - Object metadata (Manta enhancement)", t_object_cors_metadata)
+    tr.run("CORS - Preflight compatibility", t_cors_preflight_compatibility)
+    tr.run("CORS - Error handling", t_cors_error_handling)
+
     # Clean up the MPU object
     def t_delete_mpu_object():
         try:

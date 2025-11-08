@@ -140,11 +140,10 @@ function make_s3_client($args) {
 // --- Helper functions --------------------------------------------------------
 if (!function_exists('ensure_bucket')) {
 function ensure_bucket($s3, $bucket, $region) {
-    // Try an alternative method: attempt to list objects instead of HeadBucket
-    // This works around HeadBucket permission issues
+    // Check if bucket exists using HeadBucket (same as Python test)
     try {
-        $s3->listObjectsV2(['Bucket' => $bucket, 'MaxKeys' => 1]);
-        info("Bucket exists (verified via ListObjects): $bucket");
+        $s3->headBucket(['Bucket' => $bucket]);
+        info("Bucket exists: $bucket");
         return;
     } catch (S3Exception $e) {
         $code = $e->getAwsErrorCode();
@@ -557,8 +556,19 @@ function run_suite($args) {
                     $list_params['ContinuationToken'] = $continuation_token;
                 }
                 
-                // Get page of objects
-                $response = $s3->listObjectsV2($list_params);
+                // Try using ListObjects v1 instead of v2 to avoid list-type=2 query parameter
+                $list_params_v1 = [
+                    'Bucket' => $bucket,
+                    'MaxKeys' => $max_keys
+                    // Note: PHP SDK automatically adds encoding-type=url
+                ];
+                
+                if ($continuation_token) {
+                    // For v1, use Marker instead of ContinuationToken
+                    $list_params_v1['Marker'] = $continuation_token;
+                }
+                
+                $response = $s3->listObjects($list_params_v1);
                 
                 // Extract objects from this page
                 $page_objects = $response['Contents'] ?? [];
@@ -566,9 +576,15 @@ function run_suite($args) {
                 
                 info("Page $page_count: Found " . count($page_objects) . " objects");
                 
-                // Check if there are more pages
+                // Check if there are more pages (v1 API uses different fields)
                 $is_truncated = $response['IsTruncated'] ?? false;
-                $continuation_token = $response['NextContinuationToken'] ?? null;
+                $continuation_token = $response['NextMarker'] ?? null;
+                
+                // If NextMarker is not provided but IsTruncated is true, use the last object key
+                if ($is_truncated && !$continuation_token && !empty($page_objects)) {
+                    $last_object = end($page_objects);
+                    $continuation_token = $last_object['Key'] ?? null;
+                }
                 
                 if (!$is_truncated) {
                     info("No more pages, pagination complete");

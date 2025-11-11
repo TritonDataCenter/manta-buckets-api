@@ -852,6 +852,389 @@ def run_suite(args) -> int:
     tr.run("S3 Presigned URL - Expired URL rejection", t_presigned_url_expired)
     tr.run("S3 Presigned URL - With conditions (Content-Type)", t_presigned_url_with_conditions)
 
+    # --- S3 MPU Presigned URL Tests ----------------------------------------
+    def t_mpu_presigned_url_basic():
+        """Test MPU presigned URL generation and usage for part uploads."""
+        mpu_presigned_key = "mpu-presigned-test.bin"
+        part_size = 5 * 1024 * 1024  # 5MB minimum part size
+        
+        # Create test data for part upload
+        test_part_data = b"A" * part_size
+        
+        try:
+            # Step 1: Initiate multipart upload
+            init_response = s3.create_multipart_upload(Bucket=bucket, Key=mpu_presigned_key)
+            upload_id = init_response['UploadId']
+            info(f"Initiated MPU: UploadId={upload_id}")
+            
+            # Step 2: Generate presigned URL for part upload
+            presigned_url = s3.generate_presigned_url(
+                'upload_part',
+                Params={
+                    'Bucket': bucket,
+                    'Key': mpu_presigned_key,
+                    'PartNumber': 1,
+                    'UploadId': upload_id
+                },
+                ExpiresIn=3600
+            )
+            info(f"Generated MPU part presigned URL: {presigned_url[:100]}...")
+            
+            # Validate URL format contains MPU parameters
+            assert "uploadId=" in presigned_url, "Missing uploadId parameter"
+            assert "partNumber=1" in presigned_url, "Missing partNumber parameter"
+            assert "X-Amz-Algorithm=AWS4-HMAC-SHA256" in presigned_url, "Missing AWS4-HMAC-SHA256 algorithm"
+            assert "X-Amz-Credential=" in presigned_url, "Missing X-Amz-Credential"
+            assert "X-Amz-Date=" in presigned_url, "Missing X-Amz-Date"
+            assert "X-Amz-Expires=" in presigned_url, "Missing X-Amz-Expires"
+            assert "X-Amz-SignedHeaders=" in presigned_url, "Missing X-Amz-SignedHeaders"
+            assert "X-Amz-Signature=" in presigned_url, "Missing X-Amz-Signature"
+            info("MPU presigned URL format validation passed")
+            
+            # Step 3: Use the presigned URL to upload the part
+            response = requests.put(presigned_url, data=test_part_data, verify=not args.insecure)
+            assert response.status_code == 200, f"Expected 200, got {response.status_code}"
+            
+            # Extract ETag from response
+            etag = response.headers.get('ETag', '').strip('"')
+            assert etag, "ETag not returned from part upload"
+            info(f"Successfully uploaded part 1 via presigned URL (ETag: {etag})")
+            
+            # Step 4: Complete the multipart upload
+            s3.complete_multipart_upload(
+                Bucket=bucket,
+                Key=mpu_presigned_key,
+                UploadId=upload_id,
+                MultipartUpload={
+                    'Parts': [
+                        {'ETag': etag, 'PartNumber': 1}
+                    ]
+                }
+            )
+            info("MPU completed successfully")
+            
+            # Step 5: Verify the uploaded object
+            verify_response = s3.get_object(Bucket=bucket, Key=mpu_presigned_key)
+            verified_data = verify_response['Body'].read()
+            assert verified_data == test_part_data, "Uploaded content doesn't match original"
+            info("Verified MPU presigned URL upload content matches original")
+            
+        except Exception as e:
+            # Cleanup on error
+            try:
+                s3.abort_multipart_upload(Bucket=bucket, Key=mpu_presigned_key, UploadId=upload_id)
+            except:
+                pass
+            raise
+        finally:
+            # Clean up test object
+            try:
+                s3.delete_object(Bucket=bucket, Key=mpu_presigned_key)
+            except ClientError:
+                pass
+
+    def t_mpu_presigned_url_expiry():
+        """Test that expired MPU presigned URLs are rejected."""
+        mpu_presigned_key = "mpu-presigned-expiry-test.bin"
+        part_size = 5 * 1024 * 1024  # 5MB minimum part size
+        test_part_data = b"B" * part_size
+        upload_id = None
+        
+        try:
+            # Step 1: Initiate multipart upload
+            init_response = s3.create_multipart_upload(Bucket=bucket, Key=mpu_presigned_key)
+            upload_id = init_response['UploadId']
+            info(f"Initiated MPU for expiry test: UploadId={upload_id}")
+            
+            # Step 2: Generate presigned URL with very short expiry (1 second)
+            presigned_url = s3.generate_presigned_url(
+                'upload_part',
+                Params={
+                    'Bucket': bucket,
+                    'Key': mpu_presigned_key,
+                    'PartNumber': 1,
+                    'UploadId': upload_id
+                },
+                ExpiresIn=1
+            )
+            info("Generated MPU part presigned URL with 1 second expiry")
+            
+            # Step 3: Wait for URL to expire
+            time.sleep(2)
+            info("Waited for URL to expire")
+            
+            # Step 4: Try to use expired URL - should fail
+            response = requests.put(presigned_url, data=test_part_data, verify=not args.insecure)
+            assert response.status_code in [403, 400], f"Expected 403/400 for expired URL, got {response.status_code}"
+            info(f"Expired MPU presigned URL correctly rejected with status {response.status_code}")
+            
+        finally:
+            # Clean up multipart upload
+            if upload_id:
+                try:
+                    s3.abort_multipart_upload(Bucket=bucket, Key=mpu_presigned_key, UploadId=upload_id)
+                except ClientError:
+                    pass
+
+    def t_mpu_presigned_url_invalid_date():
+        """Test MPU presigned URLs with invalid X-Amz-Date formats."""
+        mpu_presigned_key = "mpu-presigned-date-test.bin"
+        part_size = 5 * 1024 * 1024  # 5MB minimum part size
+        test_part_data = b"C" * part_size
+        upload_id = None
+        
+        try:
+            # Step 1: Initiate multipart upload
+            init_response = s3.create_multipart_upload(Bucket=bucket, Key=mpu_presigned_key)
+            upload_id = init_response['UploadId']
+            info(f"Initiated MPU for invalid date test: UploadId={upload_id}")
+            
+            # Step 2: Generate valid presigned URL to get base structure
+            valid_url = s3.generate_presigned_url(
+                'upload_part',
+                Params={
+                    'Bucket': bucket,
+                    'Key': mpu_presigned_key,
+                    'PartNumber': 1,
+                    'UploadId': upload_id
+                },
+                ExpiresIn=3600
+            )
+            info("Generated valid MPU presigned URL as template")
+            
+            # Step 3: Test various invalid X-Amz-Date formats
+            invalid_dates = [
+                "invaliddate",                    # Completely invalid format
+                "2023-01-01T12:00:00Z",          # ISO format with dashes
+                "20230101T120000",               # Missing Z suffix
+                "20230101T120000Y",              # Wrong suffix
+                "20230230T120000Z",              # Invalid date (Feb 30)
+                "20230101T250000Z",              # Invalid hour
+                ""                               # Empty date
+            ]
+            
+            for invalid_date in invalid_dates:
+                # Replace X-Amz-Date parameter in the URL
+                modified_url = valid_url.replace(
+                    valid_url.split('X-Amz-Date=')[1].split('&')[0],
+                    invalid_date
+                )
+                
+                info(f"Testing invalid X-Amz-Date: '{invalid_date}'")
+                
+                # Test the modified URL
+                response = requests.put(modified_url, data=test_part_data, verify=not args.insecure)
+                assert response.status_code in [400, 403], f"Expected 400/403 for invalid date '{invalid_date}', got {response.status_code}"
+                info(f"Invalid X-Amz-Date '{invalid_date}' correctly rejected with status {response.status_code}")
+            
+        finally:
+            # Clean up multipart upload
+            if upload_id:
+                try:
+                    s3.abort_multipart_upload(Bucket=bucket, Key=mpu_presigned_key, UploadId=upload_id)
+                except ClientError:
+                    pass
+
+    def t_mpu_presigned_url_invalid_expires():
+        """Test MPU presigned URLs with invalid X-Amz-Expires values."""
+        mpu_presigned_key = "mpu-presigned-expires-test.bin"
+        part_size = 5 * 1024 * 1024  # 5MB minimum part size
+        test_part_data = b"D" * part_size
+        upload_id = None
+        
+        try:
+            # Step 1: Initiate multipart upload
+            init_response = s3.create_multipart_upload(Bucket=bucket, Key=mpu_presigned_key)
+            upload_id = init_response['UploadId']
+            info(f"Initiated MPU for invalid expires test: UploadId={upload_id}")
+            
+            # Step 2: Generate valid presigned URL to get base structure
+            valid_url = s3.generate_presigned_url(
+                'upload_part',
+                Params={
+                    'Bucket': bucket,
+                    'Key': mpu_presigned_key,
+                    'PartNumber': 1,
+                    'UploadId': upload_id
+                },
+                ExpiresIn=3600
+            )
+            info("Generated valid MPU presigned URL as template")
+            
+            # Step 3: Test various invalid X-Amz-Expires values
+            invalid_expires = [
+                "-1",                            # Negative value
+                "0",                             # Zero value
+                "604801",                        # Over 7-day limit
+                "999999",                        # Way over limit
+                "abc",                           # Non-numeric
+                "3600.5",                        # Decimal
+                "",                              # Empty value
+                "3600abc"                        # Mixed numeric/text
+            ]
+            
+            for invalid_expire in invalid_expires:
+                # Replace X-Amz-Expires parameter in the URL
+                modified_url = valid_url.replace(
+                    f"X-Amz-Expires=3600",
+                    f"X-Amz-Expires={invalid_expire}"
+                )
+                
+                info(f"Testing invalid X-Amz-Expires: '{invalid_expire}'")
+                
+                # Test the modified URL
+                response = requests.put(modified_url, data=test_part_data, verify=not args.insecure)
+                assert response.status_code in [400, 403], f"Expected 400/403 for invalid expires '{invalid_expire}', got {response.status_code}"
+                info(f"Invalid X-Amz-Expires '{invalid_expire}' correctly rejected with status {response.status_code}")
+            
+        finally:
+            # Clean up multipart upload
+            if upload_id:
+                try:
+                    s3.abort_multipart_upload(Bucket=bucket, Key=mpu_presigned_key, UploadId=upload_id)
+                except ClientError:
+                    pass
+
+    def t_mpu_presigned_url_multiple_parts():
+        """Test MPU presigned URLs for multiple part uploads."""
+        mpu_presigned_key = "mpu-presigned-multipart-test.bin"
+        part_size = 5 * 1024 * 1024  # 5MB minimum part size
+        num_parts = 3
+        upload_id = None
+        
+        try:
+            # Step 1: Initiate multipart upload
+            init_response = s3.create_multipart_upload(Bucket=bucket, Key=mpu_presigned_key)
+            upload_id = init_response['UploadId']
+            info(f"Initiated MPU for multiple parts test: UploadId={upload_id}")
+            
+            # Step 2: Generate presigned URLs for multiple parts and upload them
+            parts_for_completion = []
+            
+            for part_num in range(1, num_parts + 1):
+                # Generate unique test data for each part
+                test_part_data = str(part_num).encode() * part_size
+                
+                # Generate presigned URL for this part
+                presigned_url = s3.generate_presigned_url(
+                    'upload_part',
+                    Params={
+                        'Bucket': bucket,
+                        'Key': mpu_presigned_key,
+                        'PartNumber': part_num,
+                        'UploadId': upload_id
+                    },
+                    ExpiresIn=3600
+                )
+                
+                # Validate part number in URL
+                assert f"partNumber={part_num}" in presigned_url, f"Missing partNumber={part_num} parameter"
+                
+                # Upload the part using presigned URL
+                response = requests.put(presigned_url, data=test_part_data, verify=not args.insecure)
+                assert response.status_code == 200, f"Part {part_num} upload failed with status {response.status_code}"
+                
+                # Extract ETag for completion
+                etag = response.headers.get('ETag', '').strip('"')
+                assert etag, f"ETag not returned for part {part_num}"
+                
+                parts_for_completion.append({'ETag': etag, 'PartNumber': part_num})
+                info(f"Successfully uploaded part {part_num} via presigned URL (ETag: {etag})")
+            
+            # Step 3: Complete the multipart upload
+            s3.complete_multipart_upload(
+                Bucket=bucket,
+                Key=mpu_presigned_key,
+                UploadId=upload_id,
+                MultipartUpload={'Parts': parts_for_completion}
+            )
+            info(f"MPU with {num_parts} parts completed successfully")
+            
+            # Step 4: Verify the uploaded object size
+            verify_response = s3.head_object(Bucket=bucket, Key=mpu_presigned_key)
+            expected_size = part_size * num_parts
+            actual_size = verify_response['ContentLength']
+            assert actual_size == expected_size, f"Size mismatch: expected {expected_size}, got {actual_size}"
+            info(f"Verified MPU object size: {actual_size} bytes ({num_parts} parts)")
+            
+        except Exception as e:
+            # Cleanup on error
+            if upload_id:
+                try:
+                    s3.abort_multipart_upload(Bucket=bucket, Key=mpu_presigned_key, UploadId=upload_id)
+                except:
+                    pass
+            raise
+        finally:
+            # Clean up test object
+            try:
+                s3.delete_object(Bucket=bucket, Key=mpu_presigned_key)
+            except ClientError:
+                pass
+
+    def t_mpu_presigned_url_invalid_signature():
+        """Test MPU presigned URLs with tampered/invalid signatures."""
+        mpu_presigned_key = "mpu-presigned-signature-test.bin"
+        part_size = 5 * 1024 * 1024  # 5MB minimum part size
+        test_part_data = b"E" * part_size
+        upload_id = None
+        
+        try:
+            # Step 1: Initiate multipart upload
+            init_response = s3.create_multipart_upload(Bucket=bucket, Key=mpu_presigned_key)
+            upload_id = init_response['UploadId']
+            info(f"Initiated MPU for invalid signature test: UploadId={upload_id}")
+            
+            # Step 2: Generate valid presigned URL
+            valid_url = s3.generate_presigned_url(
+                'upload_part',
+                Params={
+                    'Bucket': bucket,
+                    'Key': mpu_presigned_key,
+                    'PartNumber': 1,
+                    'UploadId': upload_id
+                },
+                ExpiresIn=3600
+            )
+            info("Generated valid MPU presigned URL")
+            
+            # Step 3: Test various invalid signature scenarios
+            invalid_signatures = [
+                "invalidSignature12345",          # Completely invalid signature
+                "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890",  # Wrong length
+                "",                               # Empty signature
+                "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"  # All same character
+            ]
+            
+            for invalid_sig in invalid_signatures:
+                # Replace X-Amz-Signature parameter in the URL
+                modified_url = valid_url.replace(
+                    valid_url.split('X-Amz-Signature=')[1].split('&')[0] if '&' in valid_url.split('X-Amz-Signature=')[1] else valid_url.split('X-Amz-Signature=')[1],
+                    invalid_sig
+                )
+                
+                info(f"Testing invalid X-Amz-Signature: '{invalid_sig[:20]}...'")
+                
+                # Test the modified URL
+                response = requests.put(modified_url, data=test_part_data, verify=not args.insecure)
+                assert response.status_code in [403, 401], f"Expected 403/401 for invalid signature, got {response.status_code}"
+                info(f"Invalid signature correctly rejected with status {response.status_code}")
+            
+        finally:
+            # Clean up multipart upload
+            if upload_id:
+                try:
+                    s3.abort_multipart_upload(Bucket=bucket, Key=mpu_presigned_key, UploadId=upload_id)
+                except ClientError:
+                    pass
+
+    tr.run("S3 MPU Presigned URL - Basic part upload", t_mpu_presigned_url_basic)
+    tr.run("S3 MPU Presigned URL - Expired URL rejection", t_mpu_presigned_url_expiry)
+    tr.run("S3 MPU Presigned URL - Invalid date format", t_mpu_presigned_url_invalid_date)
+    tr.run("S3 MPU Presigned URL - Invalid expires value", t_mpu_presigned_url_invalid_expires)
+    tr.run("S3 MPU Presigned URL - Invalid signature", t_mpu_presigned_url_invalid_signature)
+    tr.run("S3 MPU Presigned URL - Multiple parts upload", t_mpu_presigned_url_multiple_parts)
+
     # --- S3 Object Tagging Tests -------------------------------------------
     def t_object_tagging_basic():
         """Test basic object tagging operations (PUT/GET/DELETE)."""

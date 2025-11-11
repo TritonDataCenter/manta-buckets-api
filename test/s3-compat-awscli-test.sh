@@ -11,6 +11,9 @@
 
 set -euo pipefail  # Exit on error, undefined vars, pipe failures
 
+# Get script directory for finding other scripts
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 # Configuration variables (can be overridden via environment)
 AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID:-"AKIA123456789EXAMPLE"}
 AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY:-"wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"}
@@ -4342,6 +4345,710 @@ EOF
     log "  Remember to clean up manually: aws s3 rb s3://$cors_presigned_bucket --force"
 }
 
+# Test presigned URLs for multipart upload operations
+test_mpu_presigned_urls() {
+    log "Testing: MPU presigned URLs for multipart upload operations"
+    
+    local test_object="mpu-presigned-test-$(date +%s).bin"
+    local test_file="${TEMP_DIR}/mpu_presigned_test_file.bin"
+    local upload_id=""
+    local part_size=5242880  # 5MB minimum part size for MPU
+    local total_size=10485760  # 10MB total (2 parts)
+    
+    # Create a test file for multipart upload
+    log "Creating test file of ${total_size} bytes..."
+    if ! dd if=/dev/urandom of="$test_file" bs="$total_size" count=1 2>/dev/null; then
+        error "Failed to create test file for MPU presigned URL test"
+        return 1
+    fi
+    
+    set +e  # Disable exit on error for this test
+    
+    # Step 1: Initiate multipart upload (regular - not presigned)
+    log "Initiating multipart upload..."
+    local create_output=$(aws_s3api create-multipart-upload \
+        --bucket "$TEST_BUCKET" \
+        --key "$test_object" 2>/dev/null)
+    
+    if [ $? -ne 0 ]; then
+        error "Failed to initiate multipart upload"
+        rm -f "$test_file"
+        set -e
+        return 1
+    fi
+    
+    upload_id=$(echo "$create_output" | grep -o '"UploadId": *"[^"]*"' | cut -d'"' -f4)
+    if [ -z "$upload_id" ]; then
+        error "Failed to extract upload ID from create-multipart-upload response"
+        rm -f "$test_file"
+        set -e
+        return 1
+    fi
+    
+    log "Upload ID: $upload_id"
+    
+    # Step 2: Generate presigned URLs for part uploads
+    log "Generating presigned URLs for part uploads..."
+    
+    # Generate presigned URLs for MPU parts using boto3-compatible script
+    local boto3_script="${SCRIPT_DIR}/boto3-compatible-presigned.sh"
+    if [ ! -f "$boto3_script" ]; then
+        error "boto3-compatible-presigned.sh not found at $boto3_script"
+        aws_s3api abort-multipart-upload --bucket "$TEST_BUCKET" --key "$test_object" --upload-id "$upload_id" 2>/dev/null || true
+        rm -f "$test_file"
+        set -e
+        return 1
+    fi
+    
+    # Generate presigned URL for part 1
+    log "Generating presigned URL for part 1..."
+    log "DEBUG: Running boto3 script with full output:"
+    "$boto3_script" --generate-only --upload-id "$upload_id" --part-number 1 PUT "$TEST_BUCKET" "$test_object" 3600 2>&1 | while read line; do
+        log "BOTO3: $line"
+    done
+    
+    local part1_url
+    part1_url=$("$boto3_script" --generate-only --upload-id "$upload_id" --part-number 1 PUT "$TEST_BUCKET" "$test_object" 3600 | grep -A1 "=== FINAL URL ===" | tail -1 | tr -d '\r\n')
+    
+    if [ -z "$part1_url" ]; then
+        error "Failed to generate presigned URL for part 1 using boto3-compatible script"
+        log "Running boto3 script in debug mode for part 1:"
+        "$boto3_script" --generate-only --upload-id "$upload_id" --part-number 1 PUT "$TEST_BUCKET" "$test_object" 3600 || true
+        aws_s3api abort-multipart-upload --bucket "$TEST_BUCKET" --key "$test_object" --upload-id "$upload_id" 2>/dev/null || true
+        rm -f "$test_file"
+        set -e
+        return 1
+    fi
+    
+    # Generate presigned URL for part 2
+    log "Generating presigned URL for part 2..."
+    local part2_url
+    part2_url=$("$boto3_script" --generate-only --upload-id "$upload_id" --part-number 2 PUT "$TEST_BUCKET" "$test_object" 3600 | grep -A1 "=== FINAL URL ===" | tail -1 | tr -d '\r\n')
+    
+    if [ -z "$part2_url" ]; then
+        error "Failed to generate presigned URL for part 2 using boto3-compatible script"
+        log "Running boto3 script in debug mode for part 2:"
+        "$boto3_script" --generate-only --upload-id "$upload_id" --part-number 2 PUT "$TEST_BUCKET" "$test_object" 3600 || true
+        aws_s3api abort-multipart-upload --bucket "$TEST_BUCKET" --key "$test_object" --upload-id "$upload_id" 2>/dev/null || true
+        rm -f "$test_file"
+        set -e
+        return 1
+    fi
+    
+    log "Generated presigned URLs for both parts"
+    log "Part 1 URL: ${part1_url:0:100}..."
+    log "Part 2 URL: ${part2_url:0:100}..."
+    
+    # Step 3: Split test file into parts
+    local part1_file="${test_file}.part1"
+    local part2_file="${test_file}.part2"
+    
+    log "Splitting test file into parts..."
+    if ! dd if="$test_file" of="$part1_file" bs="$part_size" count=1 2>/dev/null; then
+        error "Failed to create part 1 file"
+        aws_s3api abort-multipart-upload --bucket "$TEST_BUCKET" --key "$test_object" --upload-id "$upload_id" 2>/dev/null || true
+        rm -f "$test_file" "$part1_file" "$part2_file"
+        set -e
+        return 1
+    fi
+    
+    if ! dd if="$test_file" of="$part2_file" bs="$part_size" skip=1 2>/dev/null; then
+        error "Failed to create part 2 file"
+        aws_s3api abort-multipart-upload --bucket "$TEST_BUCKET" --key "$test_object" --upload-id "$upload_id" 2>/dev/null || true
+        rm -f "$test_file" "$part1_file" "$part2_file"
+        set -e
+        return 1
+    fi
+    
+    # Step 4: Upload parts using presigned URLs
+    log "Uploading part 1 using presigned URL..."
+    local part1_response="${TEMP_DIR}/part1_response.txt"
+    local part1_headers="${TEMP_DIR}/part1_headers.txt"
+    local part1_stderr="${TEMP_DIR}/part1_stderr.txt"
+    local etag1
+    
+    # Use curl with detailed error reporting
+    curl -k -X PUT -T "$part1_file" "$part1_url" \
+        -D "$part1_headers" \
+        -o "$part1_response" \
+        -w "HTTP_CODE:%{http_code}\nRESPONSE_TIME:%{time_total}\nURL_EFFECTIVE:%{url_effective}\n" \
+        2>"$part1_stderr"
+    local curl_exit_code=$?
+    
+    if [ $curl_exit_code -ne 0 ]; then
+        error "Failed to upload part 1 using presigned URL - curl error (exit code: $curl_exit_code)"
+        log "Curl error details:"
+        if [ -f "$part1_stderr" ]; then
+            cat "$part1_stderr" | while read line; do
+                log "  CURL_ERROR: $line"
+            done
+        fi
+        log "HTTP Response Headers:"
+        if [ -f "$part1_headers" ]; then
+            cat "$part1_headers" | while read line; do
+                log "  HEADER: $line"
+            done
+        fi
+        log "HTTP Response Body:"
+        if [ -f "$part1_response" ]; then
+            cat "$part1_response" | while read line; do
+                log "  BODY: $line"
+            done
+        fi
+        aws_s3api abort-multipart-upload --bucket "$TEST_BUCKET" --key "$test_object" --upload-id "$upload_id" 2>/dev/null || true
+        rm -f "$test_file" "$part1_file" "$part2_file" "$part1_headers" "$part1_response" "$part1_stderr"
+        set -e
+        return 1
+    fi
+    
+    # Extract ETag from response headers and clean it thoroughly
+    etag1=$(grep -i "etag:" "$part1_headers" 2>/dev/null | cut -d':' -f2 | tr -d ' "' | tr -d '\r\n' | sed 's/[[:space:]]*$//' || true)
+    
+    if [ -z "$etag1" ]; then
+        error "Failed to extract ETag from part 1 upload response"
+        log "HTTP Response Headers:"
+        if [ -f "$part1_headers" ]; then
+            cat "$part1_headers" | while read line; do
+                log "  HEADER: $line"
+            done
+        fi
+        log "HTTP Response Body:"
+        if [ -f "$part1_response" ]; then
+            cat "$part1_response" | while read line; do
+                log "  BODY: $line"
+            done
+        fi
+        aws_s3api abort-multipart-upload --bucket "$TEST_BUCKET" --key "$test_object" --upload-id "$upload_id" 2>/dev/null || true
+        rm -f "$test_file" "$part1_file" "$part2_file" "$part1_headers" "$part1_response" "$part1_stderr"
+        set -e
+        return 1
+    fi
+    
+    log "Uploading part 2 using presigned URL..."
+    local part2_response="${TEMP_DIR}/part2_response.txt"
+    local part2_headers="${TEMP_DIR}/part2_headers.txt"
+    local part2_stderr="${TEMP_DIR}/part2_stderr.txt"
+    local etag2
+    
+    # Use curl with detailed error reporting
+    curl -k -X PUT -T "$part2_file" "$part2_url" \
+        -D "$part2_headers" \
+        -o "$part2_response" \
+        -w "HTTP_CODE:%{http_code}\nRESPONSE_TIME:%{time_total}\nURL_EFFECTIVE:%{url_effective}\n" \
+        2>"$part2_stderr"
+    curl_exit_code=$?
+    
+    if [ $curl_exit_code -ne 0 ]; then
+        error "Failed to upload part 2 using presigned URL - curl error (exit code: $curl_exit_code)"
+        log "Curl error details:"
+        if [ -f "$part2_stderr" ]; then
+            cat "$part2_stderr" | while read line; do
+                log "  CURL_ERROR: $line"
+            done
+        fi
+        log "HTTP Response Headers:"
+        if [ -f "$part2_headers" ]; then
+            cat "$part2_headers" | while read line; do
+                log "  HEADER: $line"
+            done
+        fi
+        log "HTTP Response Body:"
+        if [ -f "$part2_response" ]; then
+            cat "$part2_response" | while read line; do
+                log "  BODY: $line"
+            done
+        fi
+        aws_s3api abort-multipart-upload --bucket "$TEST_BUCKET" --key "$test_object" --upload-id "$upload_id" 2>/dev/null || true
+        rm -f "$test_file" "$part1_file" "$part2_file" "$part1_headers" "$part1_response" "$part1_stderr" "$part2_headers" "$part2_response" "$part2_stderr"
+        set -e
+        return 1
+    fi
+    
+    # Extract ETag from response headers and clean it thoroughly
+    etag2=$(grep -i "etag:" "$part2_headers" 2>/dev/null | cut -d':' -f2 | tr -d ' "' | tr -d '\r\n' | sed 's/[[:space:]]*$//' || true)
+    
+    if [ -z "$etag2" ]; then
+        error "Failed to extract ETag from part 2 upload response"
+        log "HTTP Response Headers:"
+        if [ -f "$part2_headers" ]; then
+            cat "$part2_headers" | while read line; do
+                log "  HEADER: $line"
+            done
+        fi
+        log "HTTP Response Body:"
+        if [ -f "$part2_response" ]; then
+            cat "$part2_response" | while read line; do
+                log "  BODY: $line"
+            done
+        fi
+        aws_s3api abort-multipart-upload --bucket "$TEST_BUCKET" --key "$test_object" --upload-id "$upload_id" 2>/dev/null || true
+        rm -f "$test_file" "$part1_file" "$part2_file" "$part1_headers" "$part1_response" "$part1_stderr" "$part2_headers" "$part2_response" "$part2_stderr"
+        set -e
+        return 1
+    fi
+    
+    log "Both parts uploaded successfully via presigned URLs"
+    log "Part 1 ETag: $etag1"
+    log "Part 2 ETag: $etag2"
+    
+    # Step 5: Complete multipart upload
+    log "Completing multipart upload..."
+    log "Upload ID: $upload_id"
+    log "Part 1 ETag: '$etag1'"
+    log "Part 2 ETag: '$etag2'"
+    
+    # Clean up ETags (remove any existing quotes) and construct valid JSON
+    local clean_etag1=$(echo "$etag1" | tr -d '"')
+    local clean_etag2=$(echo "$etag2" | tr -d '"')
+    
+    # Write JSON to file to avoid shell escaping issues
+    local parts_json_file="${TEMP_DIR}/parts.json"
+    cat > "$parts_json_file" << EOF
+{
+  "Parts": [
+    {
+      "ETag": "$clean_etag1",
+      "PartNumber": 1
+    },
+    {
+      "ETag": "$clean_etag2", 
+      "PartNumber": 2
+    }
+  ]
+}
+EOF
+    
+    log "Parts JSON written to file: $parts_json_file"
+    log "Part 1 clean ETag: $clean_etag1"
+    log "Part 2 clean ETag: $clean_etag2"
+    
+    local complete_output
+    local complete_error="${TEMP_DIR}/complete_error.txt"
+    complete_output=$(aws_s3api complete-multipart-upload \
+        --bucket "$TEST_BUCKET" \
+        --key "$test_object" \
+        --upload-id "$upload_id" \
+        --multipart-upload "file://$parts_json_file" 2>"$complete_error")
+    local complete_exit_code=$?
+    
+    if [ $complete_exit_code -ne 0 ]; then
+        error "Failed to complete multipart upload (exit code: $complete_exit_code)"
+        log "AWS CLI error output for multipart completion:"
+        if [ -f "$complete_error" ]; then
+            cat "$complete_error" | while read line; do
+                log "  COMPLETE_ERROR: $line"
+            done
+        fi
+        log "Complete multipart upload output (if any):"
+        if [ -n "$complete_output" ]; then
+            echo "$complete_output" | while read line; do
+                log "  COMPLETE_OUTPUT: $line"
+            done
+        fi
+        log "Upload details:"
+        log "  Bucket: $TEST_BUCKET"
+        log "  Key: $test_object"
+        log "  Upload ID: $upload_id"
+        log "  Parts JSON file: $parts_json_file"
+        if [ -f "$parts_json_file" ]; then
+            log "  Parts JSON content:"
+            cat "$parts_json_file" | while read line; do
+                log "    $line"
+            done
+        fi
+        
+        aws_s3api abort-multipart-upload --bucket "$TEST_BUCKET" --key "$test_object" --upload-id "$upload_id" 2>/dev/null || true
+        rm -f "$test_file" "$part1_file" "$part2_file" "$part1_headers" "$part1_response" "$part1_stderr" "$part2_headers" "$part2_response" "$part2_stderr" "$complete_error" "$parts_json_file"
+        set -e
+        return 1
+    fi
+    rm -f "$complete_error"
+    
+    # Step 6: Verify the uploaded object
+    log "Verifying uploaded object..."
+    local downloaded_file="${TEMP_DIR}/mpu_presigned_downloaded.bin"
+    
+    if ! aws_s3 cp "s3://$TEST_BUCKET/$test_object" "$downloaded_file" 2>/dev/null; then
+        error "Failed to download completed multipart object"
+        rm -f "$test_file" "$part1_file" "$part2_file" "$downloaded_file" /tmp/part1_headers.txt /tmp/part2_headers.txt
+        set -e
+        return 1
+    fi
+    
+    # Compare file contents
+    if ! cmp "$test_file" "$downloaded_file" >/dev/null 2>&1; then
+        error "Downloaded file does not match original - multipart upload integrity failed"
+        rm -f "$test_file" "$part1_file" "$part2_file" "$downloaded_file" /tmp/part1_headers.txt /tmp/part2_headers.txt
+        set -e
+        return 1
+    fi
+    
+    log "File integrity verified - multipart upload via presigned URLs succeeded"
+    
+    # Cleanup
+    aws_s3 rm "s3://$TEST_BUCKET/$test_object" 2>/dev/null || true
+    rm -f "$test_file" "$part1_file" "$part2_file" "$downloaded_file"
+    rm -f "$part1_headers" "$part1_response" "$part1_stderr" "$part2_headers" "$part2_response" "$part2_stderr"
+    rm -f "$parts_json_file"
+    
+    set -e
+    success "MPU presigned URLs test passed"
+    return 0
+}
+
+# Test MPU presigned URL expiry validation
+test_mpu_presigned_url_expiry() {
+    log "Testing: MPU Presigned URL Expiry Validation"
+    
+    local expiry_test_object="mpu-expiry-test-$(date +%s).bin"
+    local test_file="${TEMP_DIR}/mpu_expiry_test_file.bin"
+    local upload_id=""
+    local part_size=5242880  # 5MB minimum part size for MPU
+    
+    # Create a test file for multipart upload
+    if ! dd if=/dev/urandom of="$test_file" bs="$part_size" count=1 2>/dev/null; then
+        error "MPU presigned expiry - Failed to create test file"
+        return 1
+    fi
+    
+    set +e  # Disable exit on error for this test
+    
+    # Step 1: Initiate multipart upload
+    log "Initiating multipart upload for expiry test..."
+    local create_output=$(aws_s3api create-multipart-upload \
+        --bucket "$TEST_BUCKET" \
+        --key "$expiry_test_object" 2>/dev/null)
+    
+    if [ $? -ne 0 ]; then
+        error "MPU presigned expiry - Failed to initiate multipart upload"
+        rm -f "$test_file"
+        set -e
+        return 1
+    fi
+    
+    upload_id=$(echo "$create_output" | grep -o '"UploadId": *"[^"]*"' | cut -d'"' -f4)
+    if [ -z "$upload_id" ]; then
+        error "MPU presigned expiry - Failed to extract upload ID"
+        rm -f "$test_file"
+        set -e
+        return 1
+    fi
+    
+    log "Upload ID: $upload_id"
+    
+    # Step 2: Generate presigned URL with very short expiry (1 second)
+    local boto3_script="${SCRIPT_DIR}/boto3-compatible-presigned.sh"
+    if [ ! -f "$boto3_script" ]; then
+        error "MPU presigned expiry - boto3-compatible-presigned.sh not found"
+        aws_s3api abort-multipart-upload --bucket "$TEST_BUCKET" --key "$expiry_test_object" --upload-id "$upload_id" 2>/dev/null || true
+        rm -f "$test_file"
+        set -e
+        return 1
+    fi
+    
+    log "Generating presigned URL with 1-second expiry..."
+    local script_output=$("$boto3_script" --generate-only --upload-id "$upload_id" --part-number 1 PUT "$TEST_BUCKET" "$expiry_test_object" 1 2>&1)
+    local short_expiry_url=$(echo "$script_output" | grep "^https://" | tail -1)
+    local presign_exit_code=$?
+    
+    if [ $presign_exit_code -ne 0 ] || [ -z "$short_expiry_url" ]; then
+        error "MPU presigned expiry - Failed to generate short-expiry URL: $short_expiry_url"
+        aws_s3api abort-multipart-upload --bucket "$TEST_BUCKET" --key "$expiry_test_object" --upload-id "$upload_id" 2>/dev/null || true
+        rm -f "$test_file"
+        set -e
+        return 1
+    fi
+    
+    log "Generated short-expiry URL: ${short_expiry_url:0:100}..."
+    
+    # Step 3: Wait for URL to expire
+    log "  Waiting for presigned URL to expire..."
+    sleep 2
+    
+    # Step 4: Test expired URL
+    log "Testing expired MPU presigned URL..."
+    local curl_response=$(curl -k -s -w "%{http_code}" --connect-timeout 10 --max-time 30 -X PUT --data-binary "@$test_file" "$short_expiry_url" 2>&1)
+    local curl_exit_code=$?
+    local http_code="${curl_response: -3}"
+    
+    # Debug logging for HTTP 000 responses
+    if [ "$http_code" = "000" ]; then
+        log "  Debug: curl failed for expiry test with exit code $curl_exit_code"
+        log "  Debug: short_expiry_url length: ${#short_expiry_url}"
+        log "  Debug: curl response: $curl_response"
+        log "  Debug: short_expiry_url: $short_expiry_url"
+    fi
+    
+    # Step 5: Validate response
+    if [ "$http_code" = "403" ] || [ "$http_code" = "400" ]; then
+        success "MPU presigned URL expiry - Expired URL properly rejected (HTTP $http_code)"
+    else
+        error "MPU presigned URL expiry - Expected 400/403 for expired URL, got $http_code"
+        log "Full curl response: $curl_response"
+    fi
+    
+    # Cleanup
+    aws_s3api abort-multipart-upload --bucket "$TEST_BUCKET" --key "$expiry_test_object" --upload-id "$upload_id" 2>/dev/null || true
+    rm -f "$test_file"
+    set -e
+}
+
+# Test MPU presigned URL invalid X-Amz-Date format validation
+test_mpu_presigned_invalid_date_format() {
+    log "Testing: MPU Presigned URL Invalid X-Amz-Date Format Validation"
+    
+    local invalid_date_object="mpu-invalid-date-$(date +%s).bin"
+    local test_file="${TEMP_DIR}/mpu_invalid_date_test_file.bin"
+    local upload_id=""
+    local part_size=5242880  # 5MB minimum part size for MPU
+    local test_size=1024     # 1KB for validation tests - validation should happen before processing large uploads
+    
+    # Create a small test file for validation testing
+    if ! dd if=/dev/urandom of="$test_file" bs="$test_size" count=1 2>/dev/null; then
+        error "MPU invalid date - Failed to create test file"
+        return 1
+    fi
+    
+    set +e  # Disable exit on error for this test
+    
+    # Step 1: Initiate multipart upload
+    log "Initiating multipart upload for invalid date test..."
+    local create_output=$(aws_s3api create-multipart-upload \
+        --bucket "$TEST_BUCKET" \
+        --key "$invalid_date_object" 2>/dev/null)
+    
+    if [ $? -ne 0 ]; then
+        error "MPU invalid date - Failed to initiate multipart upload"
+        rm -f "$test_file"
+        set -e
+        return 1
+    fi
+    
+    upload_id=$(echo "$create_output" | grep -o '"UploadId": *"[^"]*"' | cut -d'"' -f4)
+    if [ -z "$upload_id" ]; then
+        error "MPU invalid date - Failed to extract upload ID"
+        rm -f "$test_file"
+        set -e
+        return 1
+    fi
+    
+    log "Upload ID: $upload_id"
+    
+    # Step 2: Generate a valid presigned URL first to get the base structure
+    local boto3_script="${SCRIPT_DIR}/boto3-compatible-presigned.sh"
+    if [ ! -f "$boto3_script" ]; then
+        error "MPU invalid date - boto3-compatible-presigned.sh not found"
+        aws_s3api abort-multipart-upload --bucket "$TEST_BUCKET" --key "$invalid_date_object" --upload-id "$upload_id" 2>/dev/null || true
+        rm -f "$test_file"
+        set -e
+        return 1
+    fi
+    
+    local script_output=$("$boto3_script" --generate-only --upload-id "$upload_id" --part-number 1 PUT "$TEST_BUCKET" "$invalid_date_object" 3600 2>&1)
+    local valid_url=$(echo "$script_output" | grep "^https://" | tail -1)
+    local presign_exit_code=$?
+    
+    if [ $presign_exit_code -ne 0 ] || [ -z "$valid_url" ]; then
+        error "MPU invalid date - Failed to generate base URL: $valid_url"
+        aws_s3api abort-multipart-upload --bucket "$TEST_BUCKET" --key "$invalid_date_object" --upload-id "$upload_id" 2>/dev/null || true
+        rm -f "$test_file"
+        set -e
+        return 1
+    fi
+    
+    log "Generated base URL: ${valid_url:0:100}..."
+    log "  Debug: Full original URL: $valid_url"
+    
+    # Step 3: Test various invalid X-Amz-Date formats by manually crafting URLs
+    local base_url="${valid_url%%\?*}"
+    local query_params="${valid_url#*\?}"
+    log "  Debug: Base URL: $base_url"
+    log "  Debug: Query params: ${query_params:0:200}..."
+    
+    # Test cases for invalid X-Amz-Date formats
+    local test_cases=(
+        "invaliddate"                    # Completely invalid format
+        "2023-01-01T12:00:00Z"          # ISO format with dashes (should be compact)
+        "20230101T120000"               # Missing Z suffix
+        "20230101T120000Y"              # Wrong suffix
+        "2023010T120000Z"               # Too short
+        "202301011T120000Z"             # Too long
+        "20230230T120000Z"              # Invalid date (Feb 30)
+        "20230101T250000Z"              # Invalid hour
+        "20230101T126000Z"              # Invalid minute
+        "20230101T120060Z"              # Invalid second
+        ""                              # Empty date
+    )
+    
+    local invalid_format_count=0
+    
+    for invalid_date in "${test_cases[@]}"; do
+        # Replace X-Amz-Date parameter in the URL using the same method as regular presigned tests
+        local modified_query=$(echo "$query_params" | sed "s/X-Amz-Date=[^&]*/X-Amz-Date=$invalid_date/")
+        local test_url="$base_url?$modified_query"
+        
+        log "  Testing invalid X-Amz-Date: '$invalid_date'"
+        log "  Debug: Original URL: ${valid_url:0:150}..."
+        log "  Debug: Modified URL: ${test_url:0:150}..."
+        log "  Debug: Modified URL has X-Amz params: $(echo "$test_url" | grep -c 'X-Amz-')"
+        
+        # Test the modified URL with better timeout and connection handling
+        local curl_response=$(curl -k -s -w "%{http_code}" --connect-timeout 10 --max-time 30 -X PUT --data-binary "@$test_file" "$test_url" 2>&1)
+        local curl_exit_code=$?
+        local http_code="${curl_response: -3}"
+        
+        # Debug logging for HTTP 000 responses
+        if [ "$http_code" = "000" ]; then
+            log "  Debug: curl failed for invalid date test with exit code $curl_exit_code"
+            log "  Debug: test_url length: ${#test_url}"
+            log "  Debug: curl response: $curl_response"
+            log "  Debug: modified_query: $modified_query"
+        fi
+        
+        # Should get 400 or 403 for invalid date format
+        if [ "$http_code" = "400" ] || [ "$http_code" = "403" ]; then
+            success "MPU presigned URL validation - Invalid X-Amz-Date '$invalid_date' properly rejected (HTTP $http_code)"
+            ((invalid_format_count++))
+        else
+            error "MPU presigned URL validation - Invalid X-Amz-Date '$invalid_date' should be rejected, got HTTP $http_code"
+            log "Full response: $curl_response"
+        fi
+    done
+    
+    log "  Successfully tested $invalid_format_count invalid X-Amz-Date formats for MPU"
+    
+    # Cleanup
+    aws_s3api abort-multipart-upload --bucket "$TEST_BUCKET" --key "$invalid_date_object" --upload-id "$upload_id" 2>/dev/null || true
+    rm -f "$test_file"
+    set -e
+}
+
+# Test MPU presigned URL invalid X-Amz-Expires validation
+test_mpu_presigned_invalid_expires() {
+    log "Testing: MPU Presigned URL Invalid X-Amz-Expires Validation"
+    
+    local invalid_expires_object="mpu-invalid-expires-$(date +%s).bin"
+    local test_file="${TEMP_DIR}/mpu_invalid_expires_test_file.bin"
+    local upload_id=""
+    local part_size=5242880  # 5MB minimum part size for MPU
+    
+    # Create a test file for multipart upload
+    if ! dd if=/dev/urandom of="$test_file" bs="$part_size" count=1 2>/dev/null; then
+        error "MPU invalid expires - Failed to create test file"
+        return 1
+    fi
+    
+    set +e  # Disable exit on error for this test
+    
+    # Step 1: Initiate multipart upload
+    log "Initiating multipart upload for invalid expires test..."
+    local create_output=$(aws_s3api create-multipart-upload \
+        --bucket "$TEST_BUCKET" \
+        --key "$invalid_expires_object" 2>/dev/null)
+    
+    if [ $? -ne 0 ]; then
+        error "MPU invalid expires - Failed to initiate multipart upload"
+        rm -f "$test_file"
+        set -e
+        return 1
+    fi
+    
+    upload_id=$(echo "$create_output" | grep -o '"UploadId": *"[^"]*"' | cut -d'"' -f4)
+    if [ -z "$upload_id" ]; then
+        error "MPU invalid expires - Failed to extract upload ID"
+        rm -f "$test_file"
+        set -e
+        return 1
+    fi
+    
+    log "Upload ID: $upload_id"
+    
+    # Step 2: Generate a valid presigned URL first to get the base structure
+    local boto3_script="${SCRIPT_DIR}/boto3-compatible-presigned.sh"
+    if [ ! -f "$boto3_script" ]; then
+        error "MPU invalid expires - boto3-compatible-presigned.sh not found"
+        aws_s3api abort-multipart-upload --bucket "$TEST_BUCKET" --key "$invalid_expires_object" --upload-id "$upload_id" 2>/dev/null || true
+        rm -f "$test_file"
+        set -e
+        return 1
+    fi
+    
+    local script_output=$("$boto3_script" --generate-only --upload-id "$upload_id" --part-number 1 PUT "$TEST_BUCKET" "$invalid_expires_object" 3600 2>&1)
+    local valid_url=$(echo "$script_output" | grep "^https://" | tail -1)
+    local presign_exit_code=$?
+    
+    if [ $presign_exit_code -ne 0 ] || [ -z "$valid_url" ]; then
+        error "MPU invalid expires - Failed to generate base URL: $valid_url"
+        aws_s3api abort-multipart-upload --bucket "$TEST_BUCKET" --key "$invalid_expires_object" --upload-id "$upload_id" 2>/dev/null || true
+        rm -f "$test_file"
+        set -e
+        return 1
+    fi
+    
+    log "Generated base URL: ${valid_url:0:100}..."
+    log "  Debug: Full original URL: $valid_url"
+    
+    # Step 3: Test various invalid X-Amz-Expires values by manually crafting URLs
+    local base_url="${valid_url%%\?*}"
+    local query_params="${valid_url#*\?}"
+    log "  Debug: Base URL: $base_url"
+    log "  Debug: Query params: ${query_params:0:200}..."
+    
+    # Test cases for invalid X-Amz-Expires values
+    local test_cases=(
+        "-1"                            # Negative value
+        "0"                             # Zero value
+        "604801"                        # Over 7-day limit
+        "999999"                        # Way over limit
+        "abc"                           # Non-numeric
+        "3600.5"                        # Decimal (should be integer)
+        ""                              # Empty value
+        "3600abc"                       # Mixed numeric/text
+    )
+    
+    local invalid_expires_count=0
+    
+    for invalid_expires in "${test_cases[@]}"; do
+        # Replace X-Amz-Expires parameter in the URL
+        local modified_query=$(echo "$query_params" | sed "s/X-Amz-Expires=[^&]*/X-Amz-Expires=$invalid_expires/")
+        local test_url="$base_url?$modified_query"
+        
+        log "  Testing invalid X-Amz-Expires: '$invalid_expires'"
+        log "  Debug: Original URL: ${valid_url:0:150}..."
+        log "  Debug: Modified URL: ${test_url:0:150}..."
+        log "  Debug: Modified URL has X-Amz params: $(echo "$test_url" | grep -c 'X-Amz-')"
+        
+        # Test the modified URL with better timeout and connection handling
+        local curl_response=$(curl -k -s -w "%{http_code}" --connect-timeout 10 --max-time 30 -X PUT --data-binary "@$test_file" "$test_url" 2>&1)
+        local curl_exit_code=$?
+        local http_code="${curl_response: -3}"
+        
+        # Debug logging for HTTP 000 responses
+        if [ "$http_code" = "000" ]; then
+            log "  Debug: curl failed for invalid expires test with exit code $curl_exit_code"
+            log "  Debug: test_url length: ${#test_url}"
+            log "  Debug: curl response: $curl_response"
+            log "  Debug: modified_query: $modified_query"
+        fi
+        
+        # Should get 400 or 403 for invalid expires value
+        if [ "$http_code" = "400" ] || [ "$http_code" = "403" ]; then
+            success "MPU presigned URL validation - Invalid X-Amz-Expires '$invalid_expires' properly rejected (HTTP $http_code)"
+            ((invalid_expires_count++))
+        else
+            error "MPU presigned URL validation - Invalid X-Amz-Expires '$invalid_expires' should be rejected, got HTTP $http_code"
+            log "Full response: $curl_response"
+        fi
+    done
+    
+    log "  Successfully tested $invalid_expires_count invalid X-Amz-Expires values for MPU"
+    
+    # Cleanup
+    aws_s3api abort-multipart-upload --bucket "$TEST_BUCKET" --key "$invalid_expires_object" --upload-id "$upload_id" 2>/dev/null || true
+    rm -f "$test_file"
+    set -e
+}
+
 # Main test execution
 run_tests() {
     local test_filter="${1:-all}"
@@ -4604,6 +5311,10 @@ run_tests() {
             test_presigned_url_expiry || true
             test_presigned_invalid_date_format || true
             test_presigned_invalid_expires || true
+            test_mpu_presigned_urls || true
+            test_mpu_presigned_url_expiry || true
+            test_mpu_presigned_invalid_date_format || true
+            test_mpu_presigned_invalid_expires || true
             
             # Clean up test objects before deleting bucket
             log "Cleaning up presigned URL test objects before bucket deletion..."
@@ -4713,6 +5424,10 @@ run_tests() {
             test_presigned_url_expiry || true
             test_presigned_invalid_date_format || true
             test_presigned_invalid_expires || true
+            test_mpu_presigned_urls || true
+            test_mpu_presigned_url_expiry || true
+            test_mpu_presigned_invalid_date_format || true
+            test_mpu_presigned_invalid_expires || true
             
             # Clean up any test objects before deleting bucket
             log "Cleaning up ACL test objects before bucket deletion..."

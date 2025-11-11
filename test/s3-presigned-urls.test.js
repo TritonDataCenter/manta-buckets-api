@@ -9,7 +9,6 @@
  */
 
 ///--- S3 Presigned URL Utility Tests
-// Using native nodeunit exports to avoid s3-test-helper module.parent issues
 
 exports['S3 presigned URL parameter detection'] = function (t) {
     // Test basic parameter detection logic
@@ -63,6 +62,80 @@ exports['S3 date format validation'] = function (t) {
     t.ok(isValidS3Date(validDate), 'should validate correct S3 date format');
     t.ok(!isValidS3Date(invalidDate), 'should reject invalid date format');
     t.ok(!isValidS3Date(''), 'should reject empty date');
+
+    t.done();
+};
+
+exports['S3 presigned URL MPU operation detection'] = function (t) {
+    // Test multipart upload part detection in presigned URLs
+    var baseQuery = {
+        'X-Amz-Algorithm': 'AWS4-HMAC-SHA256',
+        'X-Amz-Credential': 'AKIATEST12345/20250926/us-east-1/s3/aws4_request',
+        'X-Amz-Date': '20250926T120000Z',
+        'X-Amz-Expires': '3600',
+        'X-Amz-SignedHeaders': 'host',
+        'X-Amz-Signature': 'abcdef123456789'
+    };
+
+    // Regular PUT operation
+    var regularQuery = Object.assign({}, baseQuery);
+
+    // MPU part upload query
+    var mpuQuery = Object.assign({}, baseQuery, {
+        'uploadId': 'upload-123',
+        'partNumber': '1'
+    });
+
+    function detectS3Operation(query, method) {
+        if (query.uploadId && query.partNumber && method === 'PUT') {
+            return ('UploadPart');
+        } else if (method === 'PUT') {
+            return ('CreateBucketObject');
+        } else if (method === 'GET') {
+            return ('GetBucketObject');
+        }
+        return ('Unknown');
+    }
+
+    t.equal(detectS3Operation(regularQuery, 'PUT'), 'CreateBucketObject',
+            'should detect regular PUT operation');
+    t.equal(detectS3Operation(mpuQuery, 'PUT'), 'UploadPart',
+            'should detect MPU part upload operation');
+    t.equal(detectS3Operation(mpuQuery, 'GET'), 'GetBucketObject',
+            'should not detect MPU operation for GET method');
+
+    t.done();
+};
+
+exports['S3 presigned URL MPU parameter validation'] = function (t) {
+    // Test MPU parameter validation
+    function validateMPUParams(uploadId, partNumber) {
+        if (!uploadId || typeof (uploadId) !== 'string') {
+            return (false);
+        }
+
+        var partNum = parseInt(partNumber, 10);
+        if (isNaN(partNum) || partNum < 1 || partNum > 10000) {
+            return (false);
+        }
+
+        return (true);
+    }
+
+    t.ok(validateMPUParams('upload-123', '1'),
+         'should validate valid MPU params');
+    t.ok(validateMPUParams('upload-456', '5000'),
+         'should validate mid-range part number');
+    t.ok(validateMPUParams('upload-789', '10000'),
+         'should validate max part number');
+
+    t.ok(!validateMPUParams('', '1'), 'should reject empty uploadId');
+    t.ok(!validateMPUParams('upload-123', '0'), 'should reject part number 0');
+    t.ok(!validateMPUParams('upload-123', '10001'),
+         'should reject part number > 10000');
+    t.ok(!validateMPUParams('upload-123', 'abc'),
+         'should reject non-numeric part number');
+    t.ok(!validateMPUParams(null, '1'), 'should reject null uploadId');
 
     t.done();
 };

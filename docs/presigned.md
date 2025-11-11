@@ -102,6 +102,26 @@ aws s3 presign s3://bucket/image.jpg \
     --content-type "image/jpeg"
 ```
 
+### Multipart Upload Parts
+
+```bash
+# Presigned URLs work with multipart upload parts
+# First, initiate multipart upload to get uploadId
+aws s3api create-multipart-upload \
+    --endpoint-url https://your-manta-endpoint \
+    --bucket test-bucket \
+    --key large-file.bin
+
+# Generate presigned URL for uploading a specific part
+# Note: uploadId and partNumber are automatically included in signature
+aws s3 presign s3://test-bucket/large-file.bin?uploadId=upload-123&partNumber=1 \
+    --endpoint-url https://your-manta-endpoint \
+    --expires-in 3600
+
+# Use the presigned URL to upload the part
+curl -X PUT -T part1.bin "https://your-manta-endpoint/test-bucket/large-file.bin?uploadId=upload-123&partNumber=1&X-Amz-Algorithm=..."
+```
+
 ## Implementation Details
 
 ### Signature Validation Process
@@ -119,6 +139,7 @@ aws s3 presign s3://bucket/image.jpg \
 | **GetObject** | GET | Download files | File sharing, web content delivery |
 | **PutObject** | PUT | Upload files | Web form uploads, direct browser uploads |
 | **HeadObject** | HEAD | Get metadata | File existence checks, size validation |
+| **UploadPart** | PUT | Upload multipart parts | Large file uploads via multipart upload |
 
 ## Troubleshooting Presigned URLs
 

@@ -12,10 +12,33 @@ AWS_REGION=${AWS_REGION:-"us-east-1"}
 
 # Parse command line arguments
 GENERATE_ONLY=false
-if [ "${1:-}" = "--generate-only" ] || [ "${1:-}" = "-g" ]; then
-    GENERATE_ONLY=true
-    shift
-fi
+UPLOAD_ID=""
+PART_NUMBER=""
+
+# Parse flags first
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --generate-only|-g)
+            GENERATE_ONLY=true
+            shift
+            ;;
+        --upload-id)
+            UPLOAD_ID="$2"
+            shift 2
+            ;;
+        --part-number)
+            PART_NUMBER="$2"
+            shift 2
+            ;;
+        -*)
+            echo "Unknown option $1" >&2
+            exit 1
+            ;;
+        *)
+            break
+            ;;
+    esac
+done
 
 METHOD="${1:-GET}"  # GET or PUT
 BUCKET="${2:-test-bucket}"
@@ -24,10 +47,12 @@ EXPIRES="${4:-300}"  # 5 minutes default
 
 # Show usage if help requested
 if [ "${1:-}" = "-h" ] || [ "${1:-}" = "--help" ]; then
-    echo "Usage: $0 [--generate-only|-g] [METHOD] [BUCKET] [OBJECT] [EXPIRES]"
+    echo "Usage: $0 [--generate-only|-g] [--upload-id ID] [--part-number NUM] [METHOD] [BUCKET] [OBJECT] [EXPIRES]"
     echo ""
     echo "Flags:"
     echo "  --generate-only, -g  - Only generate URL, don't test it"
+    echo "  --upload-id ID       - Multipart upload ID (for MPU part uploads)"
+    echo "  --part-number NUM    - Part number (for MPU part uploads, 1-10000)"
     echo ""
     echo "Arguments:"
     echo "  METHOD   - HTTP method (GET or PUT), default: GET"
@@ -46,6 +71,8 @@ if [ "${1:-}" = "-h" ] || [ "${1:-}" = "--help" ]; then
     echo "  $0 PUT test-bucket upload.txt 300"
     echo "  $0 --generate-only GET my-bucket my-file.txt 600"
     echo "  $0 -g PUT test-bucket upload.txt 300"
+    echo "  $0 --upload-id abc123 --part-number 1 PUT bucket file.bin 3600"
+    echo "  $0 -g --upload-id abc123 --part-number 2 PUT bucket file.bin 3600"
     exit 0
 fi
 
@@ -95,8 +122,9 @@ ENCODED_CREDENTIAL=$(urlencode "$CREDENTIAL")
 ALGORITHM="AWS4-HMAC-SHA256"
 ENCODED_ALGORITHM=$(urlencode "$ALGORITHM")
 
-# Build query parameters array for sorting (boto3 requirement)
-declare -a QUERY_PARAMS=(
+# Build query parameters in the order Mahi expects
+# Mahi expects X-Amz parameters first, then other parameters alphabetically
+declare -a X_AMZ_PARAMS=(
     "X-Amz-Algorithm=${ENCODED_ALGORITHM}"
     "X-Amz-Credential=${ENCODED_CREDENTIAL}" 
     "X-Amz-Date=${TIMESTAMP}"
@@ -104,9 +132,26 @@ declare -a QUERY_PARAMS=(
     "X-Amz-SignedHeaders=${SIGNED_HEADERS}"
 )
 
-# Sort query parameters alphabetically (boto3 does this automatically)
-IFS=$'\n' SORTED_PARAMS=($(sort <<<"${QUERY_PARAMS[*]}"))
+# Add MPU parameters (these come after X-Amz parameters in Mahi's ordering)
+declare -a MPU_PARAMS=()
+if [ -n "$PART_NUMBER" ]; then
+    MPU_PARAMS+=("partNumber=${PART_NUMBER}")
+fi
+
+if [ -n "$UPLOAD_ID" ]; then
+    MPU_PARAMS+=("uploadId=${UPLOAD_ID}")
+fi
+
+# Sort X-Amz parameters alphabetically
+IFS=$'\n' SORTED_X_AMZ=($(sort <<<"${X_AMZ_PARAMS[*]}"))
 unset IFS
+
+# Sort MPU parameters alphabetically
+IFS=$'\n' SORTED_MPU=($(sort <<<"${MPU_PARAMS[*]}"))
+unset IFS
+
+# Combine: X-Amz parameters first, then MPU parameters
+SORTED_PARAMS=("${SORTED_X_AMZ[@]}" "${SORTED_MPU[@]}")
 
 # Join sorted parameters
 CANONICAL_QUERYSTRING=""

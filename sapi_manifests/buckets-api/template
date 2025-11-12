@@ -25,6 +25,11 @@
   },
   "maxObjectCopies": 6,
   "maxRequestAge": 600,
+  "enableMPU": true,
+  "multipartUpload": {
+      "prefixDirLen": 1,
+      "useNativeV2Commit": true
+  },
   "numWorkers": 4,
   "port": 80,
   "auth": {
@@ -84,7 +89,7 @@
           will double the timeout until it hits maxTimeout.
         }}
         "timeout": 2000,
-        "maxTimeout": 10000,
+        "maxTimeout": 15000,
         {{!
           Number of retries until the backend is declared "dead". 3-5 seems to
           work well in SDC.

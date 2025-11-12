@@ -1,0 +1,24 @@
+{
+    "name": "manta-buckets-api/php-tests",
+    "description": "PHP S3 compatibility tests for Manta Buckets API using AWS SDK for PHP",
+    "type": "project",
+    "require": {
+        "php": ">=7.4",
+        "aws/aws-sdk-php": "^3.0",
+        "ext-curl": "*",
+        "ext-json": "*",
+        "ext-mbstring": "*",
+        "ext-openssl": "*"
+    },
+    "scripts": {
+        "test": "php php-s3-tests.php --help",
+        "test-local": "php php-s3-tests.php --endpoint-url https://localhost:8080 --bucket test-bucket --insecure",
+        "test-full": "php php-s3-tests.php --endpoint-url https://localhost:8080 --bucket test-bucket --insecure --cleanup"
+    },
+    "config": {
+        "optimize-autoloader": true,
+        "sort-packages": true
+    },
+    "minimum-stability": "stable",
+    "prefer-stable": true
+}

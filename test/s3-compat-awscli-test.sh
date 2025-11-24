@@ -17,7 +17,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # Configuration variables (can be overridden via environment)
 AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID:-"AKIA123456789EXAMPLE"}
 AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY:-"wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"}
-S3_ENDPOINT=${S3_ENDPOINT:-"https://localhost:8080"}
+S3_ENDPOINT=${S3_ENDPOINT:-"http://localhost:8080"}
 AWS_REGION=${AWS_REGION:-"us-east-1"}
 MANTA_USER=${MANTA_USER:-""}
 
@@ -259,7 +259,7 @@ setup() {
     log "  Test Object: $TEST_OBJECT"
 }
 
-# Cleanup test environment
+# Cleanup test environment (full cleanup including IAM)
 cleanup() {
     log "Cleaning up test environment..."
     
@@ -276,6 +276,30 @@ cleanup() {
     
     # Clean up IAM roles and policies created during testing
     cleanup_iam_resources
+    
+    # Clean up any leaked credentials
+    cleanup_credentials
+    
+    # Remove temp directory
+    rm -rf "$TEMP_DIR"
+    
+    set -e  # Re-enable exit on error
+}
+
+# Basic cleanup without IAM resources (for CORS, basic tests, etc.)
+cleanup_basic() {
+    log "Cleaning up basic test environment (skipping IAM cleanup)..."
+    
+    set +e  # Disable exit on error for cleanup
+    
+    # Try to delete test objects and bucket
+    if aws_s3api head-bucket --bucket "$TEST_BUCKET" 2>/dev/null; then
+        log "Deleting test objects from bucket $TEST_BUCKET..."
+        aws_s3 rm "s3://$TEST_BUCKET" --recursive 2>/dev/null || true
+        
+        log "Deleting test bucket $TEST_BUCKET..."
+        aws_s3api delete-bucket --bucket "$TEST_BUCKET" 2>/dev/null || true
+    fi
     
     # Clean up any leaked credentials
     cleanup_credentials
@@ -10913,7 +10937,7 @@ main() {
             echo "Environment variables:"
             echo "  AWS_ACCESS_KEY_ID     - AWS access key (default: AKIA123456789EXAMPLE)"
             echo "  AWS_SECRET_ACCESS_KEY - AWS secret key (default: wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY)"
-            echo "  S3_ENDPOINT          - S3 endpoint URL (default: https://localhost:8080)"
+            echo "  S3_ENDPOINT          - S3 endpoint URL (default: http://localhost:8080)"
             echo "  AWS_REGION           - AWS region (default: us-east-1)"
             echo "  MANTA_USER           - Manta account name (required for anonymous access tests)"
             echo
@@ -10935,7 +10959,7 @@ main() {
             echo "  $0 sts                # Run only STS (Security Token Service) tests"
             echo "  $0 iam-sts            # Run comprehensive IAM + STS integration tests"
             echo "  AWS_ACCESS_KEY_ID=mykey AWS_SECRET_ACCESS_KEY=mysecret $0 mpu"
-            echo "  S3_ENDPOINT=https://manta.example.com:8080 $0 basic"
+            echo "  S3_ENDPOINT=http://manta.example.com:8080 $0 basic"
             echo
             echo "Note: This script requires AWS CLI to be installed and configured."
             exit 0
@@ -10953,8 +10977,20 @@ main() {
             ;;
     esac
     
-    # Set up trap for cleanup
-    trap cleanup EXIT
+    # Set up trap for cleanup - conditional based on test type
+    case "$test_type" in
+        "iam"|"sts"|"iam-sts"|"sts-iam"|"all")
+            trap cleanup EXIT
+            ;;
+        "cors")
+            # CORS tests manage their own cleanup and keep resources for manual testing
+            log "CORS tests will manage their own cleanup - no automatic cleanup on exit"
+            ;;
+        *)
+            # For other test types, only clean up basic resources, not IAM
+            trap cleanup_basic EXIT
+            ;;
+    esac
     
     # Run the tests
     setup

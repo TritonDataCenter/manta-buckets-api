@@ -1413,6 +1413,1188 @@ S3 operations map to specific authorization actions that must be granted in poli
 "CAN getobject docs/*.pdf"            // Only PDF files
 ```
 
+## STS IAM Implementation
+
+The manta-buckets-api provides AWS STS (Security Token Service) IAM compatibility, enabling temporary credential workflows for S3 operations. This implementation bridges AWS IAM concepts with Manta's authentication system.
+
+### STS IAM Architecture
+
+```mermaid
+sequenceDiagram
+    participant CLI as AWS CLI
+    participant API as manta-buckets-api
+    participant Mahi as Mahi Auth Service  
+    participant Redis as Redis Store
+    participant UFDS as UFDS
+    participant Buckets as Manta Buckets
+
+    Note over CLI,Buckets: STS AssumeRole Flow with Trust Policy Validation
+    CLI->>API: AssumeRole(RoleArn, SessionName, ExternalId?)
+    API->>Mahi: POST /sts/assume-role
+    Mahi->>Redis: GET /role/:uuid
+    Redis-->>Mahi: Role + Trust Policy Document
+    
+    Note over Mahi: Trust Policy Validation Engine
+    Mahi->>Mahi: Parse Trust Policy JSON
+    Mahi->>Mahi: Validate Principal ARN Match
+    Mahi->>Mahi: Evaluate Conditions (StringEquals, IpAddress, etc.)
+    Mahi->>Mahi: Check Action Authorization (sts:AssumeRole)
+    
+    alt Trust Policy Validation Passes
+        Mahi->>UFDS: Generate Temporary Credentials
+        UFDS-->>Mahi: Access Key + Secret (tdc_ prefix)
+        Mahi->>Mahi: Generate JWT Session Token (HMAC-SHA256)
+        Mahi->>Redis: Store Session + Role Mapping
+        Mahi-->>API: Credentials + JWT Session Token
+        API-->>CLI: STS XML Response
+    else Trust Policy Validation Fails
+        Mahi-->>API: 403 AccessDenied
+        API-->>CLI: Error: Access denied by trust policy
+    end
+
+    Note over CLI,Buckets: S3 Operations with JWT Session Tokens
+    CLI->>API: S3 Request (AccessKey + SecretKey + SessionToken)
+    API->>API: Extract JWT Session Token from Headers
+    API->>Mahi: Validate JWT + Load Role Permissions
+    
+    Note over Mahi: JWT Token Validation
+    Mahi->>Mahi: Verify HMAC-SHA256 Signature
+    Mahi->>Mahi: Check Token Expiration (exp claim)
+    Mahi->>Mahi: Validate Issuer/Audience (iss/aud claims)
+    Mahi->>Redis: GET Role Permission Policies
+    Redis-->>Mahi: S3 Permission Policies
+    
+    Mahi-->>API: Auth Context + S3 Permissions
+    API->>API: Evaluate S3 Action + Resource Match
+    API->>Buckets: S3 Operation (authorized)
+    Buckets-->>API: Operation Result
+    API-->>CLI: S3 Response
+```
+
+### AWS vs Manta STS IAM Comparison
+
+| Component | AWS STS IAM | Manta STS IAM |
+|-----------|-------------|---------------|
+| **Role Storage** | DynamoDB/Internal | Redis with `/role/:uuid` keys |
+| **Policy Storage** | IAM Service | Redis with `/role-permissions/:uuid` keys |
+| **Session Management** | AWS STS | Redis with `/session-token/:token` keys |
+| **Credential Format** | AWS Access Keys | TRITON-2513 format (`tdc_` prefix) |
+| **Principal Support** | Full ARN support | Complete ARN support (aws/manta/triton) |
+| **Trust Policies** | Rich policy language | Complete condition evaluation engine |
+| **Session Tokens** | JWT-based | JWT with HMAC-SHA256 + key rotation |
+| **Condition Operators** | Full set | StringEquals, IpAddress, DateGreaterThan, Bool, etc. |
+| **External ID** | Supported | Fully supported with StringEquals conditions |
+| **Time-based Access** | Supported | Fully supported with Date conditions |
+| **IP Restrictions** | Supported | Fully supported with IpAddress conditions |
+| **Expiration** | AWS managed | Auto-expiration with JWT exp claim |
+
+### IAM Operations
+
+The system implements core AWS IAM operations for role and policy management:
+
+#### Role Management
+- **CreateRole** - Creates IAM role with trust policy
+  ```bash
+  aws iam create-role --role-name MyRole --assume-role-policy-document file://trust.json
+  ```
+
+- **DeleteRole** - Removes IAM role
+  ```bash
+  aws iam delete-role --role-name MyRole
+  ```
+
+- **GetRole** - Retrieves role metadata (excludes permission policies per AWS standard)
+  ```bash
+  aws iam get-role --role-name MyRole
+  ```
+
+- **ListRoles** - Lists all roles in account
+  ```bash
+  aws iam list-roles
+  ```
+
+#### Permission Policy Management  
+- **PutRolePolicy** - Attaches inline policy to role
+  ```bash
+  aws iam put-role-policy --role-name MyRole --policy-name S3Access --policy-document file://policy.json
+  ```
+
+- **DeleteRolePolicy** - Removes inline policy from role
+  ```bash
+  aws iam delete-role-policy --role-name MyRole --policy-name S3Access
+  ```
+
+- **ListRolePolicies** - Lists policy names attached to role
+  ```bash
+  aws iam list-role-policies --role-name MyRole
+  ```
+
+- **GetRolePolicy** - Retrieves specific policy document
+  ```bash
+  aws iam get-role-policy --role-name MyRole --policy-name S3Access
+  ```
+
+### STS Operations
+
+#### AssumeRole
+Generates temporary credentials for role-based access:
+```bash
+aws sts assume-role --role-arn arn:aws:iam::123456789012:role/MyRole --role-session-name session1
+```
+
+**Response Structure:**
+```json
+{
+  "Credentials": {
+    "AccessKeyId": "tdc_SU4xWXL-HzrMIDM_A8GH94sl-uc-aX8mqsEMiK4JSVdAGyjH",
+    "SecretAccessKey": "tdc_9k3jF8mN2pL5qR7sT1vY6zA8bC4eG7iJ0mP3rU5xW9yB2dF",
+    "SessionToken": "eyJ1dWlkIjoiYWJjZC0xMjM0LWVmZ2gtNTY3OCIsImV4cGlyZXMiOjE2OTg0NTM2MDB9",
+    "Expiration": "2023-10-28T10:00:00Z"
+  },
+  "AssumedRoleUser": {
+    "AssumedRoleId": "AROA123EXAMPLE123:session1",
+    "Arn": "arn:aws:sts::123456789012:assumed-role/MyRole/session1"
+  }
+}
+```
+
+### Session Token Structure
+
+Session tokens use Base64-encoded JSON (not JWT):
+```json
+{
+  "uuid": "abcd-1234-efgh-5678",
+  "expires": 1698453600,
+  "sessionName": "session1",
+  "roleArn": "arn:aws:iam::123456789012:role/MyRole"
+}
+```
+
+### STS IAM Implementation in Manta S3
+
+Manta S3 provides a complete STS IAM implementation that enables temporary credential workflows and role-based access control for S3 operations.
+
+#### Understanding Core STS IAM Concepts
+
+##### What is a Principal?
+
+A **Principal** is an entity that can make requests to Manta S3 resources. Think of it as "who is making the request."
+
+**Principal vs User vs Role:**
+
+| Concept | Description | Lifetime | Example |
+|---------|-------------|----------|---------|
+| **User** | Permanent identity with long-term access keys | Permanent until deleted | `alice` - a developer account |
+| **Role** | Temporary identity that can be "assumed" | Temporary (1 hour default) | `DeploymentRole` - for deployments only |
+| **Principal** | Generic term for any entity (user, role, service) in policies | Defined in policy | Used in trust policy Principal field |
+
+##### Why Use STS Instead of Direct User Access?
+
+**Traditional Approach (Direct User Access):**
+```bash
+# Alice uses her permanent credentials
+AWS_ACCESS_KEY_ID=EXAMPLE-ACCESS-KEY-ID
+AWS_SECRET_ACCESS_KEY=ExampleSecretAccessKey1234567890
+
+# Alice can access everything her user account allows
+aws s3 ls --endpoint-url https://manta.example.com
+aws s3 cp file.txt s3://production-data/ --endpoint-url https://manta.example.com
+```
+
+**Problems:**
+- Credentials don't expire (security risk)
+- Hard to audit specific operations
+- Difficult to limit permissions per task
+
+**STS Approach (Role-Based Access):**
+```bash
+# Step 1: Alice assumes a specific role
+aws sts assume-role \
+  --role-arn arn:manta:iam::123456789012:role/ReadOnlyAccess \
+  --role-session-name alice-data-analysis \
+  --endpoint-url https://manta.example.com
+
+# Step 2: Get temporary credentials (expire in 1 hour)
+AWS_ACCESS_KEY_ID=EXAMPLE-TEMP-ACCESS-KEY-ID
+AWS_SECRET_ACCESS_KEY=ExampleTempSecretKey7890123456
+AWS_SESSION_TOKEN=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1dWlkIjoiZXhhbXBsZS0xMjM0LWVmZ2gtNTY3OCIsInJvbGVBcm4iOiJhcm46bWFudGE6aWFtOjoxMjM0NTY3ODkwMTI6cm9sZS9SZWFkT25seUFjY2VzcyIsInNlc3Npb25OYW1lIjoiYWxpY2UtZGF0YS1hbmFseXNpcyIsInRva2VuVHlwZSI6InN0cy1zZXNzaW9uIiwidG9rZW5WZXJzaW9uIjoiMS4xIiwia2V5SWQiOiJrZXktMjAyNTAxMjAtYTFiMmMzZDQiLCJpc3MiOiJtYW50YS1tYWhpIiwiYXVkIjoibWFudGEtczMiLCJpYXQiOjE3MDUzMTU4MDAsImV4cCI6MTcwNTMxOTQwMCwibmJmIjoxNzA1MzE1ODAwfQ.ExampleSignatureHash1234567890
+
+# Step 3: Use limited permissions
+aws s3 ls s3://analytics-data/ --endpoint-url https://manta.example.com  # ✅ Allowed
+aws s3 cp s3://analytics-data/report.csv ./ --endpoint-url https://manta.example.com  # ✅ Allowed
+aws s3 rm s3://production-data/critical.db --endpoint-url https://manta.example.com  # ❌ Denied
+```
+
+**Benefits:**
+- Credentials auto-expire (default 1 hour)
+- Granular permissions per role
+- Complete audit trail
+- Secure credential sharing
+
+#### Manta ARN Format and Construction
+
+##### ARN Structure in Manta S3
+
+Amazon Resource Names (ARNs) in Manta follow AWS format but with important differences:
+
+**General Format:**
+```
+arn:partition:service:region:account-id:resource-type/resource-name
+```
+
+##### Supported Partitions
+
+| Partition | Purpose | Example |
+|-----------|---------|---------|
+| `aws` | AWS compatibility | `arn:aws:iam::123456789012:user/alice` |
+| `manta` | Manta native | `arn:manta:iam::123456789012:user/alice` |
+| `triton` | Triton compatibility | `arn:triton:iam::123456789012:user/alice` |
+
+**All three partitions work identically** - choose based on your preference and migration needs.
+
+##### IAM Resource ARNs
+
+**Format:** `arn:partition:iam::account-id:resource-type/resource-name`
+
+**Key Points:**
+- **No region field** (empty between colons: `iam::account`)
+- **Account ID required** (your 12-digit Manta account number)
+- **Resource type** can be `user`, `role`, or `root`
+
+**Examples:**
+```bash
+# User ARNs
+arn:manta:iam::123456789012:user/alice
+arn:manta:iam::123456789012:user/bob-developer  
+arn:manta:iam::123456789012:user/service-account
+arn:manta:iam::123456789012:user/github-runner
+
+# Role ARNs
+arn:manta:iam::123456789012:role/S3ReadOnly
+arn:manta:iam::123456789012:role/DeploymentRole
+arn:manta:iam::123456789012:role/ProductionAccess
+
+# Root ARN (account owner)
+arn:manta:iam::123456789012:root
+```
+
+##### S3 Resource ARNs
+
+**Format:** `arn:partition:s3:::bucket-name[/object-path]`
+
+**Key Points:**
+- **No region field at all** (three colons after s3: `s3:::bucket`)
+- **No account field** (buckets are globally unique)
+- **Object paths** support wildcards
+
+**Examples:**
+```bash
+# Bucket ARNs
+arn:manta:s3:::my-application-bucket
+arn:manta:s3:::dev-environment-data
+arn:manta:s3:::production-backups
+
+# Object ARNs  
+arn:manta:s3:::my-app/config/settings.json
+arn:manta:s3:::user-data/alice/documents/report.pdf
+arn:manta:s3:::logs/2024/01/15/application.log
+
+# Wildcard patterns
+arn:manta:s3:::my-app/*                    # All objects in bucket
+arn:manta:s3:::my-app/config/*             # All config files
+arn:manta:s3:::user-data/*/profile.json    # All user profiles
+arn:manta:s3:::logs/2024/*/*               # All 2024 logs
+arn:manta:s3:::images/*.jpg                # All JPEG images
+```
+
+##### ARN Construction Rules
+
+**Getting Your Account ID:**
+```bash
+# Method 1: Check caller identity
+aws sts get-caller-identity --endpoint-url https://manta.example.com
+
+# Response shows your account ID
+{
+  "UserId": "example-1234-efgh-5678",
+  "Account": "123456789012",
+  "Arn": "arn:manta:iam::123456789012:user/alice"
+}
+```
+
+**Building ARNs:**
+```bash
+# Set your account ID
+ACCOUNT_ID="123456789012"
+
+# Build user ARNs
+USER_ALICE="arn:manta:iam::${ACCOUNT_ID}:user/alice"
+USER_BOB="arn:manta:iam::${ACCOUNT_ID}:user/bob"
+
+# Build role ARNs  
+ROLE_DEPLOY="arn:manta:iam::${ACCOUNT_ID}:role/DeploymentRole"
+ROLE_READONLY="arn:manta:iam::${ACCOUNT_ID}:role/ReadOnlyAccess"
+
+# Build bucket ARNs
+BUCKET_APP="arn:manta:s3:::my-application"
+OBJECTS_APP="arn:manta:s3:::my-application/*"
+```
+
+#### Trust Policies (Who Can Assume Roles)
+
+Trust policies control **who can assume a role** and **under what conditions**.
+
+##### Basic Trust Policy Structure
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [{
+    "Effect": "Allow",
+    "Principal": {
+      "AWS": "arn:manta:iam::123456789012:user/alice"
+    },
+    "Action": "sts:AssumeRole"
+  }]
+}
+```
+
+**Translation:** "Allow user alice to assume this role"
+
+##### Principal Types in Trust Policies
+
+**1. User Principals**
+
+Single user:
+```json
+{
+  "Principal": {
+    "AWS": "arn:manta:iam::123456789012:user/alice"
+  }
+}
+```
+
+Multiple users:
+```json
+{
+  "Principal": {
+    "AWS": [
+      "arn:manta:iam::123456789012:user/alice",
+      "arn:manta:iam::123456789012:user/bob",
+      "arn:manta:iam::123456789012:user/charlie"
+    ]
+  }
+}
+```
+
+**2. Role Principals (Role Chaining)**
+
+```json
+{
+  "Principal": {
+    "AWS": "arn:manta:iam::123456789012:role/BaseRole"
+  }
+}
+```
+
+**Use Case:** One role assumes another role for escalated permissions.
+
+**3. Root Principal (Account Owner)**
+
+```json
+{
+  "Principal": {
+    "AWS": "arn:manta:iam::123456789012:root"
+  }
+}
+```
+
+**Use Case:** Administrative access, emergency scenarios.
+
+**4. Wildcard Principal**
+
+```json
+{
+  "Principal": {"AWS": "*"}
+}
+```
+
+**Use Case:** Public access (always use with strict conditions).
+
+##### Trust Policy Conditions (Fully Supported)
+
+**Supported Condition Operators:**
+
+| Operator | Description | Example |
+|----------|-------------|---------|
+| `StringEquals` | Exact string match | External ID validation |
+| `StringNotEquals` | String inequality | Exclude specific values |
+| `StringLike` | Wildcard patterns (* ?) | Session name patterns |
+| `StringNotLike` | Negative wildcard | Exclude patterns |
+| `Bool` | Boolean comparison | MFA requirements |
+| `DateGreaterThan` | After timestamp | Business hours only |
+| `DateLessThan` | Before timestamp | Time-limited access |
+| `IpAddress` | IP/CIDR matching | Office network only |
+| `NotIpAddress` | IP exclusion | Block specific IPs |
+
+**Available Context Keys:**
+
+| Context Key | Description | Example Value |
+|-------------|-------------|---------------|
+| `aws:SourceIp` | Client IP address | "192.168.1.100" |
+| `aws:username` | Username | "alice" |
+| `aws:userid` | User UUID | "example-1234-efgh-5678" |
+| `aws:RequestTime` | Request timestamp | "2024-01-15T10:30:00Z" |
+| `sts:ExternalId` | External identifier | "github-actions-12345" |
+| `aws:MultiFactorAuthPresent` | MFA presence | "true" / "false" |
+
+#### Complete STS IAM Examples
+
+##### Example 1: Development Team Role
+
+**Trust Policy:**
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [{
+    "Effect": "Allow",
+    "Principal": {
+      "AWS": [
+        "arn:manta:iam::123456789012:user/alice",
+        "arn:manta:iam::123456789012:user/bob",
+        "arn:manta:iam::123456789012:user/charlie"
+      ]
+    },
+    "Action": "sts:AssumeRole"
+  }]
+}
+```
+
+**Permission Policy:**
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": "s3:*",
+      "Resource": [
+        "arn:manta:s3:::dev-*",
+        "arn:manta:s3:::dev-*/*"
+      ]
+    },
+    {
+      "Effect": "Allow",
+      "Action": ["s3:GetObject", "s3:ListBucket"],
+      "Resource": [
+        "arn:manta:s3:::prod-data",
+        "arn:manta:s3:::prod-data/*"
+      ]
+    }
+  ]
+}
+```
+
+**Creating the Role:**
+```bash
+# Step 1: Create role with trust policy
+aws iam create-role --role-name DevelopmentAccess \
+  --assume-role-policy-document '{
+    "Version": "2012-10-17",
+    "Statement": [{
+      "Effect": "Allow",
+      "Principal": {
+        "AWS": [
+          "arn:manta:iam::123456789012:user/alice",
+          "arn:manta:iam::123456789012:user/bob",
+          "arn:manta:iam::123456789012:user/charlie"
+        ]
+      },
+      "Action": "sts:AssumeRole"
+    }]
+  }' --endpoint-url https://manta.example.com
+
+# Step 2: Attach permission policy
+aws iam put-role-policy --role-name DevelopmentAccess \
+  --policy-name S3DevAccess --policy-document '{
+    "Version": "2012-10-17",
+    "Statement": [
+      {
+        "Effect": "Allow",
+        "Action": "s3:*",
+        "Resource": [
+          "arn:manta:s3:::dev-*",
+          "arn:manta:s3:::dev-*/*"
+        ]
+      },
+      {
+        "Effect": "Allow",
+        "Action": ["s3:GetObject", "s3:ListBucket"],
+        "Resource": [
+          "arn:manta:s3:::prod-data",
+          "arn:manta:s3:::prod-data/*"
+        ]
+      }
+    ]
+  }' --endpoint-url https://manta.example.com
+```
+
+**Using the Role:**
+```bash
+# Alice assumes the role
+CREDS=$(aws sts assume-role \
+  --role-arn arn:manta:iam::123456789012:role/DevelopmentAccess \
+  --role-session-name alice-dev-work \
+  --endpoint-url https://manta.example.com)
+
+# Extract credentials from response
+export AWS_ACCESS_KEY_ID=$(echo $CREDS | jq -r '.Credentials.AccessKeyId')
+export AWS_SECRET_ACCESS_KEY=$(echo $CREDS | jq -r '.Credentials.SecretAccessKey')
+export AWS_SESSION_TOKEN=$(echo $CREDS | jq -r '.Credentials.SessionToken')
+
+# Now Alice can use S3 with role permissions
+aws s3 ls s3://dev-project/ --endpoint-url https://manta.example.com      # ✅ Full access
+aws s3 cp file.txt s3://dev-project/ --endpoint-url https://manta.example.com  # ✅ Upload allowed
+aws s3 ls s3://prod-data/ --endpoint-url https://manta.example.com        # ✅ Read-only access
+aws s3 rm s3://prod-data/critical.db --endpoint-url https://manta.example.com  # ❌ Delete denied
+```
+
+##### Example 2: CI/CD with External ID Security
+
+**Trust Policy with External ID:**
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [{
+    "Effect": "Allow",
+    "Principal": {
+      "AWS": "arn:manta:iam::123456789012:user/github-runner"
+    },
+    "Action": "sts:AssumeRole",
+    "Condition": {
+      "StringEquals": {
+        "sts:ExternalId": "myproject-deployment-secret"
+      }
+    }
+  }]
+}
+```
+
+**Permission Policy:**
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [{
+    "Effect": "Allow",
+    "Action": ["s3:PutObject", "s3:DeleteObject", "s3:ListBucket"],
+    "Resource": [
+      "arn:manta:s3:::production-app",
+      "arn:manta:s3:::production-app/*"
+    ]
+  }]
+}
+```
+
+**Creating and Using:**
+```bash
+# Create deployment role
+aws iam create-role --role-name DeploymentRole \
+  --assume-role-policy-document '{
+    "Version": "2012-10-17",
+    "Statement": [{
+      "Effect": "Allow",
+      "Principal": {
+        "AWS": "arn:manta:iam::123456789012:user/github-runner"
+      },
+      "Action": "sts:AssumeRole",
+      "Condition": {
+        "StringEquals": {
+          "sts:ExternalId": "myproject-deployment-secret"
+        }
+      }
+    }]
+  }' --endpoint-url https://manta.example.com
+
+# Assume role WITH correct external ID (succeeds)
+aws sts assume-role \
+  --role-arn arn:manta:iam::123456789012:role/DeploymentRole \
+  --role-session-name deploy-session \
+  --external-id "myproject-deployment-secret" \
+  --endpoint-url https://manta.example.com
+
+# Assume role WITHOUT external ID (fails)
+aws sts assume-role \
+  --role-arn arn:manta:iam::123456789012:role/DeploymentRole \
+  --role-session-name deploy-session \
+  --endpoint-url https://manta.example.com
+# Error: Access denied by trust policy condition
+```
+
+##### Example 3: Time-Based Access Control
+
+**Trust Policy with Time Restrictions:**
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [{
+    "Effect": "Allow",
+    "Principal": {
+      "AWS": "arn:manta:iam::123456789012:user/admin"
+    },
+    "Action": "sts:AssumeRole",
+    "Condition": {
+      "DateGreaterThan": {
+        "aws:CurrentTime": "09:00:00Z"
+      },
+      "DateLessThan": {
+        "aws:CurrentTime": "17:00:00Z"
+      }
+    }
+  }]
+}
+```
+
+**Usage:**
+```bash
+# Works during business hours (9 AM - 5 PM UTC)
+aws sts assume-role \
+  --role-arn arn:manta:iam::123456789012:role/BusinessHoursRole \
+  --role-session-name admin-work \
+  --endpoint-url https://manta.example.com
+
+# Fails outside business hours
+# Error: Access denied by trust policy condition
+```
+
+##### Example 4: IP Address Restrictions
+
+**Trust Policy with Network Controls:**
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [{
+    "Effect": "Allow",
+    "Principal": {
+      "AWS": "arn:manta:iam::123456789012:user/sensitive-ops"
+    },
+    "Action": "sts:AssumeRole",
+    "Condition": {
+      "IpAddress": {
+        "aws:SourceIp": [
+          "192.168.1.0/24",    // Office network
+          "10.0.0.100/32"      // VPN gateway
+        ]
+      }
+    }
+  }]
+}
+```
+
+##### Example 5: Role Chaining
+
+**BaseRole Trust Policy:**
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [{
+    "Effect": "Allow",
+    "Principal": {
+      "AWS": "arn:manta:iam::123456789012:user/application"
+    },
+    "Action": "sts:AssumeRole"
+  }]
+}
+```
+
+**ElevatedRole Trust Policy:**
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [{
+    "Effect": "Allow",
+    "Principal": {
+      "AWS": "arn:manta:iam::123456789012:role/BaseRole"
+    },
+    "Action": "sts:AssumeRole"
+  }]
+}
+```
+
+**Usage:**
+```bash
+# Step 1: Application assumes BaseRole
+aws sts assume-role \
+  --role-arn arn:manta:iam::123456789012:role/BaseRole \
+  --role-session-name app-base \
+  --endpoint-url https://manta.example.com
+
+# Step 2: BaseRole assumes ElevatedRole for sensitive operation
+aws sts assume-role \
+  --role-arn arn:manta:iam::123456789012:role/ElevatedRole \
+  --role-session-name elevated-ops \
+  --endpoint-url https://manta.example.com
+```
+
+#### Permission Policies (What Roles Can Do)
+
+Permission policies define what actions a role can perform on which resources.
+
+**Basic Structure:**
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [{
+    "Effect": "Allow",
+    "Action": ["s3:GetObject", "s3:PutObject"],
+    "Resource": [
+      "arn:manta:s3:::my-bucket",
+      "arn:manta:s3:::my-bucket/*"
+    ]
+  }]
+}
+```
+
+**Supported S3 Actions:**
+- `s3:ListAllMyBuckets` - List all buckets
+- `s3:ListBucket` - List objects in specific bucket
+- `s3:GetObject` - Download objects
+- `s3:PutObject` - Upload objects  
+- `s3:DeleteObject` - Delete objects
+- `s3:GetBucketLocation` - Get bucket information
+- `s3:CreateBucket` - Create new buckets
+- `s3:DeleteBucket` - Delete empty buckets
+
+**Important:** Conditions in permission policies are **not implemented** - only Action/Resource matching works.
+
+#### Session Token Format (JWT Implementation)
+
+STS returns temporary credentials with cryptographically signed JWT session tokens:
+
+```json
+{
+  "Credentials": {
+    "AccessKeyId": "EXAMPLE-TEMP-ACCESS-KEY-ID",
+    "SecretAccessKey": "ExampleTempSecretKey7890123456",
+    "SessionToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1dWlkIjoiZXhhbXBsZS0xMjM0LWVmZ2gtNTY3OCIsInJvbGVBcm4iOiJhcm46bWFudGE6aWFtOjoxMjM0NTY3ODkwMTI6cm9sZS9SZWFkT25seUFjY2VzcyIsInNlc3Npb25OYW1lIjoiYWxpY2UtZGF0YS1hbmFseXNpcyIsInRva2VuVHlwZSI6InN0cy1zZXNzaW9uIiwidG9rZW5WZXJzaW9uIjoiMS4xIiwia2V5SWQiOiJrZXktMjAyNTAxMjAtYTFiMmMzZDQiLCJpc3MiOiJtYW50YS1tYWhpIiwiYXVkIjoibWFudGEtczMiLCJpYXQiOjE3MDUzMTU4MDAsImV4cCI6MTcwNTMxOTQwMCwibmJmIjoxNzA1MzE1ODAwfQ.ExampleSignatureHash1234567890",
+    "Expiration": "2024-01-15T11:30:00Z"
+  },
+  "AssumedRoleUser": {
+    "AssumedRoleId": "AROA123EXAMPLE123:session-name",
+    "Arn": "arn:manta:sts::123456789012:assumed-role/RoleName/session-name"
+  }
+}
+```
+
+**JWT Session Token Structure:**
+
+The session token is a cryptographically signed JWT (JSON Web Token) with HMAC-SHA256 signature containing:
+
+```json
+{
+  "uuid": "example-1234-efgh-5678",
+  "roleArn": "arn:manta:iam::123456789012:role/ReadOnlyAccess", 
+  "sessionName": "alice-data-analysis",
+  "tokenType": "sts-session",
+  "tokenVersion": "1.1",
+  "keyId": "key-20250120-a1b2c3d4",
+  "iss": "manta-mahi",
+  "aud": "manta-s3",
+  "iat": 1705315800,
+  "exp": 1705319400,
+  "nbf": 1705315800
+}
+```
+
+**JWT Security Features:**
+- **HMAC-SHA256 Signature** - Cryptographically signed, tamper-proof
+- **Key Rotation Support** - `keyId` field enables seamless secret rotation
+- **Standard JWT Claims** - `iss`, `aud`, `iat`, `exp`, `nbf` for validation
+- **Token Versioning** - Version 1.1 with enhanced security features
+- **Auto-Expiration** - Tokens expire automatically (default 1 hour)
+
+#### Tested Implementation Status
+
+**✅ Fully Implemented and Tested:**
+- Trust policy evaluation with all condition operators
+- Principal matching (user, role, root, wildcard)
+- External ID validation
+- Time-based access control
+- IP address restrictions
+- Role chaining
+- Multi-cloud ARN support (aws/manta/triton)
+- JWT session tokens with HMAC-SHA256 signatures
+- Key rotation for session tokens
+- Basic permission policy evaluation
+
+**❌ Not Implemented:**
+- Conditions in permission policies
+- S3-specific condition keys
+- Service principals (not applicable to Manta)
+- Cross-account access (single account model)
+
+### Permission Policy Support
+
+**Supported S3 Actions:**
+```json
+{
+  "Version": "2012-10-17", 
+  "Statement": [{
+    "Effect": "Allow",
+    "Action": [
+      "s3:GetObject",
+      "s3:PutObject", 
+      "s3:DeleteObject",
+      "s3:ListBucket",
+      "s3:GetBucketLocation",
+      "s3:CreateBucket",
+      "s3:DeleteBucket"
+    ],
+    "Resource": [
+      "arn:aws:s3:::my-bucket",
+      "arn:aws:s3:::my-bucket/*"  
+    ]
+  }]
+}
+```
+
+### AWS CLI Workflow Examples
+
+#### 1. Read-Only S3 Access
+```bash
+# Create read-only role
+aws iam create-role --role-name S3ReadOnly \
+  --assume-role-policy-document '{
+    "Version": "2012-10-17",
+    "Statement": [{
+      "Effect": "Allow", 
+      "Principal": {"AWS": "arn:aws:iam::123456789012:user/developer"},
+      "Action": "sts:AssumeRole"
+    }]
+  }'
+
+# Attach read-only policy
+aws iam put-role-policy --role-name S3ReadOnly --policy-name ReadPolicy \
+  --policy-document '{
+    "Version": "2012-10-17",
+    "Statement": [{
+      "Effect": "Allow",
+      "Action": ["s3:GetObject", "s3:ListBucket"],
+      "Resource": ["arn:aws:s3:::data-bucket", "arn:aws:s3:::data-bucket/*"]
+    }]
+  }'
+
+# Assume role and get credentials  
+CREDS=$(aws sts assume-role --role-arn arn:aws:iam::123456789012:role/S3ReadOnly \
+  --role-session-name read-session --output json)
+
+# Extract and export credentials
+export AWS_ACCESS_KEY_ID=$(echo $CREDS | jq -r '.Credentials.AccessKeyId')
+export AWS_SECRET_ACCESS_KEY=$(echo $CREDS | jq -r '.Credentials.SecretAccessKey') 
+export AWS_SESSION_TOKEN=$(echo $CREDS | jq -r '.Credentials.SessionToken')
+
+# Use temporary credentials for S3 operations
+aws s3 ls s3://data-bucket/
+aws s3 cp s3://data-bucket/file.txt ./
+```
+
+#### 2. Deployment Role with Time Limits
+```bash
+# Create deployment role (expires in 1 hour)
+aws iam create-role --role-name DeploymentRole \
+  --assume-role-policy-document file://deployment-trust.json
+
+aws iam put-role-policy --role-name DeploymentRole --policy-name DeployPolicy \
+  --policy-document '{
+    "Version": "2012-10-17",
+    "Statement": [{
+      "Effect": "Allow", 
+      "Action": ["s3:PutObject", "s3:DeleteObject", "s3:ListBucket"],
+      "Resource": ["arn:aws:s3:::deploy-bucket/*"]
+    }]
+  }'
+
+# Get temporary credentials with custom duration
+DEPLOY_CREDS=$(aws sts assume-role \
+  --role-arn arn:aws:iam::123456789012:role/DeploymentRole \
+  --role-session-name deploy-$(date +%s) \
+  --duration-seconds 3600)
+
+# Deploy using temporary credentials
+export AWS_ACCESS_KEY_ID=$(echo $DEPLOY_CREDS | jq -r '.Credentials.AccessKeyId')
+export AWS_SECRET_ACCESS_KEY=$(echo $DEPLOY_CREDS | jq -r '.Credentials.SecretAccessKey')
+export AWS_SESSION_TOKEN=$(echo $DEPLOY_CREDS | jq -r '.Credentials.SessionToken')
+
+aws s3 sync ./build/ s3://deploy-bucket/releases/v1.2.3/
+```
+
+#### 3. Environment-Specific Access
+```bash
+# Production access role
+aws iam create-role --role-name ProductionAccess \
+  --assume-role-policy-document file://prod-trust.json
+
+aws iam put-role-policy --role-name ProductionAccess --policy-name ProdPolicy \
+  --policy-document '{
+    "Version": "2012-10-17",
+    "Statement": [{
+      "Effect": "Allow",
+      "Action": "s3:*",
+      "Resource": [
+        "arn:aws:s3:::prod-data",
+        "arn:aws:s3:::prod-data/*",
+        "arn:aws:s3:::prod-backups", 
+        "arn:aws:s3:::prod-backups/*"
+      ]
+    }]
+  }'
+
+# Staging access role  
+aws iam create-role --role-name StagingAccess \
+  --assume-role-policy-document file://staging-trust.json
+
+aws iam put-role-policy --role-name StagingAccess --policy-name StagingPolicy \
+  --policy-document '{
+    "Version": "2012-10-17",
+    "Statement": [{
+      "Effect": "Allow", 
+      "Action": "s3:*",
+      "Resource": [
+        "arn:aws:s3:::staging-data",
+        "arn:aws:s3:::staging-data/*"
+      ]
+    }]
+  }'
+
+# Switch between environments
+function assume_env_role() {
+  local env=$1
+  local role_arn="arn:aws:iam::123456789012:role/${env}Access"
+  
+  echo "Assuming role for $env environment..."
+  CREDS=$(aws sts assume-role --role-arn $role_arn \
+    --role-session-name ${env}-session-$(whoami))
+  
+  export AWS_ACCESS_KEY_ID=$(echo $CREDS | jq -r '.Credentials.AccessKeyId')
+  export AWS_SECRET_ACCESS_KEY=$(echo $CREDS | jq -r '.Credentials.SecretAccessKey')
+  export AWS_SESSION_TOKEN=$(echo $CREDS | jq -r '.Credentials.SessionToken')
+  
+  echo "Switched to $env environment"
+}
+
+# Usage
+assume_env_role "Production" 
+aws s3 ls s3://prod-data/
+
+assume_env_role "Staging"
+aws s3 ls s3://staging-data/
+```
+
+#### 4. Automated Credential Management
+```bash
+#!/bin/bash
+# auto-assume-role.sh - Automatic credential refresh script
+
+ROLE_ARN="arn:aws:iam::123456789012:role/AutomationRole"
+SESSION_NAME="automation-$(date +%s)"
+CREDENTIALS_FILE="/tmp/aws-temp-creds"
+
+# Function to get fresh credentials
+get_credentials() {
+  echo "Getting fresh STS credentials..."
+  aws sts assume-role \
+    --role-arn $ROLE_ARN \
+    --role-session-name $SESSION_NAME \
+    --duration-seconds 3600 > $CREDENTIALS_FILE
+    
+  if [ $? -eq 0 ]; then
+    export AWS_ACCESS_KEY_ID=$(jq -r '.Credentials.AccessKeyId' < $CREDENTIALS_FILE)
+    export AWS_SECRET_ACCESS_KEY=$(jq -r '.Credentials.SecretAccessKey' < $CREDENTIALS_FILE) 
+    export AWS_SESSION_TOKEN=$(jq -r '.Credentials.SessionToken' < $CREDENTIALS_FILE)
+    echo "Credentials updated successfully"
+  else
+    echo "Failed to get credentials"
+    exit 1
+  fi
+}
+
+# Function to check if credentials are expired
+check_credentials() {
+  if [ ! -f $CREDENTIALS_FILE ]; then
+    return 1
+  fi
+  
+  EXPIRATION=$(jq -r '.Credentials.Expiration' < $CREDENTIALS_FILE)
+  EXPIRATION_EPOCH=$(date -d "$EXPIRATION" +%s)
+  CURRENT_EPOCH=$(date +%s)
+  
+  # Refresh if less than 5 minutes remaining
+  if [ $((EXPIRATION_EPOCH - CURRENT_EPOCH)) -lt 300 ]; then
+    return 1
+  fi
+  
+  return 0
+}
+
+# Main automation loop
+while true; do
+  if ! check_credentials; then
+    get_credentials
+  fi
+  
+  # Perform S3 operations
+  aws s3 sync s3://source-bucket/ ./local-data/
+  aws s3 sync ./processed-data/ s3://destination-bucket/
+  
+  sleep 600  # Wait 10 minutes before next sync
+done
+```
+
+### Migration from AWS to Manta
+
+#### Pattern 1: Direct Credential Migration
+**AWS Workflow:**
+```bash
+# AWS - Using permanent credentials
+export AWS_ACCESS_KEY_ID="AKIAIOSFODNN7EXAMPLE"
+export AWS_SECRET_ACCESS_KEY="wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
+aws s3 cp file.txt s3://my-bucket/
+```
+
+**Manta Equivalent:**  
+```bash
+# Manta - Using permanent credentials
+export AWS_ACCESS_KEY_ID="tdc_permanent_access_key_example"
+export AWS_SECRET_ACCESS_KEY="tdc_permanent_secret_key_example"
+aws s3 cp file.txt s3://my-bucket/ --endpoint-url https://manta.example.com
+```
+
+#### Pattern 2: Role-Based Access Migration
+**AWS Workflow:**
+```bash
+# AWS - Assume role workflow
+aws sts assume-role --role-arn arn:aws:iam::123:role/S3Access \
+  --role-session-name session1
+
+# Use returned temporary credentials...
+```
+
+**Manta Equivalent:**
+```bash  
+# Manta - Same assume role workflow
+aws sts assume-role --role-arn arn:aws:iam::123:role/S3Access \
+  --role-session-name session1 --endpoint-url https://manta.example.com
+
+# Use returned temporary credentials with Manta endpoint...
+export AWS_ACCESS_KEY_ID="tdc_SU4xWXL-HzrMIDM_A8GH94sl-uc-aX8mqsEMiK4JSVdAGyjH"
+export AWS_SECRET_ACCESS_KEY="tdc_9k3jF8mN2pL5qR7sT1vY6zA8bC4eG7iJ0mP3rU5xW9yB2dF"
+export AWS_SESSION_TOKEN="eyJ1dWlkIjoiYWJjZC0xMjM0LWVmZ2gtNTY3OCIsImV4cGlyZXMiOjE2OTg0NTM2MDB9"
+
+aws s3 ls --endpoint-url https://manta.example.com
+```
+
+#### Pattern 3: Policy Translation
+**AWS Policy:**
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [{
+    "Effect": "Allow",
+    "Action": [
+      "s3:GetObject",
+      "s3:PutObject", 
+      "s3:ListBucket"
+    ],
+    "Resource": [
+      "arn:aws:s3:::production-bucket",
+      "arn:aws:s3:::production-bucket/*"
+    ]
+  }]
+}
+```
+
+**Manta Policy (identical):**
+```json
+{
+  "Version": "2012-10-17", 
+  "Statement": [{
+    "Effect": "Allow",
+    "Action": [
+      "s3:GetObject",
+      "s3:PutObject",
+      "s3:ListBucket"
+    ],
+    "Resource": [
+      "arn:aws:s3:::production-bucket", 
+      "arn:aws:s3:::production-bucket/*"
+    ]
+  }]
+}
+```
+
+#### Pattern 4: Multi-Environment Migration
+**Migration Strategy:**
+```bash
+# 1. Create equivalent roles in Manta
+aws iam create-role --role-name DevRole \
+  --assume-role-policy-document file://trust.json \
+  --endpoint-url https://manta.example.com
+
+# 2. Migrate policies exactly as-is  
+aws iam put-role-policy --role-name DevRole \
+  --policy-name DevS3Access --policy-document file://dev-policy.json \
+  --endpoint-url https://manta.example.com
+
+# 3. Update scripts to use Manta endpoint
+sed -i 's/aws s3/aws s3 --endpoint-url https:\/\/manta.example.com/g' deploy.sh
+sed -i 's/aws sts/aws sts --endpoint-url https:\/\/manta.example.com/g' deploy.sh
+
+# 4. Test with same role assumption workflow
+aws sts assume-role --role-arn arn:aws:iam::123:role/DevRole \
+  --role-session-name migration-test \
+  --endpoint-url https://manta.example.com
+```
+
+### Error Handling
+
+Common STS IAM errors mapped to S3-compatible responses:
+
+| Error Condition | HTTP Code | Error Code | Message |
+|-----------------|-----------|------------|---------|
+| Role not found | 404 | NoSuchEntity | Role does not exist |
+| Invalid policy JSON | 400 | MalformedPolicyDocument | Policy document is malformed |
+| Duplicate role name | 409 | EntityAlreadyExists | Role already exists |
+| Session token expired | 403 | TokenRefreshRequired | Session token has expired |
+| Invalid session token | 403 | InvalidToken | Session token is invalid |
+
+### Configuration
+
+**Required Environment Variables:**
+```bash
+# Mahi endpoint for IAM operations
+MAHI_URL=https://mahi.example.com
+
+# Redis configuration for session storage  
+REDIS_HOST=redis.example.com
+REDIS_PORT=6379
+
+# UFDS integration for credential generation
+UFDS_URL=ldaps://ufds.example.com
+UFDS_BIND_DN=cn=root
+UFDS_BIND_PASSWORD=secret
+```
+
+**Session Configuration:**
+```javascript
+{
+  "sts": {
+    "sessionDuration": 3600,        // 1 hour default
+    "maxSessionDuration": 43200,    // 12 hour maximum  
+    "cleanupInterval": 300,         // 5 minute cleanup
+    "sessionTokenPrefix": "session_"
+  }
+}
+```
+
 ### Security Considerations
 
 #### Least Privilege Principle

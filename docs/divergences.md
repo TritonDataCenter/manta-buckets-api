@@ -291,6 +291,140 @@ When migrating from AWS S3 or implementing S3-compatible applications:
 6. **No Regional Concepts**: All buckets exist in the same Manta deployment
 
 
+## STS IAM Operations
+
+| Operation | AWS S3 | Manta Buckets API | Status | Notes |
+|-----------|--------|------------------|--------|-------|
+| **STS OPERATIONS** | | | | |
+| **ASSUME ROLE** | ✅ Supported | ✅ Supported | **IMPLEMENTED** | Full trust policy validation with conditions |
+| **GET SESSION TOKEN** | ✅ Supported | ❌ Not Implemented | **NOT IMPLEMENTED** | Use AssumeRole for temporary credentials |
+| **GET CALLER IDENTITY** | ✅ Supported | ✅ Supported | **IMPLEMENTED** | Returns user/role identity information |
+| **DECODE AUTHORIZATION MESSAGE** | ✅ Supported | ❌ Not Implemented | **NOT IMPLEMENTED** | No authorization message encoding |
+| **IAM ROLE MANAGEMENT** | | | | |
+| **CREATE ROLE** | ✅ Supported | ✅ Supported | **IMPLEMENTED** | Creates role with trust policy |
+| **DELETE ROLE** | ✅ Supported | ✅ Supported | **IMPLEMENTED** | Removes role and associated policies |
+| **GET ROLE** | ✅ Supported | ✅ Supported | **IMPLEMENTED** | Returns role metadata (excludes policies) |
+| **LIST ROLES** | ✅ Supported | ✅ Supported | **IMPLEMENTED** | Lists all roles in account |
+| **UPDATE ROLE** | ✅ Supported | ❌ Not Implemented | **NOT IMPLEMENTED** | No role description/policy updates |
+| **IAM POLICY MANAGEMENT** | | | | |
+| **PUT ROLE POLICY** | ✅ Supported | ✅ Supported | **IMPLEMENTED** | Attaches inline policy to role |
+| **DELETE ROLE POLICY** | ✅ Supported | ✅ Supported | **IMPLEMENTED** | Removes inline policy from role |
+| **GET ROLE POLICY** | ✅ Supported | ✅ Supported | **IMPLEMENTED** | Retrieves specific policy document |
+| **LIST ROLE POLICIES** | ✅ Supported | ✅ Supported | **IMPLEMENTED** | Lists policy names attached to role |
+| **ATTACH ROLE POLICY** | ✅ Supported | ❌ Not Implemented | **NOT IMPLEMENTED** | Only inline policies supported |
+| **DETACH ROLE POLICY** | ✅ Supported | ❌ Not Implemented | **NOT IMPLEMENTED** | Only inline policies supported |
+| **LIST ATTACHED ROLE POLICIES** | ✅ Supported | ❌ Not Implemented | **NOT IMPLEMENTED** | Only inline policies supported |
+
+### STS IAM Implementation Details
+
+**✅ Fully Supported Features:**
+- **Trust Policy Validation** - Complete condition evaluation engine
+- **Principal Matching** - User, role, root, and wildcard principals  
+- **Condition Operators** - StringEquals, DateGreaterThan, IpAddress, Bool, etc.
+- **External ID Support** - Secure cross-account-style access patterns
+- **Time-Based Access** - Business hours restrictions and time windows
+- **IP Address Restrictions** - Network-based access control
+- **Role Chaining** - Roles can assume other roles
+- **JWT Session Tokens** - HMAC-SHA256 signed tokens with key rotation
+- **Multi-Cloud ARNs** - Support for aws/manta/triton ARN prefixes
+- **Permission Policy Evaluation** - Action/Resource matching for S3 operations
+
+**⚠️ Partial Support:**
+- **Trust Policies Only** - Conditions only work in trust policies, not permission policies
+- **S3 Actions Only** - Permission policies limited to S3 actions
+- **Single Account Model** - No cross-account access (inherent Manta limitation)
+
+**❌ Not Supported:**
+- **Managed Policies** - Only inline policies supported
+- **Service Principals** - Not applicable to Manta architecture
+- **SAML/OIDC Federation** - No federated identity support
+- **Policy Conditions in Permissions** - Conditions only work in trust policies
+- **S3 Condition Keys** - No s3:prefix, s3:max-keys, etc. support
+- **User Management** - No IAM user CRUD operations (use Manta users)
+- **Group Management** - No IAM groups (use Manta roles)
+
+**Session Token Security Features:**
+- **JWT with HMAC-SHA256** - Cryptographically signed, tamper-proof tokens
+- **Key Rotation Support** - Seamless secret rotation with keyId tracking
+- **Auto-Expiration** - Default 1-hour expiration (configurable up to 12 hours)
+- **Standard JWT Claims** - iss, aud, iat, exp, nbf for comprehensive validation
+- **Version Support** - Token versioning for backward compatibility
+
+### Trust Policy Migration
+
+**AWS Trust Policy:**
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [{
+    "Effect": "Allow",
+    "Principal": {"AWS": "arn:aws:iam::123456789012:user/alice"},
+    "Action": "sts:AssumeRole",
+    "Condition": {
+      "StringEquals": {"sts:ExternalId": "secret-key"},
+      "IpAddress": {"aws:SourceIp": "192.168.1.0/24"}
+    }
+  }]
+}
+```
+
+**Manta Trust Policy (Direct Migration):**
+```json
+{
+  "Version": "2012-10-17", 
+  "Statement": [{
+    "Effect": "Allow",
+    "Principal": {"AWS": "arn:manta:iam::123456789012:user/alice"},
+    "Action": "sts:AssumeRole",
+    "Condition": {
+      "StringEquals": {"sts:ExternalId": "secret-key"},
+      "IpAddress": {"aws:SourceIp": "192.168.1.0/24"}  
+    }
+  }]
+}
+```
+
+**Key Changes for Migration:**
+1. **ARN Prefix**: Change `arn:aws:` to `arn:manta:` (or keep aws for compatibility)
+2. **Remove Cross-Account**: Remove references to other AWS accounts
+3. **Remove Service Principals**: Replace with user principals
+4. **Keep All Conditions**: Trust policy conditions work identically
+
+### Permission Policy Migration
+
+**AWS Permission Policy:**
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [{
+    "Effect": "Allow", 
+    "Action": "s3:*",
+    "Resource": ["arn:aws:s3:::bucket/*"],
+    "Condition": {
+      "StringLike": {"s3:prefix": "user-data/*"}
+    }
+  }]
+}
+```
+
+**Manta Permission Policy (Adapted):**
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [{
+    "Effect": "Allow",
+    "Action": "s3:*", 
+    "Resource": ["arn:manta:s3:::bucket/user-data/*"]
+  }]
+}
+```
+
+**Key Changes for Migration:**
+1. **ARN Prefix**: Change `arn:aws:s3:` to `arn:manta:s3:`
+2. **Remove Conditions**: Move condition logic into Resource ARN patterns
+3. **Specific Resources**: Use explicit resource paths instead of condition keys
+4. **S3 Actions Only**: Only S3 actions supported in permission policies
+
 ## AWS SDK Compatibility
 
 While Manta Buckets API maintains high compatibility with standard S3 operations, certain SDK-specific behaviors require adjustments for optimal functionality.

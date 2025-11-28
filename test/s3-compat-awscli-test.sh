@@ -7422,7 +7422,283 @@ test_iam_permission_policy_vs_trust_policy() {
     
     # Cleanup
     echo "$trust_role" > "$TEMP_DIR/trust_policy_role_cleanup"
-    echo "$permission_role" > "$TEMP_DIR/permission_policy_role_cleanup" 
+    echo "$permission_role" > "$TEMP_DIR/permission_policy_role_cleanup"
+}
+
+# =============================================================================
+# IAM Permission Policy Deny Statement Tests
+# =============================================================================
+
+# Test that explicit Deny in permission policy blocks access even when Allow exists
+test_iam_permission_policy_deny_overrides_allow() {
+    log "Testing IAM permission policy: Deny statement overrides Allow..."
+
+    local role_name="deny-override-test-$(date +%s)-$$-$RANDOM"
+    local account_uuid=$(get_account_uuid)
+    local test_bucket="deny-test-bucket-$(date +%s | tail -c 6)"
+
+    # Trust policy - allow anyone to assume
+    local trust_policy='{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"AWS":"*"},"Action":"sts:AssumeRole"}]}'
+
+    # Permission policy: Allow all S3 actions, but DENY DeleteObject
+    # This tests the fix: Deny must override the Allow s3:*
+    local permission_policy='{
+        "Version": "2012-10-17",
+        "Statement": [
+            {
+                "Effect": "Allow",
+                "Action": "s3:*",
+                "Resource": "*"
+            },
+            {
+                "Effect": "Deny",
+                "Action": ["s3:DeleteObject", "s3:DeleteBucket"],
+                "Resource": "*"
+            }
+        ]
+    }'
+
+    log "Creating role with Allow s3:* but Deny s3:DeleteObject..."
+    set +e
+    local create_result
+    capture_output create_result aws_iam create-role \
+        --role-name "$role_name" \
+        --assume-role-policy-document "$trust_policy"
+    local create_exit=$?
+    set -e
+
+    if [ $create_exit -ne 0 ]; then
+        error "Deny Override Test - Failed to create role: $create_result"
+        return 1
+    fi
+
+    # Attach permission policy
+    set +e
+    local policy_result
+    capture_output policy_result aws_iam put-role-policy \
+        --role-name "$role_name" \
+        --policy-name "DenyDeletePolicy" \
+        --policy-document "$permission_policy"
+    local policy_exit=$?
+    set -e
+
+    if [ $policy_exit -ne 0 ]; then
+        error "Deny Override Test - Failed to attach policy: $policy_result"
+        aws_iam delete-role --role-name "$role_name" 2>/dev/null || true
+        return 1
+    fi
+
+    # Create test bucket with admin credentials
+    log "Creating test bucket: $test_bucket"
+    aws_s3api create-bucket --bucket "$test_bucket" 2>/dev/null || true
+
+    # Upload a test object
+    echo "test content for delete" > "$TEMP_DIR/delete-test.txt"
+    aws_s3api put-object --bucket "$test_bucket" --key "delete-me.txt" --body "$TEMP_DIR/delete-test.txt" 2>/dev/null || true
+
+    # Assume the role
+    local role_arn="arn:aws:iam::${account_uuid}:role/${role_name}"
+    log "Assuming role: $role_arn"
+
+    set +e
+    local assume_result
+    capture_output assume_result aws_sts assume-role \
+        --role-arn "$role_arn" \
+        --role-session-name "deny-test-session"
+    local assume_exit=$?
+    set -e
+
+    if [ $assume_exit -ne 0 ]; then
+        error "Deny Override Test - Failed to assume role: $assume_result"
+        aws_s3 rm "s3://$test_bucket" --recursive 2>/dev/null || true
+        aws_s3api delete-bucket --bucket "$test_bucket" 2>/dev/null || true
+        aws_iam delete-role-policy --role-name "$role_name" --policy-name "DenyDeletePolicy" 2>/dev/null || true
+        aws_iam delete-role --role-name "$role_name" 2>/dev/null || true
+        return 1
+    fi
+
+    # Extract and use temporary credentials
+    local temp_access_key=$(echo "$assume_result" | grep -o '"AccessKeyId": "[^"]*"' | cut -d'"' -f4)
+    local temp_secret_key=$(echo "$assume_result" | grep -o '"SecretAccessKey": "[^"]*"' | cut -d'"' -f4)
+    local temp_session_token=$(echo "$assume_result" | grep -o '"SessionToken": "[^"]*"' | cut -d'"' -f4)
+
+    local original_access_key="$AWS_ACCESS_KEY_ID"
+    local original_secret_key="$AWS_SECRET_ACCESS_KEY"
+    local original_session_token="${AWS_SESSION_TOKEN:-}"
+
+    export AWS_ACCESS_KEY_ID="$temp_access_key"
+    export AWS_SECRET_ACCESS_KEY="$temp_secret_key"
+    export AWS_SESSION_TOKEN="$temp_session_token"
+
+    # Test 1: GetObject should work (allowed by s3:*)
+    log "Test 1: GetObject should SUCCEED (allowed by s3:*)..."
+    set +e
+    local get_result
+    get_result=$(aws_s3api get-object --bucket "$test_bucket" --key "delete-me.txt" "$TEMP_DIR/downloaded.txt" 2>&1)
+    local get_exit=$?
+    set -e
+
+    if [ $get_exit -eq 0 ]; then
+        success "Deny Override Test - GetObject SUCCEEDED as expected (Allow s3:* works)"
+    else
+        warning "Deny Override Test - GetObject failed: $get_result"
+    fi
+
+    # Test 2: DeleteObject should FAIL (denied explicitly)
+    log "Test 2: DeleteObject should FAIL (explicit Deny)..."
+    set +e
+    local delete_result
+    delete_result=$(aws_s3api delete-object --bucket "$test_bucket" --key "delete-me.txt" 2>&1)
+    local delete_exit=$?
+    set -e
+
+    if [ $delete_exit -ne 0 ] && echo "$delete_result" | grep -q -E "(AccessDenied|Forbidden|not allowed)"; then
+        success "Deny Override Test - ✅ DeleteObject DENIED as expected (Deny overrides Allow)"
+        log "🔒 SECURITY FIX VALIDATED: Explicit Deny in permission policy correctly blocks access"
+    elif [ $delete_exit -eq 0 ]; then
+        error "Deny Override Test - ❌ CRITICAL: DeleteObject SUCCEEDED when it should be DENIED"
+        error "🚨 SECURITY ISSUE: Deny statement is NOT being evaluated!"
+        log "Response: $delete_result"
+    else
+        warning "Deny Override Test - DeleteObject failed with unexpected error: $delete_result"
+    fi
+
+    # Restore original credentials
+    export AWS_ACCESS_KEY_ID="$original_access_key"
+    export AWS_SECRET_ACCESS_KEY="$original_secret_key"
+    if [ -n "$original_session_token" ]; then
+        export AWS_SESSION_TOKEN="$original_session_token"
+    else
+        unset AWS_SESSION_TOKEN
+    fi
+
+    # Cleanup
+    log "Cleaning up test resources..."
+    aws_s3 rm "s3://$test_bucket" --recursive 2>/dev/null || true
+    aws_s3api delete-bucket --bucket "$test_bucket" 2>/dev/null || true
+    aws_iam delete-role-policy --role-name "$role_name" --policy-name "DenyDeletePolicy" 2>/dev/null || true
+    aws_iam delete-role --role-name "$role_name" 2>/dev/null || true
+}
+
+# Test Deny on specific resource pattern (admin folder protection)
+test_iam_permission_policy_deny_resource_pattern() {
+    log "Testing IAM permission policy: Deny on specific resource pattern..."
+
+    local role_name="deny-pattern-test-$(date +%s)-$$-$RANDOM"
+    local account_uuid=$(get_account_uuid)
+    local test_bucket="pattern-test-$(date +%s | tail -c 6)"
+
+    local trust_policy='{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"AWS":"*"},"Action":"sts:AssumeRole"}]}'
+
+    # Permission policy: Allow all on bucket, but DENY access to admin/* prefix
+    local permission_policy='{
+        "Version": "2012-10-17",
+        "Statement": [
+            {
+                "Effect": "Allow",
+                "Action": "s3:*",
+                "Resource": [
+                    "arn:aws:s3:::'"$test_bucket"'",
+                    "arn:aws:s3:::'"$test_bucket"'/*"
+                ]
+            },
+            {
+                "Effect": "Deny",
+                "Action": "s3:*",
+                "Resource": "arn:aws:s3:::'"$test_bucket"'/admin/*"
+            }
+        ]
+    }'
+
+    log "Creating role with Allow s3:* on bucket but Deny on admin/* prefix..."
+    set +e
+    aws_iam create-role --role-name "$role_name" --assume-role-policy-document "$trust_policy" >/dev/null 2>&1
+    aws_iam put-role-policy --role-name "$role_name" --policy-name "DenyAdminPolicy" --policy-document "$permission_policy" >/dev/null 2>&1
+    set -e
+
+    # Create bucket and objects
+    aws_s3api create-bucket --bucket "$test_bucket" 2>/dev/null || true
+    echo "public content" > "$TEMP_DIR/public.txt"
+    echo "admin secret" > "$TEMP_DIR/admin.txt"
+    aws_s3api put-object --bucket "$test_bucket" --key "public/file.txt" --body "$TEMP_DIR/public.txt" 2>/dev/null || true
+    aws_s3api put-object --bucket "$test_bucket" --key "admin/secret.txt" --body "$TEMP_DIR/admin.txt" 2>/dev/null || true
+
+    # Assume role
+    local role_arn="arn:aws:iam::${account_uuid}:role/${role_name}"
+    set +e
+    local assume_result
+    capture_output assume_result aws_sts assume-role --role-arn "$role_arn" --role-session-name "pattern-test"
+    local assume_exit=$?
+    set -e
+
+    if [ $assume_exit -ne 0 ]; then
+        warning "Deny Pattern Test - Failed to assume role, skipping"
+        aws_s3 rm "s3://$test_bucket" --recursive 2>/dev/null || true
+        aws_s3api delete-bucket --bucket "$test_bucket" 2>/dev/null || true
+        aws_iam delete-role-policy --role-name "$role_name" --policy-name "DenyAdminPolicy" 2>/dev/null || true
+        aws_iam delete-role --role-name "$role_name" 2>/dev/null || true
+        return 0
+    fi
+
+    # Switch to temp credentials
+    local temp_access_key=$(echo "$assume_result" | grep -o '"AccessKeyId": "[^"]*"' | cut -d'"' -f4)
+    local temp_secret_key=$(echo "$assume_result" | grep -o '"SecretAccessKey": "[^"]*"' | cut -d'"' -f4)
+    local temp_session_token=$(echo "$assume_result" | grep -o '"SessionToken": "[^"]*"' | cut -d'"' -f4)
+
+    local orig_ak="$AWS_ACCESS_KEY_ID"
+    local orig_sk="$AWS_SECRET_ACCESS_KEY"
+    local orig_st="${AWS_SESSION_TOKEN:-}"
+
+    export AWS_ACCESS_KEY_ID="$temp_access_key"
+    export AWS_SECRET_ACCESS_KEY="$temp_secret_key"
+    export AWS_SESSION_TOKEN="$temp_session_token"
+
+    # Test: Access to public/* should work
+    log "Test: Access to public/file.txt should SUCCEED..."
+    set +e
+    local public_result
+    public_result=$(aws_s3api get-object --bucket "$test_bucket" --key "public/file.txt" "$TEMP_DIR/got-public.txt" 2>&1)
+    local public_exit=$?
+    set -e
+
+    if [ $public_exit -eq 0 ]; then
+        success "Deny Pattern Test - Access to public/* SUCCEEDED as expected"
+    else
+        warning "Deny Pattern Test - Access to public/* failed: $public_result"
+    fi
+
+    # Test: Access to admin/* should FAIL
+    log "Test: Access to admin/secret.txt should FAIL..."
+    set +e
+    local admin_result
+    admin_result=$(aws_s3api get-object --bucket "$test_bucket" --key "admin/secret.txt" "$TEMP_DIR/got-admin.txt" 2>&1)
+    local admin_exit=$?
+    set -e
+
+    if [ $admin_exit -ne 0 ] && echo "$admin_result" | grep -q -E "(AccessDenied|Forbidden|not allowed)"; then
+        success "Deny Pattern Test - ✅ Access to admin/* DENIED as expected"
+        log "🔒 Resource pattern Deny is working correctly"
+    elif [ $admin_exit -eq 0 ]; then
+        error "Deny Pattern Test - ❌ CRITICAL: Access to admin/* SUCCEEDED when it should be DENIED"
+        error "🚨 SECURITY ISSUE: Resource pattern Deny not working!"
+    else
+        warning "Deny Pattern Test - Unexpected error: $admin_result"
+    fi
+
+    # Restore credentials
+    export AWS_ACCESS_KEY_ID="$orig_ak"
+    export AWS_SECRET_ACCESS_KEY="$orig_sk"
+    if [ -n "$orig_st" ]; then
+        export AWS_SESSION_TOKEN="$orig_st"
+    else
+        unset AWS_SESSION_TOKEN
+    fi
+
+    # Cleanup
+    aws_s3 rm "s3://$test_bucket" --recursive 2>/dev/null || true
+    aws_s3api delete-bucket --bucket "$test_bucket" 2>/dev/null || true
+    aws_iam delete-role-policy --role-name "$role_name" --policy-name "DenyAdminPolicy" 2>/dev/null || true
+    aws_iam delete-role --role-name "$role_name" 2>/dev/null || true
 }
 
 # =============================================================================
@@ -9342,6 +9618,9 @@ run_tests() {
             test_iam_role_with_permission_policy || true
             test_iam_permission_policy_enforcement || true
             test_iam_permission_policy_vs_trust_policy || true
+            # Permission policy Deny statement tests (security fix validation)
+            test_iam_permission_policy_deny_overrides_allow || true
+            test_iam_permission_policy_deny_resource_pattern || true
             # New ListRolePolicies and GetRolePolicy tests
             test_iam_list_role_policies || true
             test_iam_get_role_policy || true
@@ -9460,6 +9739,9 @@ run_tests() {
             test_iam_role_with_permission_policy || true
             test_iam_permission_policy_enforcement || true
             test_iam_permission_policy_vs_trust_policy || true
+            # Permission policy Deny statement tests (security fix validation)
+            test_iam_permission_policy_deny_overrides_allow || true
+            test_iam_permission_policy_deny_resource_pattern || true
             test_iam_list_roles || true
             test_iam_delete_role || true
             test_iam_delete_role_policy || true
@@ -9595,10 +9877,13 @@ run_tests() {
             test_iam_role_with_permission_policy || true
             test_iam_permission_policy_enforcement || true
             test_iam_permission_policy_vs_trust_policy || true
+            # Permission policy Deny statement tests (security fix validation)
+            test_iam_permission_policy_deny_overrides_allow || true
+            test_iam_permission_policy_deny_resource_pattern || true
             test_iam_list_roles || true
             test_iam_delete_role || true
             test_iam_delete_role_policy || true
-            
+
             # STS tests
             test_sts_assume_role || true
             test_sts_get_session_token || true

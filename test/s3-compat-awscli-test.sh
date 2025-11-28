@@ -6518,6 +6518,327 @@ EOF
     fi
 }
 
+# Test STS GetCallerIdentity response format
+# Validates AWS-compatible XML response structure
+test_sts_get_caller_identity() {
+    log "[$(date '+%Y-%m-%d %H:%M:%S')] Testing STS GetCallerIdentity response format..."
+
+    # Test GetCallerIdentity operation
+    local aws_output
+    capture_output aws_output aws_sts get-caller-identity --output json
+
+    local exit_code=$?
+
+    if [ $exit_code -eq 0 ]; then
+        success "STS GetCallerIdentity - Request succeeded"
+        log "Response:"
+        echo "$aws_output" | jq '.' 2>/dev/null || echo "$aws_output"
+
+        # Validate required fields in JSON response
+        local account_id user_id arn
+        account_id=$(echo "$aws_output" | jq -r '.Account // empty' 2>/dev/null)
+        user_id=$(echo "$aws_output" | jq -r '.UserId // empty' 2>/dev/null)
+        arn=$(echo "$aws_output" | jq -r '.Arn // empty' 2>/dev/null)
+
+        local all_fields_present=true
+
+        # Check Account field
+        if [ -n "$account_id" ]; then
+            success "STS GetCallerIdentity - Account field present: $account_id"
+        else
+            error "STS GetCallerIdentity - Account field missing"
+            all_fields_present=false
+        fi
+
+        # Check UserId field
+        if [ -n "$user_id" ]; then
+            success "STS GetCallerIdentity - UserId field present: $user_id"
+        else
+            error "STS GetCallerIdentity - UserId field missing"
+            all_fields_present=false
+        fi
+
+        # Check Arn field
+        if [ -n "$arn" ]; then
+            success "STS GetCallerIdentity - Arn field present: $arn"
+
+            # Validate ARN format (should start with arn:aws:)
+            if [[ "$arn" == arn:aws:* ]]; then
+                success "STS GetCallerIdentity - Arn has valid AWS ARN format"
+            else
+                warning "STS GetCallerIdentity - Arn does not follow standard AWS ARN format: $arn"
+            fi
+        else
+            error "STS GetCallerIdentity - Arn field missing"
+            all_fields_present=false
+        fi
+
+        if [ "$all_fields_present" = true ]; then
+            success "STS GetCallerIdentity - Response format is AWS-compatible"
+        else
+            error "STS GetCallerIdentity - Response format is missing required fields"
+        fi
+
+        # Test with temporary credentials if available
+        if [ -f "$TEMP_DIR/session_token_credentials.json" ]; then
+            log "Testing GetCallerIdentity with session token credentials..."
+
+            # Save original credentials
+            local orig_access_key="$AWS_ACCESS_KEY_ID"
+            local orig_secret_key="$AWS_SECRET_ACCESS_KEY"
+            local orig_session_token="${AWS_SESSION_TOKEN:-}"
+
+            # Load session token credentials
+            local temp_access_key temp_secret_key temp_session_token
+            temp_access_key=$(jq -r '.AccessKeyId' "$TEMP_DIR/session_token_credentials.json")
+            temp_secret_key=$(jq -r '.SecretAccessKey' "$TEMP_DIR/session_token_credentials.json")
+            temp_session_token=$(jq -r '.SessionToken' "$TEMP_DIR/session_token_credentials.json")
+
+            # Use session token credentials
+            export AWS_ACCESS_KEY_ID="$temp_access_key"
+            export AWS_SECRET_ACCESS_KEY="$temp_secret_key"
+            export AWS_SESSION_TOKEN="$temp_session_token"
+
+            local temp_output
+            capture_output temp_output aws_sts get-caller-identity --output json
+            local temp_exit_code=$?
+
+            # Restore original credentials
+            export AWS_ACCESS_KEY_ID="$orig_access_key"
+            export AWS_SECRET_ACCESS_KEY="$orig_secret_key"
+            if [ -n "$orig_session_token" ]; then
+                export AWS_SESSION_TOKEN="$orig_session_token"
+            else
+                unset AWS_SESSION_TOKEN
+            fi
+
+            if [ $temp_exit_code -eq 0 ]; then
+                success "STS GetCallerIdentity - Works with temporary credentials"
+                log "Temporary credential identity:"
+                echo "$temp_output" | jq '.' 2>/dev/null || echo "$temp_output"
+            else
+                warning "STS GetCallerIdentity - Failed with temporary credentials"
+            fi
+        fi
+
+    else
+        error "STS GetCallerIdentity - Request failed"
+        log "AWS CLI Response:"
+        echo "$aws_output"
+    fi
+}
+
+# Test STS GetCallerIdentity with temporary credentials from AssumeRole
+# Creates a role, assumes it, and validates GetCallerIdentity returns assumed role identity
+test_sts_get_caller_identity_with_temp_creds() {
+    log "[$(date '+%Y-%m-%d %H:%M:%S')] Testing STS GetCallerIdentity with temporary credentials..."
+
+    local role_name="GetCallerIdTestRole-$(date +%s)"
+
+    # Get the actual account UUID from GetCallerIdentity
+    log "Getting account UUID from GetCallerIdentity..."
+    local caller_identity
+    caller_identity=$(aws sts --endpoint-url="$S3_ENDPOINT" \
+        --region="$AWS_REGION" \
+        --no-verify-ssl \
+        get-caller-identity \
+        --output json 2>/dev/null)
+
+    local account_uuid
+    account_uuid=$(echo "$caller_identity" | jq -r '.Account // empty' 2>/dev/null)
+
+    if [ -z "$account_uuid" ]; then
+        error "STS GetCallerIdentity with temp creds - Could not get account UUID"
+        log "GetCallerIdentity response: $caller_identity"
+        return 1
+    fi
+
+    log "DEBUG: Account UUID: $account_uuid"
+
+    # Create trust policy allowing the current account to assume the role
+    # Use "*" principal like other working tests - specific ARN format may not be fully supported
+    local trust_policy='{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"AWS":"*"},"Action":"sts:AssumeRole"}]}'
+    log "DEBUG: Trust policy: $trust_policy"
+
+    # Step 1: Create a role for testing
+    log "Creating test role: $role_name"
+    local create_output
+    capture_output create_output aws_iam create-role \
+        --role-name "$role_name" \
+        --assume-role-policy-document "$trust_policy" \
+        --output json
+
+    if [ $? -ne 0 ]; then
+        error "STS GetCallerIdentity with temp creds - Failed to create test role"
+        log "Create role output: $create_output"
+        return 1
+    fi
+
+    # Extract role ARN
+    local role_arn
+    role_arn=$(echo "$create_output" | jq -r '.Role.Arn // empty' 2>/dev/null)
+
+    if [ -z "$role_arn" ]; then
+        error "STS GetCallerIdentity with temp creds - Could not extract role ARN"
+        # Cleanup
+        aws_iam delete-role --role-name "$role_name" 2>/dev/null || true
+        return 1
+    fi
+
+    log "Created role with ARN: $role_arn"
+
+    # Wait for role to propagate before assuming
+    log "Waiting for role to propagate..."
+    sleep 2
+
+    # Step 2: Assume the role to get temporary credentials
+    log "Assuming role to get temporary credentials..."
+    log "DEBUG: Role ARN: $role_arn"
+    log "DEBUG: Endpoint: $S3_ENDPOINT"
+
+    local assume_output assume_exit_code
+    # Use --debug to see full HTTP request/response on failure
+    assume_output=$(aws sts --endpoint-url="$S3_ENDPOINT" \
+        --region="$AWS_REGION" \
+        --no-verify-ssl \
+        --debug \
+        assume-role \
+        --role-arn "$role_arn" \
+        --role-session-name "GetCallerIdTest" \
+        --duration-seconds 900 \
+        --output json 2>&1)
+    assume_exit_code=$?
+
+    log "DEBUG: AssumeRole exit code: $assume_exit_code"
+
+    if [ $assume_exit_code -ne 0 ]; then
+        error "STS GetCallerIdentity with temp creds - Failed to assume role"
+        log "DEBUG: Looking for server response body:"
+        echo "$assume_output" | grep -A20 "Response body" | head -30
+        log "DEBUG: Looking for Error XML:"
+        echo "$assume_output" | grep -oE "<Error>.*</Error>" | head -5
+        log "DEBUG: Full output (last 100 lines):"
+        echo "$assume_output" | tail -100
+        # Cleanup
+        aws_iam delete-role --role-name "$role_name" 2>/dev/null || true
+        return 1
+    fi
+
+    # On success, extract just the JSON block (filter out debug and XML output)
+    # The JSON starts with '{' on its own line and ends with '}'
+    local json_output
+    json_output=$(echo "$assume_output" | sed -n '/^{$/,/^}$/p')
+
+    log "DEBUG: Extracted JSON output:"
+    echo "$json_output" | head -20
+
+    # Extract temporary credentials
+    local temp_access_key temp_secret_key temp_session_token
+    temp_access_key=$(echo "$json_output" | jq -r '.Credentials.AccessKeyId // empty' 2>/dev/null)
+    temp_secret_key=$(echo "$json_output" | jq -r '.Credentials.SecretAccessKey // empty' 2>/dev/null)
+    temp_session_token=$(echo "$json_output" | jq -r '.Credentials.SessionToken // empty' 2>/dev/null)
+
+    log "DEBUG: Extracted AccessKeyId: $temp_access_key"
+    log "DEBUG: Extracted SessionToken length: ${#temp_session_token}"
+
+    if [ -z "$temp_access_key" ] || [ -z "$temp_secret_key" ] || [ -z "$temp_session_token" ]; then
+        error "STS GetCallerIdentity with temp creds - Could not extract temporary credentials"
+        log "DEBUG: Raw assume_output (last 50 lines):"
+        echo "$assume_output" | tail -50
+        # Cleanup
+        aws_iam delete-role --role-name "$role_name" 2>/dev/null || true
+        return 1
+    fi
+
+    success "STS GetCallerIdentity with temp creds - Obtained temporary credentials"
+
+    # Step 3: Use temporary credentials to call GetCallerIdentity
+    log "Calling GetCallerIdentity with temporary credentials..."
+    log "DEBUG: Using temp AccessKeyId: $temp_access_key"
+
+    # Save original credentials
+    local orig_access_key="$AWS_ACCESS_KEY_ID"
+    local orig_secret_key="$AWS_SECRET_ACCESS_KEY"
+    local orig_session_token="${AWS_SESSION_TOKEN:-}"
+
+    # Use temporary credentials
+    export AWS_ACCESS_KEY_ID="$temp_access_key"
+    export AWS_SECRET_ACCESS_KEY="$temp_secret_key"
+    export AWS_SESSION_TOKEN="$temp_session_token"
+
+    local identity_output
+    identity_output=$(aws sts --endpoint-url="$S3_ENDPOINT" \
+        --region="$AWS_REGION" \
+        --no-verify-ssl \
+        get-caller-identity \
+        --output json 2>&1)
+    local identity_exit_code=$?
+
+    log "DEBUG: GetCallerIdentity exit code: $identity_exit_code"
+    log "DEBUG: GetCallerIdentity raw output:"
+    echo "$identity_output"
+
+    # Restore original credentials immediately
+    export AWS_ACCESS_KEY_ID="$orig_access_key"
+    export AWS_SECRET_ACCESS_KEY="$orig_secret_key"
+    if [ -n "$orig_session_token" ]; then
+        export AWS_SESSION_TOKEN="$orig_session_token"
+    else
+        unset AWS_SESSION_TOKEN
+    fi
+
+    # Step 4: Validate the response
+    if [ $identity_exit_code -eq 0 ]; then
+        success "STS GetCallerIdentity with temp creds - Request succeeded"
+        log "Response:"
+        echo "$identity_output" | jq '.' 2>/dev/null || echo "$identity_output"
+
+        # Validate response fields
+        local resp_account resp_user_id resp_arn
+        resp_account=$(echo "$identity_output" | jq -r '.Account // empty' 2>/dev/null)
+        resp_user_id=$(echo "$identity_output" | jq -r '.UserId // empty' 2>/dev/null)
+        resp_arn=$(echo "$identity_output" | jq -r '.Arn // empty' 2>/dev/null)
+
+        # Check Account field
+        if [ -n "$resp_account" ]; then
+            success "STS GetCallerIdentity with temp creds - Account field present: $resp_account"
+        else
+            error "STS GetCallerIdentity with temp creds - Account field missing"
+        fi
+
+        # Check UserId field
+        if [ -n "$resp_user_id" ]; then
+            success "STS GetCallerIdentity with temp creds - UserId field present: $resp_user_id"
+        else
+            error "STS GetCallerIdentity with temp creds - UserId field missing"
+        fi
+
+        # Check Arn field - should reflect the assumed role
+        if [ -n "$resp_arn" ]; then
+            success "STS GetCallerIdentity with temp creds - Arn field present: $resp_arn"
+
+            # Validate ARN contains the assumed role info
+            if [[ "$resp_arn" == *"$role_name"* ]] || [[ "$resp_arn" == *"assumed-role"* ]]; then
+                success "STS GetCallerIdentity with temp creds - Arn reflects assumed role identity"
+            else
+                warning "STS GetCallerIdentity with temp creds - Arn may not reflect assumed role: $resp_arn"
+            fi
+        else
+            error "STS GetCallerIdentity with temp creds - Arn field missing"
+        fi
+
+    else
+        error "STS GetCallerIdentity with temp creds - Request failed with temporary credentials"
+        log "Response: $identity_output"
+    fi
+
+    # Step 5: Cleanup - delete the test role
+    log "Cleaning up test role: $role_name"
+    aws_iam delete-role --role-name "$role_name" 2>/dev/null || true
+
+    success "STS GetCallerIdentity with temp creds - Test completed"
+}
+
 # =============================================================================
 # IAM Test Utilities
 # =============================================================================
@@ -9683,10 +10004,12 @@ run_tests() {
             # STS tests
             test_sts_assume_role || true
             test_sts_get_session_token || true
+            test_sts_get_caller_identity || true
+            test_sts_get_caller_identity_with_temp_creds || true
             test_sts_role_based_authorization || true
             test_sts_role_object_permissions || true
             test_sts_temporary_credentials_expiry || true
-            
+
             # Trust Policy Validation Tests (Security Fix Validation)
             log "Running Trust Policy Validation Tests for STS..."
             test_trust_policy_principal_matching || true
@@ -9748,12 +10071,14 @@ run_tests() {
             # STS tests
             test_sts_assume_role || true
             test_sts_get_session_token || true
+            test_sts_get_caller_identity || true
+            test_sts_get_caller_identity_with_temp_creds || true
             test_sts_role_based_authorization || true
             test_sts_role_object_permissions || true
             test_sts_temporary_credentials_expiry || true
             test_iam_sts_integration || true
             test_iam_comprehensive_security || true
-            
+
             # Clean up IAM+STS integration test resources
             log "IAM+STS integration tests completed, running comprehensive cleanup..."
             
@@ -9887,15 +10212,17 @@ run_tests() {
             # STS tests
             test_sts_assume_role || true
             test_sts_get_session_token || true
+            test_sts_get_caller_identity || true
+            test_sts_get_caller_identity_with_temp_creds || true
             test_sts_role_based_authorization || true
             test_sts_role_object_permissions || true
             test_sts_temporary_credentials_expiry || true
             test_iam_sts_integration || true
             test_iam_comprehensive_security || true
-            
+
             # Clean up IAM+STS integration test resources
             log "IAM+STS integration tests completed, running cleanup..."
-            
+
             # Clean up IAM test buckets
             aws_s3 rm "s3://iam-test-bucket-fixed" --recursive 2>/dev/null || true
             aws_s3api delete-bucket --bucket "iam-test-bucket-fixed" 2>/dev/null || true

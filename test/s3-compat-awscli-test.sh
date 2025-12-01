@@ -6181,7 +6181,7 @@ test_sts_role_object_permissions() {
     fi
     
     # Get account UUID for ARN construction
-    local account_uuid="c116efce-086f-455e-9ae4-26d49551428d"
+    local account_uuid=$(get_account_uuid)
     local role_arn="arn:aws:iam::${account_uuid}:role/${role_name}"
     local session_name="object-test-session-$(date +%s)"
     
@@ -7289,8 +7289,8 @@ test_iam_role_with_permission_policy() {
     fi
     
     log "Testing STS AssumeRole with permission policy role: $role_name"
-    
-    local account_uuid="c116efce-086f-455e-9ae4-26d49551428d"  
+
+    local account_uuid=$(get_account_uuid)
     local role_arn="arn:aws:iam::${account_uuid}:role/${role_name}"
     local session_name="permission-test-session"
     
@@ -7427,7 +7427,7 @@ test_iam_permission_policy_enforcement() {
     
     # Create a new role specifically for this test
     local role_name="enforcement-test-role-$(date +%s)-$$-$RANDOM"
-    local account_uuid="c116efce-086f-455e-9ae4-26d49551428d"
+    local account_uuid=$(get_account_uuid)
     
     # Create trust policy that allows role assumption
     local trust_policy='{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"AWS":"*"},"Action":"sts:AssumeRole"}]}'
@@ -8533,10 +8533,10 @@ test_iam_comprehensive_security() {
     sleep 1
     
     local test_bucket_1="security-test-bucket-1-$(date +%s)"
-    local test_bucket_2="security-test-bucket-2-$(date +%s)" 
+    local test_bucket_2="security-test-bucket-2-$(date +%s)"
     local denied_bucket="denied-bucket-$(date +%s)"
     local test_object="security-test-object.txt"
-    local account_uuid="c116efce-086f-455e-9ae4-26d49551428d"
+    local account_uuid=$(get_account_uuid)
     
     # Create distinct roles with different permission levels
     local readonly_role="readonly-role-$(date +%s)"
@@ -8894,7 +8894,7 @@ test_iam_sts_integration() {
     
     local test_role="integration-test-role-$(date +%s)"
     local session_name="integration-test-session"
-    local account_uuid="c116efce-086f-455e-9ae4-26d49551428d"
+    local account_uuid=$(get_account_uuid)
     local role_arn="arn:aws:iam::${account_uuid}:role/${test_role}"
     
     # Step 1: Create IAM role

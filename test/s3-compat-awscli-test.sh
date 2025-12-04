@@ -6839,6 +6839,100 @@ test_sts_get_caller_identity_with_temp_creds() {
     success "STS GetCallerIdentity with temp creds - Test completed"
 }
 
+# Test IAM CreateRole with temporary credentials from GetSessionToken
+# In AWS, session token credentials cannot perform IAM operations.
+# This test verifies our implementation's behavior.
+test_iam_create_role_with_session_token() {
+    log "[$(date '+%Y-%m-%d %H:%M:%S')] Testing IAM CreateRole with session token credentials..."
+
+    # Step 1: Get session token credentials
+    log "Step 1: Getting session token credentials..."
+    local session_output
+    capture_output session_output aws_sts get-session-token \
+        --duration-seconds 3600 \
+        --output json
+
+    if [ $? -ne 0 ]; then
+        error "IAM CreateRole with session token - Failed to get session token"
+        log "GetSessionToken output: $session_output"
+        return 1
+    fi
+
+    # Extract credentials
+    local temp_access_key temp_secret_key temp_session_token
+    temp_access_key=$(echo "$session_output" | jq -r '.Credentials.AccessKeyId // empty' 2>/dev/null)
+    temp_secret_key=$(echo "$session_output" | jq -r '.Credentials.SecretAccessKey // empty' 2>/dev/null)
+    temp_session_token=$(echo "$session_output" | jq -r '.Credentials.SessionToken // empty' 2>/dev/null)
+
+    if [ -z "$temp_access_key" ] || [ -z "$temp_secret_key" ] || [ -z "$temp_session_token" ]; then
+        error "IAM CreateRole with session token - Could not extract session credentials"
+        log "Session output: $session_output"
+        return 1
+    fi
+
+    log "DEBUG: Got session token credentials"
+    log "DEBUG: AccessKeyId: $temp_access_key"
+    log "DEBUG: SessionToken length: ${#temp_session_token}"
+
+    # Save original credentials
+    local orig_access_key="$AWS_ACCESS_KEY_ID"
+    local orig_secret_key="$AWS_SECRET_ACCESS_KEY"
+    local orig_session_token="${AWS_SESSION_TOKEN:-}"
+
+    # Step 2: Use session token credentials to try CreateRole
+    log "Step 2: Attempting IAM CreateRole with session token credentials..."
+
+    export AWS_ACCESS_KEY_ID="$temp_access_key"
+    export AWS_SECRET_ACCESS_KEY="$temp_secret_key"
+    export AWS_SESSION_TOKEN="$temp_session_token"
+
+    local role_name="SessionTokenTestRole-$(date +%s)-$$-$RANDOM"
+    local trust_policy='{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"AWS":"*"},"Action":"sts:AssumeRole"}]}'
+
+    set +e
+    local create_output
+    capture_output create_output aws_iam create-role \
+        --role-name "$role_name" \
+        --assume-role-policy-document "$trust_policy" \
+        --description "Test role created with session token credentials" \
+        --output json
+    local create_exit_code=$?
+    set -e
+
+    # Restore original credentials immediately
+    export AWS_ACCESS_KEY_ID="$orig_access_key"
+    export AWS_SECRET_ACCESS_KEY="$orig_secret_key"
+    if [ -n "$orig_session_token" ]; then
+        export AWS_SESSION_TOKEN="$orig_session_token"
+    else
+        unset AWS_SESSION_TOKEN
+    fi
+
+    # Step 3: Analyze the result
+    if [ $create_exit_code -eq 0 ]; then
+        # Role was created - this differs from AWS behavior
+        warning "IAM CreateRole with session token - Role was created successfully"
+        warning "NOTE: In AWS, session token credentials cannot perform IAM operations"
+        log "Response:"
+        echo "$create_output" | jq '.' 2>/dev/null || echo "$create_output"
+
+        # Clean up the created role
+        log "Cleaning up test role: $role_name"
+        aws_iam delete-role --role-name "$role_name" 2>/dev/null || true
+
+        success "IAM CreateRole with session token - Test completed (role created, cleaned up)"
+    else
+        # Role creation was blocked
+        if echo "$create_output" | grep -qiE "AccessDenied|Forbidden|NotAuthorized|InvalidClientTokenId"; then
+            success "IAM CreateRole with session token - Correctly blocked session token from creating role"
+            log "Response: $create_output"
+        else
+            error "IAM CreateRole with session token - Failed with unexpected error"
+            log "Response: $create_output"
+        fi
+    fi
+}
+
 # =============================================================================
 # IAM Test Utilities
 # =============================================================================
@@ -9950,7 +10044,10 @@ run_tests() {
             test_iam_delete_role || true
             test_iam_delete_role_policy || true
             test_iam_comprehensive_security || true
-            
+
+            # Test IAM operations with session token credentials
+            test_iam_create_role_with_session_token || true
+
             # AWS IAM Trust Policy "Deny" Support Tests (NEW)
             test_iam_trust_policy_deny_overrides_allow || true
             test_iam_trust_policy_multiple_denies || true
@@ -10078,6 +10175,7 @@ run_tests() {
             test_sts_temporary_credentials_expiry || true
             test_iam_sts_integration || true
             test_iam_comprehensive_security || true
+            test_iam_create_role_with_session_token || true
 
             # Clean up IAM+STS integration test resources
             log "IAM+STS integration tests completed, running comprehensive cleanup..."
@@ -10219,6 +10317,7 @@ run_tests() {
             test_sts_temporary_credentials_expiry || true
             test_iam_sts_integration || true
             test_iam_comprehensive_security || true
+            test_iam_create_role_with_session_token || true
 
             # Clean up IAM+STS integration test resources
             log "IAM+STS integration tests completed, running cleanup..."

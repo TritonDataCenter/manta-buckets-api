@@ -3591,9 +3591,9 @@ test_cors_headers() {
         set +e
         # Use curl for OPTIONS request since AWS CLI doesn't directly support it
         if command -v curl >/dev/null 2>&1; then
-            # Construct proper Manta URL format: /account/buckets/bucket/objects/object
-            local options_url="$MANTA_URL/$MANTA_USER/buckets/$cors_test_bucket/objects/$cors_test_object"
-            
+            # Construct URL using S3_ENDPOINT with Manta path format
+            local options_url="$S3_ENDPOINT/$MANTA_USER/buckets/$cors_test_bucket/objects/$cors_test_object"
+
             log "  Sending OPTIONS request to: $options_url"
             log "  With Origin header: https://example.com"
             
@@ -6840,12 +6840,14 @@ test_sts_get_caller_identity_with_temp_creds() {
 }
 
 # Test IAM CreateRole with temporary credentials from GetSessionToken
-# In AWS, session token credentials cannot perform IAM operations.
-# This test verifies our implementation's behavior.
+# AWS restriction: GetSessionToken credentials (MSTS prefix) CANNOT call
+# IAM APIs. This test verifies that our implementation correctly blocks
+# IAM operations when using GetSessionToken temporary credentials.
 test_iam_create_role_with_session_token() {
-    log "[$(date '+%Y-%m-%d %H:%M:%S')] Testing IAM CreateRole with session token credentials..."
+    log "Testing IAM CreateRole with GetSessionToken credentials (MSTS)..."
+    log "Expected: AccessDenied (MSTS prefix blocked from IAM APIs)"
 
-    # Step 1: Get session token credentials
+    # Step 1: Get session token credentials (MSTS prefix)
     log "Step 1: Getting session token credentials..."
     local session_output
     capture_output session_output aws_sts get-session-token \
@@ -6853,48 +6855,65 @@ test_iam_create_role_with_session_token() {
         --output json
 
     if [ $? -ne 0 ]; then
-        error "IAM CreateRole with session token - Failed to get session token"
+        error "IAM with MSTS - Failed to get session token"
         log "GetSessionToken output: $session_output"
         return 1
     fi
 
     # Extract credentials
     local temp_access_key temp_secret_key temp_session_token
-    temp_access_key=$(echo "$session_output" | jq -r '.Credentials.AccessKeyId // empty' 2>/dev/null)
-    temp_secret_key=$(echo "$session_output" | jq -r '.Credentials.SecretAccessKey // empty' 2>/dev/null)
-    temp_session_token=$(echo "$session_output" | jq -r '.Credentials.SessionToken // empty' 2>/dev/null)
+    temp_access_key=$(echo "$session_output" | \
+        jq -r '.Credentials.AccessKeyId // empty' 2>/dev/null)
+    temp_secret_key=$(echo "$session_output" | \
+        jq -r '.Credentials.SecretAccessKey // empty' 2>/dev/null)
+    temp_session_token=$(echo "$session_output" | \
+        jq -r '.Credentials.SessionToken // empty' 2>/dev/null)
 
-    if [ -z "$temp_access_key" ] || [ -z "$temp_secret_key" ] || [ -z "$temp_session_token" ]; then
-        error "IAM CreateRole with session token - Could not extract session credentials"
+    if [ -z "$temp_access_key" ] || [ -z "$temp_secret_key" ] || \
+       [ -z "$temp_session_token" ]; then
+        error "IAM with MSTS - Could not extract session credentials"
         log "Session output: $session_output"
         return 1
     fi
 
-    log "DEBUG: Got session token credentials"
-    log "DEBUG: AccessKeyId: $temp_access_key"
-    log "DEBUG: SessionToken length: ${#temp_session_token}"
+    # Verify MSTS prefix (GetSessionToken credentials)
+    if [[ "$temp_access_key" != MSTS* ]]; then
+        error "IAM with MSTS - AccessKeyId should have MSTS prefix"
+        log "Got AccessKeyId: $temp_access_key (expected MSTS...)"
+        return 1
+    fi
+
+    log "DEBUG: Got MSTS credentials: $temp_access_key"
+    success "IAM with MSTS - Verified MSTS prefix on GetSessionToken creds"
 
     # Save original credentials
     local orig_access_key="$AWS_ACCESS_KEY_ID"
     local orig_secret_key="$AWS_SECRET_ACCESS_KEY"
     local orig_session_token="${AWS_SESSION_TOKEN:-}"
 
-    # Step 2: Use session token credentials to try CreateRole
-    log "Step 2: Attempting IAM CreateRole with session token credentials..."
+    # Step 2: Attempt IAM CreateRole (should be blocked)
+    log "Step 2: Attempting IAM CreateRole with MSTS credentials..."
 
     export AWS_ACCESS_KEY_ID="$temp_access_key"
     export AWS_SECRET_ACCESS_KEY="$temp_secret_key"
     export AWS_SESSION_TOKEN="$temp_session_token"
 
-    local role_name="SessionTokenTestRole-$(date +%s)-$$-$RANDOM"
-    local trust_policy='{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"AWS":"*"},"Action":"sts:AssumeRole"}]}'
+    local role_name="MSTSTestRole-$(date +%s)-$$"
+    local trust_policy='{
+        "Version":"2012-10-17",
+        "Statement":[{
+            "Effect":"Allow",
+            "Principal":{"AWS":"*"},
+            "Action":"sts:AssumeRole"
+        }]
+    }'
 
     set +e
     local create_output
     capture_output create_output aws_iam create-role \
         --role-name "$role_name" \
         --assume-role-policy-document "$trust_policy" \
-        --description "Test role created with session token credentials" \
+        --description "Test role - should fail with MSTS creds" \
         --output json
     local create_exit_code=$?
     set -e
@@ -6908,28 +6927,313 @@ test_iam_create_role_with_session_token() {
         unset AWS_SESSION_TOKEN
     fi
 
-    # Step 3: Analyze the result
-    if [ $create_exit_code -eq 0 ]; then
-        # Role was created - this differs from AWS behavior
-        warning "IAM CreateRole with session token - Role was created successfully"
-        warning "NOTE: In AWS, session token credentials cannot perform IAM operations"
-        log "Response:"
-        echo "$create_output" | jq '.' 2>/dev/null || echo "$create_output"
-
-        # Clean up the created role
-        log "Cleaning up test role: $role_name"
-        aws_iam delete-role --role-name "$role_name" 2>/dev/null || true
-
-        success "IAM CreateRole with session token - Test completed (role created, cleaned up)"
-    else
-        # Role creation was blocked
-        if echo "$create_output" | grep -qiE "AccessDenied|Forbidden|NotAuthorized|InvalidClientTokenId"; then
-            success "IAM CreateRole with session token - Correctly blocked session token from creating role"
+    # Step 3: Verify the request was blocked with AccessDenied
+    if [ $create_exit_code -ne 0 ]; then
+        if echo "$create_output" | grep -qiE "AccessDenied"; then
+            success "IAM with MSTS - Correctly blocked with AccessDenied"
             log "Response: $create_output"
         else
-            error "IAM CreateRole with session token - Failed with unexpected error"
-            log "Response: $create_output"
+            error "IAM with MSTS - Blocked but unexpected error message"
+            log "Expected: AccessDenied, Got: $create_output"
         fi
+    else
+        # Role was created - this is a SECURITY VIOLATION
+        error "IAM with MSTS - SECURITY BUG: Role was created!"
+        error "GetSessionToken credentials (MSTS) must NOT call IAM APIs"
+        log "Response: $create_output"
+
+        # Clean up the role that should not have been created
+        log "Cleaning up incorrectly created role: $role_name"
+        aws_iam delete-role --role-name "$role_name" 2>/dev/null || true
+    fi
+}
+
+# Test IAM CreateRole with temporary credentials from AssumeRole
+# AssumeRole credentials (MSAR prefix) CAN call IAM APIs if the
+# role's permission policy allows it. This test verifies that
+# MSAR credentials are not blocked from IAM operations.
+test_iam_create_role_with_assume_role_credentials() {
+    log "Testing IAM CreateRole with AssumeRole credentials (MSAR)..."
+    log "Expected: Success (MSAR prefix allowed for IAM APIs)"
+
+    # Step 1: Create a role that allows the current user to assume it
+    # and has permissions to call IAM CreateRole
+    log "Step 1: Creating a role with IAM permissions..."
+
+    local account_uuid
+    account_uuid=$(get_account_uuid)
+    if [ -z "$account_uuid" ]; then
+        error "IAM with MSAR - Could not get account UUID"
+        return 1
+    fi
+
+    local base_role_name="IAMPermissionsRole-$(date +%s)-$$"
+
+    # Trust policy allowing current account to assume this role
+    local trust_policy=$(cat <<EOF
+{
+    "Version": "2012-10-17",
+    "Statement": [{
+        "Effect": "Allow",
+        "Principal": {"AWS": "$account_uuid"},
+        "Action": "sts:AssumeRole"
+    }]
+}
+EOF
+)
+
+    set +e
+    local create_base_output
+    capture_output create_base_output aws_iam create-role \
+        --role-name "$base_role_name" \
+        --assume-role-policy-document "$trust_policy" \
+        --description "Role with IAM permissions for MSAR test" \
+        --output json
+    local create_base_exit=$?
+    set -e
+
+    if [ $create_base_exit -ne 0 ]; then
+        error "IAM with MSAR - Failed to create base role"
+        log "Output: $create_base_output"
+        return 1
+    fi
+
+    log "DEBUG: Created base role: $base_role_name"
+
+    # Add IAM permissions to the role
+    local iam_policy=$(cat <<EOF
+{
+    "Version": "2012-10-17",
+    "Statement": [{
+        "Effect": "Allow",
+        "Action": ["iam:CreateRole", "iam:DeleteRole", "iam:GetRole"],
+        "Resource": "*"
+    }]
+}
+EOF
+)
+
+    set +e
+    aws_iam put-role-policy \
+        --role-name "$base_role_name" \
+        --policy-name "IAMPermissions" \
+        --policy-document "$iam_policy" 2>/dev/null
+    set -e
+
+    # Step 2: Assume the role to get MSAR credentials
+    log "Step 2: Assuming role to get MSAR credentials..."
+
+    local role_arn="arn:aws:iam::$account_uuid:role/$base_role_name"
+    local assume_output
+
+    set +e
+    capture_output assume_output aws_sts assume-role \
+        --role-arn "$role_arn" \
+        --role-session-name "MSAR-IAM-Test" \
+        --output json
+    local assume_exit=$?
+    set -e
+
+    if [ $assume_exit -ne 0 ]; then
+        error "IAM with MSAR - Failed to assume role"
+        log "Output: $assume_output"
+        # Cleanup base role
+        aws_iam delete-role-policy \
+            --role-name "$base_role_name" \
+            --policy-name "IAMPermissions" 2>/dev/null || true
+        aws_iam delete-role --role-name "$base_role_name" 2>/dev/null || true
+        return 1
+    fi
+
+    # Extract MSAR credentials
+    local msar_access_key msar_secret_key msar_session_token
+    msar_access_key=$(echo "$assume_output" | \
+        jq -r '.Credentials.AccessKeyId // empty' 2>/dev/null)
+    msar_secret_key=$(echo "$assume_output" | \
+        jq -r '.Credentials.SecretAccessKey // empty' 2>/dev/null)
+    msar_session_token=$(echo "$assume_output" | \
+        jq -r '.Credentials.SessionToken // empty' 2>/dev/null)
+
+    if [ -z "$msar_access_key" ] || [ -z "$msar_secret_key" ] || \
+       [ -z "$msar_session_token" ]; then
+        error "IAM with MSAR - Could not extract AssumeRole credentials"
+        log "Assume output: $assume_output"
+        # Cleanup
+        aws_iam delete-role-policy \
+            --role-name "$base_role_name" \
+            --policy-name "IAMPermissions" 2>/dev/null || true
+        aws_iam delete-role --role-name "$base_role_name" 2>/dev/null || true
+        return 1
+    fi
+
+    # Verify MSAR prefix (AssumeRole credentials)
+    if [[ "$msar_access_key" != MSAR* ]]; then
+        error "IAM with MSAR - AccessKeyId should have MSAR prefix"
+        log "Got AccessKeyId: $msar_access_key (expected MSAR...)"
+        # Cleanup
+        aws_iam delete-role-policy \
+            --role-name "$base_role_name" \
+            --policy-name "IAMPermissions" 2>/dev/null || true
+        aws_iam delete-role --role-name "$base_role_name" 2>/dev/null || true
+        return 1
+    fi
+
+    log "DEBUG: Got MSAR credentials: $msar_access_key"
+    success "IAM with MSAR - Verified MSAR prefix on AssumeRole creds"
+
+    # Save original credentials
+    local orig_access_key="$AWS_ACCESS_KEY_ID"
+    local orig_secret_key="$AWS_SECRET_ACCESS_KEY"
+    local orig_session_token="${AWS_SESSION_TOKEN:-}"
+
+    # Step 3: Use MSAR credentials to call IAM CreateRole
+    log "Step 3: Attempting IAM CreateRole with MSAR credentials..."
+
+    export AWS_ACCESS_KEY_ID="$msar_access_key"
+    export AWS_SECRET_ACCESS_KEY="$msar_secret_key"
+    export AWS_SESSION_TOKEN="$msar_session_token"
+
+    local new_role_name="MSARCreatedRole-$(date +%s)-$$"
+    local new_trust_policy='{
+        "Version":"2012-10-17",
+        "Statement":[{
+            "Effect":"Allow",
+            "Principal":{"AWS":"*"},
+            "Action":"sts:AssumeRole"
+        }]
+    }'
+
+    set +e
+    local create_output
+    capture_output create_output aws_iam create-role \
+        --role-name "$new_role_name" \
+        --assume-role-policy-document "$new_trust_policy" \
+        --description "Role created with MSAR credentials" \
+        --output json
+    local create_exit_code=$?
+    set -e
+
+    # Restore original credentials
+    export AWS_ACCESS_KEY_ID="$orig_access_key"
+    export AWS_SECRET_ACCESS_KEY="$orig_secret_key"
+    if [ -n "$orig_session_token" ]; then
+        export AWS_SESSION_TOKEN="$orig_session_token"
+    else
+        unset AWS_SESSION_TOKEN
+    fi
+
+    # Step 4: Verify the result
+    if [ $create_exit_code -eq 0 ]; then
+        success "IAM with MSAR - Successfully created role with MSAR creds"
+        log "Response: $create_output"
+
+        # Cleanup the newly created role
+        log "Cleaning up created role: $new_role_name"
+        aws_iam delete-role --role-name "$new_role_name" 2>/dev/null || true
+    else
+        if echo "$create_output" | grep -qiE "AccessDenied"; then
+            error "IAM with MSAR - Incorrectly blocked MSAR credentials"
+            error "AssumeRole credentials (MSAR) SHOULD be allowed for IAM"
+        else
+            error "IAM with MSAR - Failed with error: $create_output"
+        fi
+    fi
+
+    # Cleanup base role
+    log "Cleaning up base role: $base_role_name"
+    aws_iam delete-role-policy \
+        --role-name "$base_role_name" \
+        --policy-name "IAMPermissions" 2>/dev/null || true
+    aws_iam delete-role --role-name "$base_role_name" 2>/dev/null || true
+}
+
+# Test that verifies the access key prefix distinction
+test_sts_credential_prefix_verification() {
+    log "Testing STS credential prefix verification..."
+    log "GetSessionToken should return MSTS, AssumeRole should return MSAR"
+
+    local account_uuid
+    account_uuid=$(get_account_uuid)
+
+    # Test 1: GetSessionToken returns MSTS prefix
+    log "Test 1: Verifying GetSessionToken returns MSTS prefix..."
+    local session_output
+    capture_output session_output aws_sts get-session-token \
+        --duration-seconds 900 \
+        --output json
+
+    if [ $? -eq 0 ]; then
+        local session_key
+        session_key=$(echo "$session_output" | \
+            jq -r '.Credentials.AccessKeyId // empty' 2>/dev/null)
+        if [[ "$session_key" == MSTS* ]]; then
+            success "STS Prefix - GetSessionToken returns MSTS prefix"
+            log "AccessKeyId: $session_key"
+        else
+            error "STS Prefix - GetSessionToken should return MSTS prefix"
+            log "Got: $session_key"
+        fi
+    else
+        error "STS Prefix - GetSessionToken failed"
+    fi
+
+    # Test 2: AssumeRole returns MSAR prefix
+    log "Test 2: Verifying AssumeRole returns MSAR prefix..."
+
+    # Create a simple role to assume
+    local test_role="PrefixTestRole-$(date +%s)-$$"
+    local trust_policy=$(cat <<EOF
+{
+    "Version": "2012-10-17",
+    "Statement": [{
+        "Effect": "Allow",
+        "Principal": {"AWS": "$account_uuid"},
+        "Action": "sts:AssumeRole"
+    }]
+}
+EOF
+)
+
+    set +e
+    aws_iam create-role \
+        --role-name "$test_role" \
+        --assume-role-policy-document "$trust_policy" \
+        --output json 2>/dev/null
+    local create_exit=$?
+    set -e
+
+    if [ $create_exit -eq 0 ]; then
+        local role_arn="arn:aws:iam::$account_uuid:role/$test_role"
+        local assume_output
+
+        set +e
+        capture_output assume_output aws_sts assume-role \
+            --role-arn "$role_arn" \
+            --role-session-name "prefix-test" \
+            --output json
+        local assume_exit=$?
+        set -e
+
+        if [ $assume_exit -eq 0 ]; then
+            local assume_key
+            assume_key=$(echo "$assume_output" | \
+                jq -r '.Credentials.AccessKeyId // empty' 2>/dev/null)
+            if [[ "$assume_key" == MSAR* ]]; then
+                success "STS Prefix - AssumeRole returns MSAR prefix"
+                log "AccessKeyId: $assume_key"
+            else
+                error "STS Prefix - AssumeRole should return MSAR prefix"
+                log "Got: $assume_key"
+            fi
+        else
+            error "STS Prefix - AssumeRole failed"
+            log "Output: $assume_output"
+        fi
+
+        # Cleanup
+        aws_iam delete-role --role-name "$test_role" 2>/dev/null || true
+    else
+        error "STS Prefix - Could not create test role for AssumeRole"
     fi
 }
 
@@ -10045,8 +10349,11 @@ run_tests() {
             test_iam_delete_role_policy || true
             test_iam_comprehensive_security || true
 
-            # Test IAM operations with session token credentials
+            # Test IAM operations with temporary credentials (MSTS/MSAR)
+            log "Running STS credential prefix and IAM access tests..."
+            test_sts_credential_prefix_verification || true
             test_iam_create_role_with_session_token || true
+            test_iam_create_role_with_assume_role_credentials || true
 
             # AWS IAM Trust Policy "Deny" Support Tests (NEW)
             test_iam_trust_policy_deny_overrides_allow || true
@@ -10175,27 +10482,32 @@ run_tests() {
             test_sts_temporary_credentials_expiry || true
             test_iam_sts_integration || true
             test_iam_comprehensive_security || true
+
+            # Test IAM operations with temporary credentials (MSTS/MSAR)
+            log "Running STS credential prefix and IAM access tests..."
+            test_sts_credential_prefix_verification || true
             test_iam_create_role_with_session_token || true
+            test_iam_create_role_with_assume_role_credentials || true
 
             # Clean up IAM+STS integration test resources
             log "IAM+STS integration tests completed, running comprehensive cleanup..."
-            
+
             # Clean up IAM test buckets
             log "Cleaning up IAM test buckets..."
             aws_s3 rm "s3://iam-test-bucket-fixed" --recursive 2>/dev/null || true
             aws_s3api delete-bucket --bucket "iam-test-bucket-fixed" 2>/dev/null || true
             aws_s3 rm "s3://unauthorized-bucket-fixed" --recursive 2>/dev/null || true
             aws_s3api delete-bucket --bucket "unauthorized-bucket-fixed" 2>/dev/null || true
-            
+
             # Comprehensive cleanup of all IAM resources
             cleanup_iam_resources
-            
+
             # Reset AWS credential environment to original values
             log "Resetting AWS credentials to original values..."
             export AWS_ACCESS_KEY_ID="$ORIGINAL_AWS_ACCESS_KEY_ID"
             export AWS_SECRET_ACCESS_KEY="$ORIGINAL_AWS_SECRET_ACCESS_KEY"
             unset AWS_SESSION_TOKEN
-            
+
             set -e  # Re-enable exit on error
             ;;
         "all"|*)
@@ -10317,7 +10629,12 @@ run_tests() {
             test_sts_temporary_credentials_expiry || true
             test_iam_sts_integration || true
             test_iam_comprehensive_security || true
+
+            # Test IAM operations with temporary credentials (MSTS/MSAR)
+            log "Running STS credential prefix and IAM access tests..."
+            test_sts_credential_prefix_verification || true
             test_iam_create_role_with_session_token || true
+            test_iam_create_role_with_assume_role_credentials || true
 
             # Clean up IAM+STS integration test resources
             log "IAM+STS integration tests completed, running cleanup..."
@@ -10327,16 +10644,16 @@ run_tests() {
             aws_s3api delete-bucket --bucket "iam-test-bucket-fixed" 2>/dev/null || true
             aws_s3 rm "s3://unauthorized-bucket-fixed" --recursive 2>/dev/null || true
             aws_s3api delete-bucket --bucket "unauthorized-bucket-fixed" 2>/dev/null || true
-            
+
             # Comprehensive cleanup of all IAM resources
             cleanup_iam_resources
-            
+
             # Reset AWS credential environment to original values
             log "Resetting AWS credentials to original values..."
             export AWS_ACCESS_KEY_ID="$ORIGINAL_AWS_ACCESS_KEY_ID"
             export AWS_SECRET_ACCESS_KEY="$ORIGINAL_AWS_SECRET_ACCESS_KEY"
             unset AWS_SESSION_TOKEN
-            
+
             set -e  # Re-enable exit on error
             ;;
     esac

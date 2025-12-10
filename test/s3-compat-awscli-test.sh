@@ -360,6 +360,7 @@ cleanup_iam_resources() {
         local role_name
         read role_name < "$TEMP_DIR/sts_test_role_name"
         log "CLEANUP_DEBUG: Starting delete of STS test role: $role_name"
+        run_with_timeout 30 aws_iam_silent delete-role-policy --role-name "$role_name" --policy-name "S3FullAccess" || true
         run_with_timeout 30 aws_iam_silent delete-role --role-name "$role_name" || true
         log "CLEANUP_DEBUG: Finished delete of STS test role: $role_name"
     fi
@@ -5794,7 +5795,20 @@ test_sts_assume_role() {
         error "Failed to create STS test role"
         return 1
     fi
-    
+
+    # Attach S3 permissions policy to the role
+    local s3_policy='{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":["s3:*"],"Resource":"*"}]}'
+    if aws_iam put-role-policy \
+        --role-name "$role_name" \
+        --policy-name "S3FullAccess" \
+        --policy-document "$s3_policy" >/dev/null 2>&1; then
+        log "S3 permissions policy attached to role"
+        # Give time for policy to propagate
+        sleep 2
+    else
+        warning "Failed to attach S3 policy to role (role may have no permissions)"
+    fi
+
     local role_arn="arn:aws:iam::${account_uuid}:role/${role_name}"
     local session_name="test-session-$(date +%s)"
     

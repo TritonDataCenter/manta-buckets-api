@@ -135,6 +135,9 @@ The following table shows the services that the Manta Buckets API S3 layer depen
 | `buckets-api`| Core Bucket Operations |  684049e8-9b78-49b3-8e09-8744f7df3698  | No - Direct integration |
 | `storage`  | Storage Nodes |  5735eba4-746c-4f93-b275-8d739e53f1e4| No - Backend dependency |
 | `loadbalancer` | Traffic Distribution | f9f32770-14fa-4f85-a7cc-a1b8b62ede07| No -  direct integration  |
+| `ufds0` | Directory Service | 1ffa2197-93ca-452a-bfb1-4ce3d68ebf85 | No -  direct integration  |
+| `cloudapi` | HTTP API for smartdatacenter | e41cfd36-a401-44e0-be97-5028cbbee79b| No -  direct integration  |
+| `mahi` | Authentication & Authorization | 62fc7fb1-a572-4ea7-b886-1ebd0a6d5731 | No -  direct integration  |
 
 ### Services Requiring Extra Steps
 

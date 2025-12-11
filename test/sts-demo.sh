@@ -892,7 +892,9 @@ INVALID_TRUST=$(cat <<EOF
   "Version": "2012-10-17",
   "Statement": [{
     "Effect": "Allow",
-    "Principal": "*",
+    "Principal": {
+      "AWS": "arn:aws:iam::${INVALID_ACCOUNT}:root"
+    },
     "Action": "sts:AssumeRole"
   }]
 }

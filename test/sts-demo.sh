@@ -1,8 +1,10 @@
 #!/bin/bash
 #
+# Copyright 2025 Edgecast Cloud LLC.
+# 
 # AWS STS Example for Manta Buckets API
 # Demonstrates GetSessionToken, AssumeRole, and IAM Policy enforcement
-# This script shows detailed output of each step for educational purposes
+# This script shows detailed output of each step.
 #
 # Usage:
 #   ./sts-demo.sh           - Run all tests (default)

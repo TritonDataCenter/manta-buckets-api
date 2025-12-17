@@ -27,14 +27,14 @@ helper.test('configureBasicPartRequest sets up part request', function (t) {
         partReq.objectId = partId;
 
         partReq.headers = Object.assign({}, req.headers || {});
-        partReq.header = function(name, defaultValue) {
+        partReq.header = function (name, defaultValue) {
             return (partReq.headers[name.toLowerCase()] || defaultValue);
         };
 
         partReq.isS3Request = true;
         partReq.method = 'PUT';
 
-        return partReq;
+        return (partReq);
     }
 
     var req = mocks.createMockRequest({
@@ -56,7 +56,8 @@ helper.test('configureBasicPartRequest sets up part request', function (t) {
     t.equal(partReq.objectId, 'part-id-123', 'should set objectId');
     t.ok(partReq.isS3Request, 'should mark as S3 request');
     t.equal(partReq.method, 'PUT', 'should set method to PUT');
-    t.equal(typeof partReq.header, 'function', 'should provide header function');
+    t.equal(typeof (partReq.header), 'function',
+        'should provide header function');
     t.equal(partReq.headers['content-type'], 'application/octet-stream',
         'should copy headers');
     t.end();
@@ -73,14 +74,14 @@ helper.test('configureBasicPartRequest header function works', function (t) {
         partReq.objectId = partId;
 
         partReq.headers = Object.assign({}, req.headers || {});
-        partReq.header = function(name, defaultValue) {
+        partReq.header = function (name, defaultValue) {
             return (partReq.headers[name.toLowerCase()] || defaultValue);
         };
 
         partReq.isS3Request = true;
         partReq.method = 'PUT';
 
-        return partReq;
+        return (partReq);
     }
 
     var req = mocks.createMockRequest({
@@ -97,8 +98,10 @@ helper.test('configureBasicPartRequest header function works', function (t) {
     t.end();
 });
 
-// Test: configurePreAllocatedSharks - should configure sharks from upload record
-helper.test('configurePreAllocatedSharks sets sharks from record', function (t) {
+// Test: configurePreAllocatedSharks - should configure sharks from
+// upload record
+helper.test('configurePreAllocatedSharks sets sharks from record',
+    function (t) {
     function configurePreAllocatedSharks(partReq, req, uploadRecord, partNumber,
         uploadId) {
         if (uploadRecord.preAllocatedSharks &&
@@ -109,7 +112,7 @@ helper.test('configurePreAllocatedSharks sets sharks from record', function (t) 
                 uploadId: uploadId,
                 partNumber: partNumber,
                 sharkCount: uploadRecord.preAllocatedSharks.length,
-                sharks: uploadRecord.preAllocatedSharks.map(function(s) {
+                sharks: uploadRecord.preAllocatedSharks.map(function (s) {
                     return (s.manta_storage_id);
                 })
             }, 'Using pre-allocated sharks from upload record');
@@ -143,7 +146,8 @@ helper.test('configurePreAllocatedSharks sets sharks from record', function (t) 
 });
 
 // Test: configurePreAllocatedSharks - should log error for missing sharks
-helper.test('configurePreAllocatedSharks logs error for missing sharks', function (t) {
+helper.test('configurePreAllocatedSharks logs error for missing sharks',
+    function (t) {
     function configurePreAllocatedSharks(partReq, req, uploadRecord, partNumber,
         uploadId) {
         if (uploadRecord.preAllocatedSharks &&
@@ -178,19 +182,20 @@ helper.test('configurePreAllocatedSharks logs error for missing sharks', functio
 });
 
 // Test: createETagCapturingResponse - should capture ETag from header()
-helper.test('createETagCapturingResponse captures ETag from header', function (t) {
+helper.test('createETagCapturingResponse captures ETag from header',
+    function (t) {
     function createETagCapturingResponse(res, req, partNumber, uploadId) {
         var partETag = null;
         var customRes = Object.create(res);
 
-        customRes.send = function(statusCode, body) {
+        customRes.send = function (statusCode, body) {
             req.log.debug({
                 statusCode: statusCode,
                 capturedETag: partETag
             }, 'Captured part upload result');
         };
 
-        customRes.header = function(name, value) {
+        customRes.header = function (name, value) {
             if (name.toLowerCase() === 'etag') {
                 partETag = value;
                 req.log.debug({
@@ -198,10 +203,10 @@ helper.test('createETagCapturingResponse captures ETag from header', function (t
                     headerName: name
                 }, 'Captured ETag from part upload (header)');
             }
-            return res.header(name, value);
+            return (res.header(name, value));
         };
 
-        customRes.setHeader = function(name, value) {
+        customRes.setHeader = function (name, value) {
             if (name.toLowerCase() === 'etag') {
                 partETag = value;
                 req.log.debug({
@@ -209,13 +214,13 @@ helper.test('createETagCapturingResponse captures ETag from header', function (t
                     headerName: name
                 }, 'Captured ETag from part upload (setHeader)');
             }
-            return res.setHeader(name, value);
+            return (res.setHeader(name, value));
         };
 
         return {
             response: customRes,
-            getETag: function() {
-                return partETag;
+            getETag: function () {
+                return (partETag);
             }
         };
     }
@@ -233,36 +238,37 @@ helper.test('createETagCapturingResponse captures ETag from header', function (t
 });
 
 // Test: createETagCapturingResponse - should capture ETag from setHeader()
-helper.test('createETagCapturingResponse captures ETag from setHeader', function (t) {
+helper.test('createETagCapturingResponse captures ETag from setHeader',
+    function (t) {
     function createETagCapturingResponse(res, req, partNumber, uploadId) {
         var partETag = null;
         var customRes = Object.create(res);
 
-        customRes.send = function(statusCode, body) {
+        customRes.send = function (statusCode, body) {
             req.log.debug({
                 statusCode: statusCode,
                 capturedETag: partETag
             }, 'Captured part upload result');
         };
 
-        customRes.header = function(name, value) {
+        customRes.header = function (name, value) {
             if (name.toLowerCase() === 'etag') {
                 partETag = value;
             }
-            return res.header(name, value);
+            return (res.header(name, value));
         };
 
-        customRes.setHeader = function(name, value) {
+        customRes.setHeader = function (name, value) {
             if (name.toLowerCase() === 'etag') {
                 partETag = value;
             }
-            return res.setHeader(name, value);
+            return (res.setHeader(name, value));
         };
 
         return {
             response: customRes,
-            getETag: function() {
-                return partETag;
+            getETag: function () {
+                return (partETag);
             }
         };
     }
@@ -280,33 +286,34 @@ helper.test('createETagCapturingResponse captures ETag from setHeader', function
 });
 
 // Test: createETagCapturingResponse - should handle case-insensitive ETag
-helper.test('createETagCapturingResponse handles case-insensitive ETag', function (t) {
+helper.test('createETagCapturingResponse handles case-insensitive ETag',
+    function (t) {
     function createETagCapturingResponse(res, req, partNumber, uploadId) {
         var partETag = null;
         var customRes = Object.create(res);
 
-        customRes.send = function(statusCode, body) {
+        customRes.send = function (statusCode, body) {
             // Don't actually send
         };
 
-        customRes.header = function(name, value) {
+        customRes.header = function (name, value) {
             if (name.toLowerCase() === 'etag') {
                 partETag = value;
             }
-            return res.header(name, value);
+            return (res.header(name, value));
         };
 
-        customRes.setHeader = function(name, value) {
+        customRes.setHeader = function (name, value) {
             if (name.toLowerCase() === 'etag') {
                 partETag = value;
             }
-            return res.setHeader(name, value);
+            return (res.setHeader(name, value));
         };
 
         return {
             response: customRes,
-            getETag: function() {
-                return partETag;
+            getETag: function () {
+                return (partETag);
             }
         };
     }
@@ -328,29 +335,30 @@ helper.test('createETagCapturingResponse handles case-insensitive ETag', functio
 });
 
 // Test: createETagCapturingResponse - should return null for missing ETag
-helper.test('createETagCapturingResponse returns null without ETag', function (t) {
+helper.test('createETagCapturingResponse returns null without ETag',
+    function (t) {
     function createETagCapturingResponse(res, req, partNumber, uploadId) {
         var partETag = null;
         var customRes = Object.create(res);
 
-        customRes.send = function(statusCode, body) {};
-        customRes.header = function(name, value) {
+        customRes.send = function (statusCode, body) {};
+        customRes.header = function (name, value) {
             if (name.toLowerCase() === 'etag') {
                 partETag = value;
             }
-            return res.header(name, value);
+            return (res.header(name, value));
         };
-        customRes.setHeader = function(name, value) {
+        customRes.setHeader = function (name, value) {
             if (name.toLowerCase() === 'etag') {
                 partETag = value;
             }
-            return res.setHeader(name, value);
+            return (res.setHeader(name, value));
         };
 
         return {
             response: customRes,
-            getETag: function() {
-                return partETag;
+            getETag: function () {
+                return (partETag);
             }
         };
     }

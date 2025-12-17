@@ -37,7 +37,7 @@ helper.test('createLockData creates valid structure', function (t) {
     t.equal(result.instanceId, 'instance-456', 'should set instanceId');
     t.equal(result.operation, 'complete-multipart', 'should set operation');
     t.equal(result.processId, process.pid, 'should set processId');
-    t.equal(typeof result.hostname, 'string', 'should set hostname');
+    t.equal(typeof (result).hostname, 'string', 'should set hostname');
     t.ok(result.acquired, 'should set acquired timestamp');
     t.ok(result.expires, 'should set expires timestamp');
     t.end();
@@ -101,7 +101,7 @@ helper.test('parseLockState parses valid JSON', function (t) {
     }
 
     var mockSelf = {
-        req: {log: {debug: function() {}, warn: function() {}}}
+        req: {log: {debug: function () {}, warn: function () {}}}
     };
 
     var existingLock = {
@@ -116,7 +116,8 @@ helper.test('parseLockState parses valid JSON', function (t) {
 
     t.ok(result.success, 'should parse successfully');
     t.equal(result.data.uploadId, 'test-upload', 'should extract uploadId');
-    t.equal(result.data.instanceId, 'instance-123', 'should extract instanceId');
+    t.equal(result.data.instanceId, 'instance-123',
+        'should extract instanceId');
     t.ok(!result.hadParsingError, 'should not have parsing error');
     t.end();
 });
@@ -157,7 +158,7 @@ helper.test('parseLockState handles missing expires', function (t) {
     }
 
     var mockSelf = {
-        req: {log: {debug: function() {}, warn: function() {}}}
+        req: {log: {debug: function () {}, warn: function () {}}}
     };
 
     var existingLock = {
@@ -168,7 +169,8 @@ helper.test('parseLockState handles missing expires', function (t) {
 
     t.ok(result.success, 'should parse successfully');
     t.ok(result.hadParsingError, 'should flag parsing error');
-    t.equal(result.expires.getTime(), 0, 'should use epoch for invalid expires');
+    t.equal(result.expires.getTime(), 0,
+        'should use epoch for invalid expires');
     t.end();
 });
 
@@ -213,7 +215,7 @@ helper.test('parseLockState uses header fallback', function (t) {
     }
 
     var mockSelf = {
-        req: {log: {debug: function() {}, warn: function() {}}}
+        req: {log: {debug: function () {}, warn: function () {}}}
     };
 
     var existingLock = {
@@ -269,7 +271,7 @@ helper.test('parseLockState handles invalid JSON', function (t) {
     }
 
     var mockSelf = {
-        req: {log: {debug: function() {}, warn: function() {}}}
+        req: {log: {debug: function () {}, warn: function () {}}}
     };
 
     var existingLock = {
@@ -284,7 +286,8 @@ helper.test('parseLockState handles invalid JSON', function (t) {
 });
 
 // Test: determineLockAction - should return 'owned' for same instance
-helper.test('determineLockAction returns owned for same instance', function (t) {
+helper.test('determineLockAction returns owned for same instance',
+    function (t) {
     function determineLockAction(self, lockState, instanceId, uploadId,
         existingLockId) {
         var existingData = lockState.data;
@@ -305,7 +308,7 @@ helper.test('determineLockAction returns owned for same instance', function (t) 
 
         if (lockState.hadParsingError &&
             existingData.instanceId !== instanceId) {
-            return {action: 'retry-parsing-error'};
+            return ({action: 'retry-parsing-error'});
         }
 
         var now = new Date();
@@ -324,7 +327,7 @@ helper.test('determineLockAction returns owned for same instance', function (t) 
     }
 
     var mockSelf = {
-        req: {log: {debug: function() {}, warn: function() {}}}
+        req: {log: {debug: function () {}, warn: function () {}}}
     };
 
     var lockState = {
@@ -348,7 +351,8 @@ helper.test('determineLockAction returns owned for same instance', function (t) 
 });
 
 // Test: determineLockAction - should return 'claim-expired' for expired lock
-helper.test('determineLockAction returns claim-expired for expired lock', function (t) {
+helper.test('determineLockAction returns claim-expired for expired lock',
+    function (t) {
     function determineLockAction(self, lockState, instanceId, uploadId,
         existingLockId) {
         var existingData = lockState.data;
@@ -369,7 +373,7 @@ helper.test('determineLockAction returns claim-expired for expired lock', functi
 
         if (lockState.hadParsingError &&
             existingData.instanceId !== instanceId) {
-            return {action: 'retry-parsing-error'};
+            return ({action: 'retry-parsing-error'});
         }
 
         var now = new Date();
@@ -388,7 +392,7 @@ helper.test('determineLockAction returns claim-expired for expired lock', functi
     }
 
     var mockSelf = {
-        req: {log: {debug: function() {}, warn: function() {}}}
+        req: {log: {debug: function () {}, warn: function () {}}}
     };
 
     var pastTime = new Date(Date.now() - 60000); // 1 minute ago
@@ -406,14 +410,16 @@ helper.test('determineLockAction returns claim-expired for expired lock', functi
     var result = determineLockAction(mockSelf, lockState, 'instance-123',
         'test-upload', 'lock-obj-id');
 
-    t.equal(result.action, 'claim-expired', 'should return claim-expired action');
+    t.equal(result.action, 'claim-expired',
+        'should return claim-expired action');
     t.equal(result.existingObjectId, 'lock-obj-id',
         'should include existing object id');
     t.end();
 });
 
 // Test: determineLockAction - should return 'retry-held' for active lock
-helper.test('determineLockAction returns retry-held for active lock', function (t) {
+helper.test('determineLockAction returns retry-held for active lock',
+    function (t) {
     function determineLockAction(self, lockState, instanceId, uploadId,
         existingLockId) {
         var existingData = lockState.data;
@@ -434,7 +440,7 @@ helper.test('determineLockAction returns retry-held for active lock', function (
 
         if (lockState.hadParsingError &&
             existingData.instanceId !== instanceId) {
-            return {action: 'retry-parsing-error'};
+            return ({action: 'retry-parsing-error'});
         }
 
         var now = new Date();
@@ -453,7 +459,7 @@ helper.test('determineLockAction returns retry-held for active lock', function (
     }
 
     var mockSelf = {
-        req: {log: {debug: function() {}, warn: function() {}}}
+        req: {log: {debug: function () {}, warn: function () {}}}
     };
 
     var futureTime = new Date(Date.now() + 60000); // 1 minute from now
@@ -472,11 +478,13 @@ helper.test('determineLockAction returns retry-held for active lock', function (
         'test-upload', 'lock-obj-id');
 
     t.equal(result.action, 'retry-held', 'should return retry-held action');
-    t.ok(result.timeUntilExpiry > 0, 'should include positive time until expiry');
+    t.ok(result.timeUntilExpiry > 0,
+        'should include positive time until expiry');
     t.end();
 });
 
-// Test: determineLockAction - should return 'retry-parsing-error' for parsing errors
+// Test: determineLockAction - should return 'retry-parsing-error'
+// for parsing errors
 helper.test('determineLockAction returns retry-parsing-error', function (t) {
     function determineLockAction(self, lockState, instanceId, uploadId,
         existingLockId) {
@@ -498,7 +506,7 @@ helper.test('determineLockAction returns retry-parsing-error', function (t) {
 
         if (lockState.hadParsingError &&
             existingData.instanceId !== instanceId) {
-            return {action: 'retry-parsing-error'};
+            return ({action: 'retry-parsing-error'});
         }
 
         var now = new Date();
@@ -517,7 +525,7 @@ helper.test('determineLockAction returns retry-parsing-error', function (t) {
     }
 
     var mockSelf = {
-        req: {log: {debug: function() {}, warn: function() {}}}
+        req: {log: {debug: function () {}, warn: function () {}}}
     };
 
     var lockState = {

@@ -191,7 +191,8 @@ helper.test('configureAwsChunkedEncoding handles invalid decoded size',
     });
 
 // Test: configureAwsChunkedEncoding - should preserve content-length
-helper.test('configureAwsChunkedEncoding preserves content-length', function (t) {
+helper.test('configureAwsChunkedEncoding preserves content-length',
+    function (t) {
     var req = {
         log: {
             debug: function () {}

@@ -22,7 +22,7 @@ helper.test('extractPartETags extracts ETag array', function (t) {
         partsFromXML.forEach(function (xmlPart) {
             partETags.push(xmlPart.etag);
         });
-        return partETags;
+        return (partETags);
     }
 
     var partsFromXML = [
@@ -47,7 +47,7 @@ helper.test('extractPartETags handles empty array', function (t) {
         partsFromXML.forEach(function (xmlPart) {
             partETags.push(xmlPart.etag);
         });
-        return partETags;
+        return (partETags);
     }
 
     var result = extractPartETags([]);
@@ -63,10 +63,12 @@ helper.test('extractPartETags handles single part', function (t) {
         partsFromXML.forEach(function (xmlPart) {
             partETags.push(xmlPart.etag);
         });
-        return partETags;
+        return (partETags);
     }
 
-    var partsFromXML = [{partNumber: 1, etag: 'single-etag'}];
+    var partsFromXML = [
+        {partNumber: 1, etag: 'single-etag'}
+    ];
 
     var result = extractPartETags(partsFromXML);
 
@@ -82,7 +84,7 @@ helper.test('createCommitBody creates valid structure', function (t) {
         partsFromXML.forEach(function (xmlPart) {
             partETags.push(xmlPart.etag);
         });
-        return partETags;
+        return (partETags);
     }
 
     function createCommitBody(partsFromXML, actualTotalSize, owner,
@@ -123,7 +125,7 @@ helper.test('createCommitBody handles zero bytes', function (t) {
         partsFromXML.forEach(function (xmlPart) {
             partETags.push(xmlPart.etag);
         });
-        return partETags;
+        return (partETags);
     }
 
     function createCommitBody(partsFromXML, actualTotalSize, owner,
@@ -154,14 +156,14 @@ helper.test('transformAssemblyError handles NotEnoughSpaceError', function (t) {
                 'Insufficient storage space');
             spaceError.statusCode = 507;
             spaceError.restCode = 'InsufficientStorage';
-            return spaceError;
+            return (spaceError);
         }
 
         var internalError = new Error(assembleErr.message ||
             'Multipart upload assembly failed');
         internalError.statusCode = 500;
         internalError.restCode = 'InternalError';
-        return internalError;
+        return (internalError);
     }
 
     var originalError = new Error('Out of space');
@@ -177,21 +179,22 @@ helper.test('transformAssemblyError handles NotEnoughSpaceError', function (t) {
 });
 
 // Test: transformAssemblyError - should use default message for space error
-helper.test('transformAssemblyError uses default space error message', function (t) {
+helper.test('transformAssemblyError uses default space error message',
+    function (t) {
     function transformAssemblyError(assembleErr) {
         if (assembleErr.name === 'NotEnoughSpaceError') {
             var spaceError = new Error(assembleErr.message ||
                 'Insufficient storage space');
             spaceError.statusCode = 507;
             spaceError.restCode = 'InsufficientStorage';
-            return spaceError;
+            return (spaceError);
         }
 
         var internalError = new Error(assembleErr.message ||
             'Multipart upload assembly failed');
         internalError.statusCode = 500;
         internalError.restCode = 'InternalError';
-        return internalError;
+        return (internalError);
     }
 
     var originalError = new Error();
@@ -213,14 +216,14 @@ helper.test('transformAssemblyError handles generic errors', function (t) {
                 'Insufficient storage space');
             spaceError.statusCode = 507;
             spaceError.restCode = 'InsufficientStorage';
-            return spaceError;
+            return (spaceError);
         }
 
         var internalError = new Error(assembleErr.message ||
             'Multipart upload assembly failed');
         internalError.statusCode = 500;
         internalError.restCode = 'InternalError';
-        return internalError;
+        return (internalError);
     }
 
     var originalError = new Error('Something went wrong');
@@ -229,27 +232,29 @@ helper.test('transformAssemblyError handles generic errors', function (t) {
     var result = transformAssemblyError(originalError);
 
     t.equal(result.statusCode, 500, 'should set 500 status code');
-    t.equal(result.restCode, 'InternalError', 'should set InternalError restCode');
+    t.equal(result.restCode, 'InternalError',
+        'should set InternalError restCode');
     t.equal(result.message, 'Something went wrong', 'should preserve message');
     t.end();
 });
 
 // Test: transformAssemblyError - should use default message for generic error
-helper.test('transformAssemblyError uses default generic error message', function (t) {
+helper.test('transformAssemblyError uses default generic error message',
+    function (t) {
     function transformAssemblyError(assembleErr) {
         if (assembleErr.name === 'NotEnoughSpaceError') {
             var spaceError = new Error(assembleErr.message ||
                 'Insufficient storage space');
             spaceError.statusCode = 507;
             spaceError.restCode = 'InsufficientStorage';
-            return spaceError;
+            return (spaceError);
         }
 
         var internalError = new Error(assembleErr.message ||
             'Multipart upload assembly failed');
         internalError.statusCode = 500;
         internalError.restCode = 'InternalError';
-        return internalError;
+        return (internalError);
     }
 
     var originalError = new Error();
@@ -267,7 +272,7 @@ helper.test('transformAssemblyError uses default generic error message', functio
 helper.test('releaseLockSafely handles null lockInfo', function (t) {
     function releaseLockSafely(lockManager, lockInfo, req, uploadId, callback) {
         if (!lockInfo) {
-            return callback();
+            return (callback());
         }
 
         lockManager.releaseLock(lockInfo, function (releaseErr) {
@@ -297,7 +302,7 @@ helper.test('releaseLockSafely handles null lockInfo', function (t) {
 helper.test('releaseLockSafely calls releaseLock', function (t) {
     function releaseLockSafely(lockManager, lockInfo, req, uploadId, callback) {
         if (!lockInfo) {
-            return callback();
+            return (callback());
         }
 
         lockManager.releaseLock(lockInfo, function (releaseErr) {
@@ -339,7 +344,7 @@ helper.test('releaseLockSafely calls releaseLock', function (t) {
 helper.test('releaseLockSafely handles release errors', function (t) {
     function releaseLockSafely(lockManager, lockInfo, req, uploadId, callback) {
         if (!lockInfo) {
-            return callback();
+            return (callback());
         }
 
         lockManager.releaseLock(lockInfo, function (releaseErr) {
@@ -382,7 +387,7 @@ helper.test('releaseLockSafely handles release errors', function (t) {
 helper.test('cleanupAndExit releases lock before exit', function (t) {
     function releaseLockSafely(lockManager, lockInfo, req, uploadId, callback) {
         if (!lockInfo) {
-            return callback();
+            return (callback());
         }
 
         lockManager.releaseLock(lockInfo, function (releaseErr) {

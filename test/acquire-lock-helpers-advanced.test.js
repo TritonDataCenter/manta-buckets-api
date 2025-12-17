@@ -53,14 +53,14 @@ helper.test('createLockAtomic creates lock on success', function (t) {
                         self.req.log.debug({
                             uploadId: uploadId
                         }, 'Lost creation race, will retry');
-                        return callback({action: 'retry-race'});
+                        return (callback({action: 'retry-race'}));
                     }
 
                     self.req.log.error({
                         err: createErr,
                         uploadId: uploadId
                     }, 'Failed to create lock due to system error');
-                    return callback({action: 'error', error: createErr});
+                    return (callback({action: 'error', error: createErr}));
                 }
 
                 self.req.log.debug({
@@ -111,7 +111,7 @@ helper.test('createLockAtomic creates lock on success', function (t) {
         metadataLocation: {vnode: 1}
     };
 
-    createLockAtomic(client, lockParams, function(result) {
+    createLockAtomic(client, lockParams, function (result) {
         t.equal(result.action, 'success', 'should return success action');
         t.ok(result.lockInfo, 'should include lock info');
         t.equal(result.lockInfo.instanceId, 'instance-123',
@@ -147,9 +147,9 @@ helper.test('createLockAtomic handles ObjectExistsError', function (t) {
             function (createErr, result) {
                 if (createErr) {
                     if (createErr.name === 'ObjectExistsError') {
-                        return callback({action: 'retry-race'});
+                        return (callback({action: 'retry-race'}));
                     }
-                    return callback({action: 'error', error: createErr});
+                    return (callback({action: 'error', error: createErr}));
                 }
 
                 callback({
@@ -182,7 +182,7 @@ helper.test('createLockAtomic handles ObjectExistsError', function (t) {
         metadataLocation: {vnode: 1}
     };
 
-    createLockAtomic(client, lockParams, function(result) {
+    createLockAtomic(client, lockParams, function (result) {
         t.equal(result.action, 'retry-race',
             'should return retry-race action for ObjectExistsError');
         t.end();
@@ -214,13 +214,13 @@ helper.test('createLockAtomic handles system errors', function (t) {
             function (createErr, result) {
                 if (createErr) {
                     if (createErr.name === 'ObjectExistsError') {
-                        return callback({action: 'retry-race'});
+                        return (callback({action: 'retry-race'}));
                     }
                     self.req.log.error({
                         err: createErr,
                         uploadId: uploadId
                     }, 'Failed to create lock');
-                    return callback({action: 'error', error: createErr});
+                    return (callback({action: 'error', error: createErr}));
                 }
 
                 callback({action: 'success'});
@@ -249,7 +249,7 @@ helper.test('createLockAtomic handles system errors', function (t) {
         metadataLocation: {vnode: 1}
     };
 
-    createLockAtomic(client, lockParams, function(result) {
+    createLockAtomic(client, lockParams, function (result) {
         t.equal(result.action, 'error', 'should return error action');
         t.equal(result.error, systemError, 'should include error object');
         t.end();
@@ -289,14 +289,14 @@ helper.test('updateLockAtomic updates expired lock', function (t) {
                         self.req.log.debug({
                             uploadId: uploadId
                         }, 'Expired lock was deleted by someone else');
-                        return callback({action: 'retry-deleted'});
+                        return (callback({action: 'retry-deleted'}));
                     }
 
                     self.req.log.error({
                         err: updateErr,
                         uploadId: uploadId
                     }, 'Failed to update lock');
-                    return callback({action: 'error', error: updateErr});
+                    return (callback({action: 'error', error: updateErr}));
                 }
 
                 self.req.log.debug({
@@ -341,7 +341,7 @@ helper.test('updateLockAtomic updates expired lock', function (t) {
     };
 
     updateLockAtomic(client, lockParams, 'existing-lock-id-456',
-        function(result) {
+        function (result) {
             t.equal(result.action, 'success', 'should return success action');
             t.ok(result.lockInfo, 'should include lock info');
             t.equal(result.lockInfo.objectId, 'existing-lock-id-456',
@@ -372,9 +372,9 @@ helper.test('updateLockAtomic handles ObjectNotFoundError', function (t) {
             function (updateErr, updateResult) {
                 if (updateErr) {
                     if (updateErr.name === 'ObjectNotFoundError') {
-                        return callback({action: 'retry-deleted'});
+                        return (callback({action: 'retry-deleted'}));
                     }
-                    return callback({action: 'error', error: updateErr});
+                    return (callback({action: 'error', error: updateErr}));
                 }
 
                 callback({action: 'success'});
@@ -398,7 +398,7 @@ helper.test('updateLockAtomic handles ObjectNotFoundError', function (t) {
         metadataLocation: {vnode: 1}
     };
 
-    updateLockAtomic(client, lockParams, 'old-lock-id', function(result) {
+    updateLockAtomic(client, lockParams, 'old-lock-id', function (result) {
         t.equal(result.action, 'retry-deleted',
             'should return retry-deleted for ObjectNotFoundError');
         t.end();
@@ -427,13 +427,13 @@ helper.test('updateLockAtomic handles system errors', function (t) {
             function (updateErr, updateResult) {
                 if (updateErr) {
                     if (updateErr.name === 'ObjectNotFoundError') {
-                        return callback({action: 'retry-deleted'});
+                        return (callback({action: 'retry-deleted'}));
                     }
                     self.req.log.error({
                         err: updateErr,
                         uploadId: uploadId
                     }, 'Failed to update lock');
-                    return callback({action: 'error', error: updateErr});
+                    return (callback({action: 'error', error: updateErr}));
                 }
 
                 callback({action: 'success'});
@@ -460,7 +460,7 @@ helper.test('updateLockAtomic handles system errors', function (t) {
         metadataLocation: {vnode: 1}
     };
 
-    updateLockAtomic(client, lockParams, 'old-lock-id', function(result) {
+    updateLockAtomic(client, lockParams, 'old-lock-id', function (result) {
         t.equal(result.action, 'error', 'should return error action');
         t.equal(result.error, systemError, 'should include error object');
         t.end();

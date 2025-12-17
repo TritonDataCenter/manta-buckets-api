@@ -15,16 +15,17 @@
 var helper = require('./s3-test-helper.js');
 
 // Load the module - we need to extract the helper functions
-// Since they're not exported, we'll test them indirectly through module behavior
-// or we need to modify the module to export them for testing
+// Since they're not exported, we'll test them indirectly through
+// module behavior or we need to modify the module to export them for testing
 
 // For now, let's create mock implementations to test the logic patterns
 
 // Test: validatePartNumber - should return true for valid part numbers
-helper.test('validatePartNumber returns true for valid part numbers', function (t) {
+helper.test('validatePartNumber returns true for valid part numbers',
+    function (t) {
     // Mock implementation based on lib/s3-multipart.js:322-324
     function validatePartNumber(partNumber) {
-        return partNumber >= 1 && partNumber <= 10000;
+        return (partNumber >= 1 && partNumber <= 10000);
     }
 
     t.ok(validatePartNumber(1), 'should accept part number 1');
@@ -34,9 +35,10 @@ helper.test('validatePartNumber returns true for valid part numbers', function (
 });
 
 // Test: validatePartNumber - should return false for invalid part numbers
-helper.test('validatePartNumber returns false for invalid part numbers', function (t) {
+helper.test('validatePartNumber returns false for invalid part numbers',
+    function (t) {
     function validatePartNumber(partNumber) {
-        return partNumber >= 1 && partNumber <= 10000;
+        return (partNumber >= 1 && partNumber <= 10000);
     }
 
     t.ok(!validatePartNumber(0), 'should reject part number 0');
@@ -48,7 +50,7 @@ helper.test('validatePartNumber returns false for invalid part numbers', functio
 // Test: generatePartKey - should generate correct part key format
 helper.test('generatePartKey generates correct format', function (t) {
     function generatePartKey(uploadId, partNumber) {
-        return '.mpu-parts/' + uploadId + '/' + partNumber;
+        return ('.mpu-parts/' + uploadId + '/' + partNumber);
     }
 
     var result = generatePartKey('test-upload-123', 5);
@@ -61,14 +63,15 @@ helper.test('generatePartKey generates correct format', function (t) {
 // Test: generatePartKey - should handle different upload IDs
 helper.test('generatePartKey handles various inputs', function (t) {
     function generatePartKey(uploadId, partNumber) {
-        return '.mpu-parts/' + uploadId + '/' + partNumber;
+        return ('.mpu-parts/' + uploadId + '/' + partNumber);
     }
 
     var result1 = generatePartKey('abc-123', 1);
     var result2 = generatePartKey('xyz-456', 10000);
 
     t.equal(result1, '.mpu-parts/abc-123/1', 'should handle first part');
-    t.equal(result2, '.mpu-parts/xyz-456/10000', 'should handle last valid part');
+    t.equal(result2, '.mpu-parts/xyz-456/10000',
+        'should handle last valid part');
     t.end();
 });
 
@@ -76,12 +79,12 @@ helper.test('generatePartKey handles various inputs', function (t) {
 helper.test('resolveETag prioritizes captured ETag', function (t) {
     function resolveETag(capturedETag, result) {
         if (capturedETag) {
-            return capturedETag;
+            return (capturedETag);
         }
         if (result && result.id) {
-            return result.id;
+            return (result.id);
         }
-        return 'unknown';
+        return ('unknown');
     }
 
     var result = resolveETag('captured-etag-123', {id: 'result-id-456'});
@@ -95,12 +98,12 @@ helper.test('resolveETag prioritizes captured ETag', function (t) {
 helper.test('resolveETag uses result.id as fallback', function (t) {
     function resolveETag(capturedETag, result) {
         if (capturedETag) {
-            return capturedETag;
+            return (capturedETag);
         }
         if (result && result.id) {
-            return result.id;
+            return (result.id);
         }
-        return 'unknown';
+        return ('unknown');
     }
 
     var result = resolveETag(null, {id: 'result-id-789'});
@@ -114,12 +117,12 @@ helper.test('resolveETag uses result.id as fallback', function (t) {
 helper.test('resolveETag returns unknown as last resort', function (t) {
     function resolveETag(capturedETag, result) {
         if (capturedETag) {
-            return capturedETag;
+            return (capturedETag);
         }
         if (result && result.id) {
-            return result.id;
+            return (result.id);
         }
-        return 'unknown';
+        return ('unknown');
     }
 
     var result1 = resolveETag(null, null);
@@ -132,10 +135,12 @@ helper.test('resolveETag returns unknown as last resort', function (t) {
     t.end();
 });
 
-// Test: createIsChunkedFunction - should return function checking transfer-encoding
-helper.test('createIsChunkedFunction checks transfer-encoding header', function (t) {
+// Test: createIsChunkedFunction - should return function checking
+// transfer-encoding
+helper.test('createIsChunkedFunction checks transfer-encoding header',
+    function (t) {
     function createIsChunkedFunction(req, partReq) {
-        return function() {
+        return function () {
             return req.isChunked ? req.isChunked() :
                 (partReq.headers['transfer-encoding'] === 'chunked');
         };
@@ -150,23 +155,24 @@ helper.test('createIsChunkedFunction checks transfer-encoding header', function 
 
     var isChunked = createIsChunkedFunction(req, partReq);
 
-    t.equal(typeof isChunked, 'function', 'should return a function');
+    t.equal(typeof (isChunked), 'function', 'should return a function');
     t.ok(isChunked(), 'should return true for chunked encoding');
     t.end();
 });
 
 // Test: createIsChunkedFunction - should use req.isChunked if available
-helper.test('createIsChunkedFunction uses req.isChunked when available', function (t) {
+helper.test('createIsChunkedFunction uses req.isChunked when available',
+    function (t) {
     function createIsChunkedFunction(req, partReq) {
-        return function() {
+        return function () {
             return req.isChunked ? req.isChunked() :
                 (partReq.headers['transfer-encoding'] === 'chunked');
         };
     }
 
     var req = {
-        isChunked: function() {
-            return true;
+        isChunked: function () {
+            return (true);
         }
     };
     var partReq = {
@@ -182,9 +188,10 @@ helper.test('createIsChunkedFunction uses req.isChunked when available', functio
 });
 
 // Test: createIsChunkedFunction - should return false for non-chunked
-helper.test('createIsChunkedFunction returns false for non-chunked', function (t) {
+helper.test('createIsChunkedFunction returns false for non-chunked',
+    function (t) {
     function createIsChunkedFunction(req, partReq) {
-        return function() {
+        return function () {
             return req.isChunked ? req.isChunked() :
                 (partReq.headers['transfer-encoding'] === 'chunked');
         };
@@ -218,17 +225,18 @@ helper.test('configureDurabilityLevel uses uploadRecord value', function (t) {
 
         partReq.headers['durability-level'] = durabilityLevel.toString();
 
-        return durabilityLevel;
+        return (durabilityLevel);
     }
 
     var partReq = {headers: {}};
     var req = {
-        header: function() { return undefined; },
-        log: {debug: function() {}}
+        header: function () { return undefined; },
+        log: {debug: function () {}}
     };
     var uploadRecord = {durabilityLevel: 3};
 
-    var result = configureDurabilityLevel(partReq, req, uploadRecord, 'test-id');
+    var result = configureDurabilityLevel(partReq, req, uploadRecord,
+        'test-id');
 
     t.equal(result, 3, 'should return durability level from upload record');
     t.equal(partReq.headers['durability-level'], '3',
@@ -251,20 +259,23 @@ helper.test('configureDurabilityLevel uses header as fallback', function (t) {
 
         partReq.headers['durability-level'] = durabilityLevel.toString();
 
-        return durabilityLevel;
+        return (durabilityLevel);
     }
 
     var partReq = {headers: {}};
     var req = {
-        header: function(name) {
-            if (name === 'durability-level') return '4';
-            return undefined;
+        header: function (name) {
+            if (name === 'durability-level') {
+                return ('4');
+            }
+            return (undefined);
         },
-        log: {debug: function() {}}
+        log: {debug: function () {}}
     };
     var uploadRecord = {};
 
-    var result = configureDurabilityLevel(partReq, req, uploadRecord, 'test-id');
+    var result = configureDurabilityLevel(partReq, req, uploadRecord,
+        'test-id');
 
     t.equal(result, 4, 'should return durability level from header');
     t.equal(partReq.headers['durability-level'], '4',
@@ -287,17 +298,18 @@ helper.test('configureDurabilityLevel uses default value', function (t) {
 
         partReq.headers['durability-level'] = durabilityLevel.toString();
 
-        return durabilityLevel;
+        return (durabilityLevel);
     }
 
     var partReq = {headers: {}};
     var req = {
-        header: function() { return undefined; },
-        log: {debug: function() {}}
+        header: function () { return undefined; },
+        log: {debug: function () {}}
     };
     var uploadRecord = {};
 
-    var result = configureDurabilityLevel(partReq, req, uploadRecord, 'test-id');
+    var result = configureDurabilityLevel(partReq, req, uploadRecord,
+        'test-id');
 
     t.equal(result, 2, 'should return default durability level of 2');
     t.equal(partReq.headers['durability-level'], '2',

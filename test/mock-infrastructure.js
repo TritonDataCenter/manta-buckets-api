@@ -1077,8 +1077,9 @@ if (err) {
             }
 
             // Cleanup all parts
+            var prefix = uploadId + ':';
             Object.keys(parts).forEach(function (key) {
-                if (key.startsWith(uploadId + ':')) {
+                if (key.indexOf(prefix) === 0) {
                     delete parts[key];
                 }
             });
@@ -1099,8 +1100,9 @@ if (err) {
          */
         listParts: function (uploadId) {
             var uploadParts = [];
+            var prefix = uploadId + ':';
             Object.keys(parts).forEach(function (key) {
-                if (key.startsWith(uploadId + ':')) {
+                if (key.indexOf(prefix) === 0) {
                     uploadParts.push(parts[key]);
                 }
             });

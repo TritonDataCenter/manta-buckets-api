@@ -19,7 +19,7 @@ var crypto = require('crypto');
 
 // Test: createLockAtomic - should create lock successfully
 helper.test('createLockAtomic creates lock on success', function (t) {
-    function createLockAtomic(client, lockParams, callback) {
+    function createLockAtomic(mockClient, mockLockParams, callback) {
         var self = lockParams.self;
         var _uploadId = lockParams.uploadId;
         var owner = lockParams.owner;
@@ -124,7 +124,7 @@ helper.test('createLockAtomic creates lock on success', function (t) {
 
 // Test: createLockAtomic - should handle race condition
 helper.test('createLockAtomic handles ObjectExistsError', function (t) {
-    function createLockAtomic(client, lockParams, callback) {
+    function createLockAtomic(mockClient, mockLockParams, callback) {
         var self = lockParams.self;
         var _uploadId = lockParams.uploadId;
         var owner = lockParams.owner;
@@ -191,7 +191,7 @@ helper.test('createLockAtomic handles ObjectExistsError', function (t) {
 
 // Test: createLockAtomic - should handle system errors
 helper.test('createLockAtomic handles system errors', function (t) {
-    function createLockAtomic(client, lockParams, callback) {
+    function createLockAtomic(mockClient, mockLockParams, callback) {
         var self = lockParams.self;
         var _uploadId = lockParams.uploadId;
         var owner = lockParams.owner;
@@ -258,7 +258,7 @@ helper.test('createLockAtomic handles system errors', function (t) {
 
 // Test: updateLockAtomic - should update expired lock successfully
 helper.test('updateLockAtomic updates expired lock', function (t) {
-    function updateLockAtomic(client, lockParams, existingObjectId, callback) {
+    function updateLockAtomic(mockClient, mockLockParams, existingObjectId, callback) {
         var self = lockParams.self;
         var _uploadId = lockParams.uploadId;
         var owner = lockParams.owner;
@@ -352,7 +352,7 @@ helper.test('updateLockAtomic updates expired lock', function (t) {
 
 // Test: updateLockAtomic - should handle lock deleted by another instance
 helper.test('updateLockAtomic handles ObjectNotFoundError', function (t) {
-    function updateLockAtomic(client, lockParams, existingObjectId, callback) {
+    function updateLockAtomic(mockClient, mockLockParams, existingObjectId, callback) {
         var self = lockParams.self;
         var _uploadId = lockParams.uploadId;
         var owner = lockParams.owner;
@@ -407,7 +407,7 @@ helper.test('updateLockAtomic handles ObjectNotFoundError', function (t) {
 
 // Test: updateLockAtomic - should handle system errors
 helper.test('updateLockAtomic handles system errors', function (t) {
-    function updateLockAtomic(client, lockParams, existingObjectId, callback) {
+    function updateLockAtomic(mockClient, mockLockParams, existingObjectId, callback) {
         var self = lockParams.self;
         var _uploadId = lockParams.uploadId;
         var owner = lockParams.owner;

@@ -67,12 +67,12 @@ helper.test('createLockData sets future expiration', function (t) {
 
 // Test: parseLockState - should parse valid JSON lock data
 helper.test('parseLockState parses valid JSON', function (t) {
-    function parseLockState(self, existingLock, _uploadId) {
+    function parseLockState(self, lock, _uploadId) {
         try {
-            var existingData = JSON.parse(existingLock.value || '{}');
+            var existingData = JSON.parse(lock.value || '{}');
             var expiresValue = existingData.expires;
 
-            if (!expiresValue && existingLock.headers &&
+            if (!expiresValue && lock.headers &&
                 existingLock.headers['x-lock-expires']) {
                 expiresValue = existingLock.headers['x-lock-expires'];
             }
@@ -124,12 +124,12 @@ helper.test('parseLockState parses valid JSON', function (t) {
 
 // Test: parseLockState - should handle missing expires in data
 helper.test('parseLockState handles missing expires', function (t) {
-    function parseLockState(self, existingLock, _uploadId) {
+    function parseLockState(self, lock, _uploadId) {
         try {
-            var existingData = JSON.parse(existingLock.value || '{}');
+            var existingData = JSON.parse(lock.value || '{}');
             var expiresValue = existingData.expires;
 
-            if (!expiresValue && existingLock.headers &&
+            if (!expiresValue && lock.headers &&
                 existingLock.headers['x-lock-expires']) {
                 expiresValue = existingLock.headers['x-lock-expires'];
             }
@@ -176,12 +176,12 @@ helper.test('parseLockState handles missing expires', function (t) {
 
 // Test: parseLockState - should fallback to headers for expires
 helper.test('parseLockState uses header fallback', function (t) {
-    function parseLockState(self, existingLock, _uploadId) {
+    function parseLockState(self, lock, _uploadId) {
         try {
-            var existingData = JSON.parse(existingLock.value || '{}');
+            var existingData = JSON.parse(lock.value || '{}');
             var expiresValue = existingData.expires;
 
-            if (!expiresValue && existingLock.headers &&
+            if (!expiresValue && lock.headers &&
                 existingLock.headers['x-lock-expires']) {
                 expiresValue = existingLock.headers['x-lock-expires'];
                 if (!existingData.instanceId &&
@@ -237,12 +237,12 @@ helper.test('parseLockState uses header fallback', function (t) {
 
 // Test: parseLockState - should handle invalid JSON
 helper.test('parseLockState handles invalid JSON', function (t) {
-    function parseLockState(self, existingLock, _uploadId) {
+    function parseLockState(self, lock, _uploadId) {
         try {
-            var existingData = JSON.parse(existingLock.value || '{}');
+            var existingData = JSON.parse(lock.value || '{}');
             var expiresValue = existingData.expires;
 
-            if (!expiresValue && existingLock.headers &&
+            if (!expiresValue && lock.headers &&
                 existingLock.headers['x-lock-expires']) {
                 expiresValue = existingLock.headers['x-lock-expires'];
             }
@@ -288,10 +288,10 @@ helper.test('parseLockState handles invalid JSON', function (t) {
 // Test: determineLockAction - should return 'owned' for same instance
 helper.test('determineLockAction returns owned for same instance',
     function (t) {
-    function determineLockAction(self, lockState, instanceId, uploadId,
+    function determineLockAction(self, state, instanceId, uploadId,
         existingLockId) {
-        var existingData = lockState.data;
-        var expires = lockState.expires;
+        var existingData = state.data;
+        var expires = state.expires;
 
         if (existingData.instanceId === instanceId) {
             return {
@@ -353,10 +353,10 @@ helper.test('determineLockAction returns owned for same instance',
 // Test: determineLockAction - should return 'claim-expired' for expired lock
 helper.test('determineLockAction returns claim-expired for expired lock',
     function (t) {
-    function determineLockAction(self, lockState, instanceId, uploadId,
+    function determineLockAction(self, state, instanceId, uploadId,
         existingLockId) {
-        var existingData = lockState.data;
-        var expires = lockState.expires;
+        var existingData = state.data;
+        var expires = state.expires;
 
         if (existingData.instanceId === instanceId) {
             return {
@@ -420,10 +420,10 @@ helper.test('determineLockAction returns claim-expired for expired lock',
 // Test: determineLockAction - should return 'retry-held' for active lock
 helper.test('determineLockAction returns retry-held for active lock',
     function (t) {
-    function determineLockAction(self, lockState, instanceId, uploadId,
+    function determineLockAction(self, state, instanceId, uploadId,
         existingLockId) {
-        var existingData = lockState.data;
-        var expires = lockState.expires;
+        var existingData = state.data;
+        var expires = state.expires;
 
         if (existingData.instanceId === instanceId) {
             return {
@@ -486,10 +486,10 @@ helper.test('determineLockAction returns retry-held for active lock',
 // Test: determineLockAction - should return 'retry-parsing-error'
 // for parsing errors
 helper.test('determineLockAction returns retry-parsing-error', function (t) {
-    function determineLockAction(self, lockState, instanceId, uploadId,
+    function determineLockAction(self, state, instanceId, uploadId,
         existingLockId) {
-        var existingData = lockState.data;
-        var expires = lockState.expires;
+        var existingData = state.data;
+        var expires = state.expires;
 
         if (existingData.instanceId === instanceId) {
             return {

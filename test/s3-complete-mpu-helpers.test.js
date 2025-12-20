@@ -17,9 +17,9 @@ var helper = require('./s3-test-helper.js');
 
 // Test: extractPartETags - should extract ETag array from parts
 helper.test('extractPartETags extracts ETag array', function (t) {
-    function extractPartETags(partsFromXML) {
+    function extractPartETags(parts) {
         var partETags = [];
-        partsFromXML.forEach(function (xmlPart) {
+        parts.forEach(function (xmlPart) {
             partETags.push(xmlPart.etag);
         });
         return (partETags);
@@ -42,7 +42,7 @@ helper.test('extractPartETags extracts ETag array', function (t) {
 
 // Test: extractPartETags - should handle empty array
 helper.test('extractPartETags handles empty array', function (t) {
-    function extractPartETags(partsFromXML) {
+    function extractPartETags(parts) {
         var partETags = [];
         partsFromXML.forEach(function (xmlPart) {
             partETags.push(xmlPart.etag);
@@ -58,7 +58,7 @@ helper.test('extractPartETags handles empty array', function (t) {
 
 // Test: extractPartETags - should handle single part
 helper.test('extractPartETags handles single part', function (t) {
-    function extractPartETags(partsFromXML) {
+    function extractPartETags(parts) {
         var partETags = [];
         partsFromXML.forEach(function (xmlPart) {
             partETags.push(xmlPart.etag);
@@ -79,7 +79,7 @@ helper.test('extractPartETags handles single part', function (t) {
 
 // Test: createCommitBody - should create valid commit body
 helper.test('createCommitBody creates valid structure', function (t) {
-    function extractPartETags(partsFromXML) {
+    function extractPartETags(parts) {
         var partETags = [];
         partsFromXML.forEach(function (xmlPart) {
             partETags.push(xmlPart.etag);
@@ -87,7 +87,7 @@ helper.test('createCommitBody creates valid structure', function (t) {
         return (partETags);
     }
 
-    function createCommitBody(partsFromXML, actualTotalSize, owner,
+    function createCommitBody(parts, actualTotalSize, owner,
         finalObjectId) {
         var partETags = extractPartETags(partsFromXML);
 
@@ -120,7 +120,7 @@ helper.test('createCommitBody creates valid structure', function (t) {
 
 // Test: createCommitBody - should handle zero bytes
 helper.test('createCommitBody handles zero bytes', function (t) {
-    function extractPartETags(partsFromXML) {
+    function extractPartETags(parts) {
         var partETags = [];
         partsFromXML.forEach(function (xmlPart) {
             partETags.push(xmlPart.etag);
@@ -128,7 +128,7 @@ helper.test('createCommitBody handles zero bytes', function (t) {
         return (partETags);
     }
 
-    function createCommitBody(partsFromXML, actualTotalSize, owner,
+    function createCommitBody(parts, actualTotalSize, owner,
         finalObjectId) {
         var partETags = extractPartETags(partsFromXML);
 
@@ -270,16 +270,16 @@ helper.test('transformAssemblyError uses default generic error message',
 
 // Test: releaseLockSafely - should handle null lockInfo
 helper.test('releaseLockSafely handles null lockInfo', function (t) {
-    function releaseLockSafely(lockManager, lockInfo, req, uploadId, callback) {
+    function releaseLockSafely(lockManager, lockInfo, lockReq, uploadId, callback) {
         if (!lockInfo) {
             return (callback());
         }
 
         lockManager.releaseLock(lockInfo, function (releaseErr) {
             if (releaseErr) {
-                req.log.warn(releaseErr, 'Failed to release lock');
+                lockReq.log.warn(releaseErr, 'Failed to release lock');
             } else {
-                req.log.debug({
+                lockReq.log.debug({
                     uploadId: uploadId,
                     lockKey: lockInfo.lockKey
                 }, 'Successfully released distributed lock');
@@ -300,16 +300,16 @@ helper.test('releaseLockSafely handles null lockInfo', function (t) {
 
 // Test: releaseLockSafely - should call releaseLock for valid lockInfo
 helper.test('releaseLockSafely calls releaseLock', function (t) {
-    function releaseLockSafely(lockManager, lockInfo, req, uploadId, callback) {
+    function releaseLockSafely(lockManager, lockInfo, lockReq, uploadId, callback) {
         if (!lockInfo) {
             return (callback());
         }
 
         lockManager.releaseLock(lockInfo, function (releaseErr) {
             if (releaseErr) {
-                req.log.warn(releaseErr, 'Failed to release lock');
+                lockReq.log.warn(releaseErr, 'Failed to release lock');
             } else {
-                req.log.debug({
+                lockReq.log.debug({
                     uploadId: uploadId,
                     lockKey: lockInfo.lockKey
                 }, 'Successfully released distributed lock');
@@ -342,16 +342,16 @@ helper.test('releaseLockSafely calls releaseLock', function (t) {
 
 // Test: releaseLockSafely - should handle release errors
 helper.test('releaseLockSafely handles release errors', function (t) {
-    function releaseLockSafely(lockManager, lockInfo, req, uploadId, callback) {
+    function releaseLockSafely(lockManager, lockInfo, lockReq, uploadId, callback) {
         if (!lockInfo) {
             return (callback());
         }
 
         lockManager.releaseLock(lockInfo, function (releaseErr) {
             if (releaseErr) {
-                req.log.warn(releaseErr, 'Failed to release lock');
+                lockReq.log.warn(releaseErr, 'Failed to release lock');
             } else {
-                req.log.debug({
+                lockReq.log.debug({
                     uploadId: uploadId,
                     lockKey: lockInfo.lockKey
                 }, 'Successfully released distributed lock');
@@ -395,9 +395,9 @@ helper.test('cleanupAndExit releases lock before exit', function (t) {
         });
     }
 
-    function cleanupAndExit(error, lockManager, lockInfo, req, uploadId,
+    function cleanupAndExit(error, lockManager, lockInfo, lockReq, uploadId,
         callback) {
-        releaseLockSafely(lockManager, lockInfo, req, uploadId, function () {
+        releaseLockSafely(lockManager, lockInfo, lockReq, uploadId, function () {
             callback(error);
         });
     }

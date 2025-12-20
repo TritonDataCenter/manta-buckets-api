@@ -20,6 +20,7 @@ var crypto = require('crypto');
 // Test: createLockAtomic - should create lock successfully
 helper.test('createLockAtomic creates lock on success', function (t) {
     function createLockAtomic(mockClient, mockLockParams, callback) {
+        var lockParams = mockLockParams;
         var self = lockParams.self;
         var owner = lockParams.owner;
         var lockReq = lockParams.lockReq;
@@ -30,6 +31,7 @@ helper.test('createLockAtomic creates lock on success', function (t) {
         var lockData = lockParams.lockData;
         var instanceId = lockParams.instanceId;
         var metadataLocation = lockParams.metadataLocation;
+        var _uploadId = lockParams.uploadId;
 
         self.req.log.debug({
             uploadId: _uploadId,
@@ -124,6 +126,7 @@ helper.test('createLockAtomic creates lock on success', function (t) {
 // Test: createLockAtomic - should handle race condition
 helper.test('createLockAtomic handles ObjectExistsError', function (t) {
     function createLockAtomic(mockClient, mockLockParams, callback) {
+        var lockParams = mockLockParams;
         var self = lockParams.self;
         var owner = lockParams.owner;
         var lockReq = lockParams.lockReq;
@@ -134,6 +137,7 @@ helper.test('createLockAtomic handles ObjectExistsError', function (t) {
         var lockData = lockParams.lockData;
         var instanceId = lockParams.instanceId;
         var metadataLocation = lockParams.metadataLocation;
+        var _uploadId = lockParams.uploadId;
 
         client.createObject(owner, lockReq.bucket.id, lockKey,
             lockObjectId, lockContent.length, lockMD5,
@@ -190,6 +194,7 @@ helper.test('createLockAtomic handles ObjectExistsError', function (t) {
 // Test: createLockAtomic - should handle system errors
 helper.test('createLockAtomic handles system errors', function (t) {
     function createLockAtomic(mockClient, mockLockParams, callback) {
+        var lockParams = mockLockParams;
         var self = lockParams.self;
         var owner = lockParams.owner;
         var lockReq = lockParams.lockReq;
@@ -200,6 +205,7 @@ helper.test('createLockAtomic handles system errors', function (t) {
         var lockData = lockParams.lockData;
         var instanceId = lockParams.instanceId;
         var metadataLocation = lockParams.metadataLocation;
+        var _uploadId = lockParams.uploadId;
 
         client.createObject(owner, lockReq.bucket.id, lockKey,
             lockObjectId, lockContent.length, lockMD5,
@@ -256,6 +262,7 @@ helper.test('createLockAtomic handles system errors', function (t) {
 // Test: updateLockAtomic - should update expired lock successfully
 helper.test('updateLockAtomic updates expired lock', function (t) {
     function updateLockAtomic(mockClient, mockLockParams, existingObjectId, callback) {
+        var lockParams = mockLockParams;
         var self = lockParams.self;
         var owner = lockParams.owner;
         var lockReq = lockParams.lockReq;
@@ -264,6 +271,7 @@ helper.test('updateLockAtomic updates expired lock', function (t) {
         var lockData = lockParams.lockData;
         var instanceId = lockParams.instanceId;
         var metadataLocation = lockParams.metadataLocation;
+        var _uploadId = lockParams.uploadId;
 
         self.req.log.debug({
             uploadId: _uploadId,
@@ -402,6 +410,7 @@ helper.test('updateLockAtomic handles ObjectNotFoundError', function (t) {
 // Test: updateLockAtomic - should handle system errors
 helper.test('updateLockAtomic handles system errors', function (t) {
     function updateLockAtomic(mockClient, mockLockParams, existingObjectId, callback) {
+        var lockParams = mockLockParams;
         var self = lockParams.self;
         var owner = lockParams.owner;
         var lockReq = lockParams.lockReq;
@@ -409,6 +418,7 @@ helper.test('updateLockAtomic handles system errors', function (t) {
         var lockData = lockParams.lockData;
         var instanceId = lockParams.instanceId;
         var metadataLocation = lockParams.metadataLocation;
+        var _uploadId = lockParams.uploadId;
 
         client.updateObject(owner, lockReq.bucket.id, lockKey,
             existingObjectId, 'application/json', {

@@ -17,7 +17,7 @@ var helper = require('./s3-test-helper.js');
 
 // Test: extractPartETags - should extract ETag array from parts
 helper.test('extractPartETags extracts ETag array', function (t) {
-    function extractPartETags(_parts) {
+    function extractPartETags(parts) {
         var partETags = [];
         parts.forEach(function (xmlPart) {
             partETags.push(xmlPart.etag);
@@ -42,9 +42,9 @@ helper.test('extractPartETags extracts ETag array', function (t) {
 
 // Test: extractPartETags - should handle empty array
 helper.test('extractPartETags handles empty array', function (t) {
-    function extractPartETags(_parts) {
+    function extractPartETags(parts) {
         var partETags = [];
-        partsFromXML.forEach(function (xmlPart) {
+        parts.forEach(function (xmlPart) {
             partETags.push(xmlPart.etag);
         });
         return (partETags);
@@ -58,9 +58,9 @@ helper.test('extractPartETags handles empty array', function (t) {
 
 // Test: extractPartETags - should handle single part
 helper.test('extractPartETags handles single part', function (t) {
-    function extractPartETags(_parts) {
+    function extractPartETags(parts) {
         var partETags = [];
-        partsFromXML.forEach(function (xmlPart) {
+        parts.forEach(function (xmlPart) {
             partETags.push(xmlPart.etag);
         });
         return (partETags);
@@ -79,9 +79,9 @@ helper.test('extractPartETags handles single part', function (t) {
 
 // Test: createCommitBody - should create valid commit body
 helper.test('createCommitBody creates valid structure', function (t) {
-    function extractPartETags(_parts) {
+    function extractPartETags(parts) {
         var partETags = [];
-        partsFromXML.forEach(function (xmlPart) {
+        parts.forEach(function (xmlPart) {
             partETags.push(xmlPart.etag);
         });
         return (partETags);
@@ -89,7 +89,7 @@ helper.test('createCommitBody creates valid structure', function (t) {
 
     function createCommitBody(parts, actualTotalSize, owner,
         finalObjectId) {
-        var partETags = extractPartETags(partsFromXML);
+        var partETags = extractPartETags(parts);
 
         return {
             version: 1,
@@ -120,9 +120,9 @@ helper.test('createCommitBody creates valid structure', function (t) {
 
 // Test: createCommitBody - should handle zero bytes
 helper.test('createCommitBody handles zero bytes', function (t) {
-    function extractPartETags(_parts) {
+    function extractPartETags(parts) {
         var partETags = [];
-        partsFromXML.forEach(function (xmlPart) {
+        parts.forEach(function (xmlPart) {
             partETags.push(xmlPart.etag);
         });
         return (partETags);
@@ -130,7 +130,7 @@ helper.test('createCommitBody handles zero bytes', function (t) {
 
     function createCommitBody(parts, actualTotalSize, owner,
         finalObjectId) {
-        var partETags = extractPartETags(partsFromXML);
+        var partETags = extractPartETags(parts);
 
         return {
             version: 1,

@@ -45,8 +45,8 @@ helper.test('E2E: Upload object to shark cluster with streaming', function (t) {
 
         // Stream to sharks
         sharkCluster.streamToSharks(objectId, dataStream, sharkIds,
-            function (err, result) {
-                t.ok(!err, 'should stream to sharks without error');
+            function (streamErr, result) {
+                t.ok(!streamErr, 'should stream to sharks without error');
                 t.ok(result.md5, 'should compute MD5');
                 t.equal(result.size, testData.length,
                     'should track correct size');
@@ -67,8 +67,8 @@ helper.test('E2E: Upload object to shark cluster with streaming', function (t) {
                     null,
                     {},
                     'test-request',
-                    function (err, metadata) {
-                        t.ok(!err, 'should create metadata without error');
+                    function (createErr, metadata) {
+                        t.ok(!createErr, 'should create metadata without error');
                         t.equal(metadata.id, objectId, 'should set object ID');
                         t.equal(metadata.content_length, testData.length,
                             'should store size');
@@ -103,30 +103,30 @@ helper.test('E2E: Retrieve object from shark cluster', function (t) {
         });
 
         sharkCluster.streamToSharks(objectId, uploadStream, sharkIds,
-            function (err, uploadResult) {
-                t.ok(!err, 'should upload without error');
+            function (uploadErr, uploadResult) {
+                t.ok(!uploadErr, 'should upload without error');
 
                 // Store metadata
                 metadataClient.createObject(
                     owner, bucketId, objectName, objectId,
                     uploadResult.size, uploadResult.md5, 'text/plain',
                     {}, sharkIds, {}, null, {}, 'test',
-                    function (err, metadata) {
-                        t.ok(!err, 'should store metadata');
+                    function (storeErr, _metadata) {
+                        t.ok(!storeErr, 'should store metadata');
 
                         // Now retrieve
                         metadataClient.getObject(owner, bucketId,
                             objectName, null, {}, 'test',
-                            function (err, obj) {
-                                t.ok(!err, 'should get metadata');
+                            function (getErr, obj) {
+                                t.ok(!getErr, 'should get metadata');
                                 t.equal(obj.id, objectId,
                                     'should return correct object ID');
 
                                 // Stream from sharks
                                 sharkCluster.streamFromSharks(objectId,
                                     obj.sharks,
-                                    function (err, dataStream, meta) {
-                                        t.ok(!err,
+                                    function (retrieveErr, dataStream, meta) {
+                                        t.ok(!retrieveErr,
                                             'should retrieve stream');
                                         t.equal(meta.size, testData.length,
                                             'should have correct size');
@@ -173,8 +173,8 @@ helper.test('E2E: Complete multipart upload workflow', function (t) {
             owner: owner,
             sharks: sharks,
             durabilityLevel: 2
-        }, function (err, uploadId, uploadRecord) {
-            t.ok(!err, 'should initiate upload');
+        }, function (initiateErr, uploadId, uploadRecord) {
+            t.ok(!initiateErr, 'should initiate upload');
             t.ok(uploadId, 'should return upload ID');
             t.equal(uploadRecord.durabilityLevel, 2,
                 'should set durability level');
@@ -185,8 +185,8 @@ helper.test('E2E: Complete multipart upload workflow', function (t) {
             part1Stream.end(part1Data);
 
             mpuManager.uploadPart(uploadId, 1, part1Stream,
-                function (err, part1Result) {
-                    t.ok(!err, 'should upload part 1');
+                function (part1Err, part1Result) {
+                    t.ok(!part1Err, 'should upload part 1');
                     t.ok(part1Result.etag, 'should return part 1 ETag');
 
                     // Upload part 2
@@ -195,8 +195,8 @@ helper.test('E2E: Complete multipart upload workflow', function (t) {
                     part2Stream.end(part2Data);
 
                     mpuManager.uploadPart(uploadId, 2, part2Stream,
-                        function (err, part2Result) {
-                            t.ok(!err, 'should upload part 2');
+                        function (part2Err, part2Result) {
+                            t.ok(!part2Err, 'should upload part 2');
                             t.ok(part2Result.etag,
                                 'should return part 2 ETag');
 
@@ -207,8 +207,8 @@ helper.test('E2E: Complete multipart upload workflow', function (t) {
                             ];
 
                             mpuManager.completeUpload(uploadId, partsXML,
-                                function (err, completeResult) {
-                                    t.ok(!err, 'should complete upload');
+                                function (completeErr, completeResult) {
+                                    t.ok(!completeErr, 'should complete upload');
                                     t.ok(completeResult.etag,
                                         'should return final ETag');
                                     var expectedSize = part1Data.length +
@@ -254,11 +254,11 @@ helper.test('E2E: Conditional object creation with If-None-Match',
                 owner, bucketId, objectName, 'object-2', 100, 'md5-2',
                 'text/plain', {}, ['shark-1'], {}, null,
                 {'if-none-match': '*'}, 'test',
-                function (err, obj2) {
-                    t.ok(err, 'should fail on duplicate');
-                    t.equal(err.name, 'ObjectExistsError',
+                function (duplicateErr, _obj2) {
+                    t.ok(duplicateErr, 'should fail on duplicate');
+                    t.equal(duplicateErr.name, 'ObjectExistsError',
                         'should return ObjectExistsError');
-                    t.equal(err.statusCode, 412,
+                    t.equal(duplicateErr.statusCode, 412,
                         'should return 412 status');
                     t.end();
                 });
@@ -280,18 +280,18 @@ helper.test('E2E: Shark failover when first shark fails', function (t) {
     var sharkIds = ['mock-shark-1', 'mock-shark-2'];
 
     sharkCluster.streamToSharks(objectId, uploadStream, sharkIds,
-        function (err, result) {
+        function (err, _result) {
             t.ok(!err, 'should upload to both sharks');
 
             // Delete from first shark to simulate failure
             var shark1 = sharkCluster.getShark('mock-shark-1');
-            shark1.deleteObject(objectId, function (err) {
-                t.ok(!err, 'should delete from shark 1');
+            shark1.deleteObject(objectId, function (deleteErr) {
+                t.ok(!deleteErr, 'should delete from shark 1');
 
                 // Try to retrieve - should failover to shark 2
                 sharkCluster.streamFromSharks(objectId, sharkIds,
-                    function (err, dataStream, metadata) {
-                        t.ok(!err, 'should retrieve from shark 2');
+                    function (retrieveErr, dataStream, metadata) {
+                        t.ok(!retrieveErr, 'should retrieve from shark 2');
                         t.equal(metadata.shark, 'mock-shark-2',
                             'should use second shark');
 
@@ -327,23 +327,23 @@ helper.test('E2E: Abort multipart upload cleans up parts', function (t) {
         mpuManager.initiateUpload(bucketId, objectKey, {
             owner: owner,
             sharks: sharks
-        }, function (err, uploadId) {
-            t.ok(!err, 'should initiate upload');
+        }, function (initiateErr, uploadId) {
+            t.ok(!initiateErr, 'should initiate upload');
 
             // Upload some parts
             var part1Stream = new stream.PassThrough();
             part1Stream.end('Part 1');
 
-            mpuManager.uploadPart(uploadId, 1, part1Stream, function (err) {
-                t.ok(!err, 'should upload part');
+            mpuManager.uploadPart(uploadId, 1, part1Stream, function (uploadErr) {
+                t.ok(!uploadErr, 'should upload part');
 
                 // Verify part exists
                 var parts = mpuManager.listParts(uploadId);
                 t.equal(parts.length, 1, 'should have 1 part');
 
                 // Abort upload
-                mpuManager.abortUpload(uploadId, function (err) {
-                    t.ok(!err, 'should abort upload');
+                mpuManager.abortUpload(uploadId, function (abortErr) {
+                    t.ok(!abortErr, 'should abort upload');
 
                     // Verify cleanup
                     var upload = mpuManager.getUpload(uploadId);

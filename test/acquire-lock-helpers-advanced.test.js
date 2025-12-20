@@ -21,7 +21,7 @@ var crypto = require('crypto');
 helper.test('createLockAtomic creates lock on success', function (t) {
     function createLockAtomic(client, lockParams, callback) {
         var self = lockParams.self;
-        var uploadId = lockParams.uploadId;
+        var _uploadId = lockParams.uploadId;
         var owner = lockParams.owner;
         var lockReq = lockParams.lockReq;
         var lockKey = lockParams.lockKey;
@@ -47,7 +47,7 @@ helper.test('createLockAtomic creates lock on success', function (t) {
                 'x-lock-hostname': lockData.hostname
             }, [], {}, metadataLocation.vnode, {},
             self.req.getId(),
-            function (createErr, result) {
+            function (createErr, _result) {
                 if (createErr) {
                     if (createErr.name === 'ObjectExistsError') {
                         self.req.log.debug({
@@ -126,7 +126,7 @@ helper.test('createLockAtomic creates lock on success', function (t) {
 helper.test('createLockAtomic handles ObjectExistsError', function (t) {
     function createLockAtomic(client, lockParams, callback) {
         var self = lockParams.self;
-        var uploadId = lockParams.uploadId;
+        var _uploadId = lockParams.uploadId;
         var owner = lockParams.owner;
         var lockReq = lockParams.lockReq;
         var lockKey = lockParams.lockKey;
@@ -144,7 +144,7 @@ helper.test('createLockAtomic handles ObjectExistsError', function (t) {
                 'x-lock-expires': lockData.expires
             }, [], {}, metadataLocation.vnode, {},
             self.req.getId(),
-            function (createErr, result) {
+            function (createErr, _result) {
                 if (createErr) {
                     if (createErr.name === 'ObjectExistsError') {
                         return (callback({action: 'retry-race'}));
@@ -193,7 +193,7 @@ helper.test('createLockAtomic handles ObjectExistsError', function (t) {
 helper.test('createLockAtomic handles system errors', function (t) {
     function createLockAtomic(client, lockParams, callback) {
         var self = lockParams.self;
-        var uploadId = lockParams.uploadId;
+        var _uploadId = lockParams.uploadId;
         var owner = lockParams.owner;
         var lockReq = lockParams.lockReq;
         var lockKey = lockParams.lockKey;
@@ -211,7 +211,7 @@ helper.test('createLockAtomic handles system errors', function (t) {
                 'x-lock-expires': lockData.expires
             }, [], {}, metadataLocation.vnode, {},
             self.req.getId(),
-            function (createErr, result) {
+            function (createErr, _result) {
                 if (createErr) {
                     if (createErr.name === 'ObjectExistsError') {
                         return (callback({action: 'retry-race'}));
@@ -260,7 +260,7 @@ helper.test('createLockAtomic handles system errors', function (t) {
 helper.test('updateLockAtomic updates expired lock', function (t) {
     function updateLockAtomic(client, lockParams, existingObjectId, callback) {
         var self = lockParams.self;
-        var uploadId = lockParams.uploadId;
+        var _uploadId = lockParams.uploadId;
         var owner = lockParams.owner;
         var lockReq = lockParams.lockReq;
         var lockKey = lockParams.lockKey;
@@ -283,7 +283,7 @@ helper.test('updateLockAtomic updates expired lock', function (t) {
                 'content-length': String(lockContent.length)
             }, {}, metadataLocation.vnode, {},
             self.req.getId(),
-            function (updateErr, updateResult) {
+            function (updateErr, _updateResult) {
                 if (updateErr) {
                     if (updateErr.name === 'ObjectNotFoundError') {
                         self.req.log.debug({
@@ -354,11 +354,11 @@ helper.test('updateLockAtomic updates expired lock', function (t) {
 helper.test('updateLockAtomic handles ObjectNotFoundError', function (t) {
     function updateLockAtomic(client, lockParams, existingObjectId, callback) {
         var self = lockParams.self;
-        var uploadId = lockParams.uploadId;
+        var _uploadId = lockParams.uploadId;
         var owner = lockParams.owner;
         var lockReq = lockParams.lockReq;
         var lockKey = lockParams.lockKey;
-        var lockContent = lockParams.lockContent;
+        var _lockContent = lockParams.lockContent;
         var lockData = lockParams.lockData;
         var instanceId = lockParams.instanceId;
         var metadataLocation = lockParams.metadataLocation;
@@ -369,7 +369,7 @@ helper.test('updateLockAtomic handles ObjectNotFoundError', function (t) {
                 'x-lock-expires': lockData.expires
             }, {}, metadataLocation.vnode, {},
             self.req.getId(),
-            function (updateErr, updateResult) {
+            function (updateErr, _updateResult) {
                 if (updateErr) {
                     if (updateErr.name === 'ObjectNotFoundError') {
                         return (callback({action: 'retry-deleted'}));
@@ -409,11 +409,11 @@ helper.test('updateLockAtomic handles ObjectNotFoundError', function (t) {
 helper.test('updateLockAtomic handles system errors', function (t) {
     function updateLockAtomic(client, lockParams, existingObjectId, callback) {
         var self = lockParams.self;
-        var uploadId = lockParams.uploadId;
+        var _uploadId = lockParams.uploadId;
         var owner = lockParams.owner;
         var lockReq = lockParams.lockReq;
         var lockKey = lockParams.lockKey;
-        var lockContent = lockParams.lockContent;
+        var _lockContent = lockParams.lockContent;
         var lockData = lockParams.lockData;
         var instanceId = lockParams.instanceId;
         var metadataLocation = lockParams.metadataLocation;
@@ -424,7 +424,7 @@ helper.test('updateLockAtomic handles system errors', function (t) {
                 'x-lock-expires': lockData.expires
             }, {}, metadataLocation.vnode, {},
             self.req.getId(),
-            function (updateErr, updateResult) {
+            function (updateErr, _updateResult) {
                 if (updateErr) {
                     if (updateErr.name === 'ObjectNotFoundError') {
                         return (callback({action: 'retry-deleted'}));

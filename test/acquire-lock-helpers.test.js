@@ -67,7 +67,7 @@ helper.test('createLockData sets future expiration', function (t) {
 
 // Test: parseLockState - should parse valid JSON lock data
 helper.test('parseLockState parses valid JSON', function (t) {
-    function parseLockState(self, existingLock, uploadId) {
+    function parseLockState(self, existingLock, _uploadId) {
         try {
             var existingData = JSON.parse(existingLock.value || '{}');
             var expiresValue = existingData.expires;
@@ -124,7 +124,7 @@ helper.test('parseLockState parses valid JSON', function (t) {
 
 // Test: parseLockState - should handle missing expires in data
 helper.test('parseLockState handles missing expires', function (t) {
-    function parseLockState(self, existingLock, uploadId) {
+    function parseLockState(self, existingLock, _uploadId) {
         try {
             var existingData = JSON.parse(existingLock.value || '{}');
             var expiresValue = existingData.expires;
@@ -176,7 +176,7 @@ helper.test('parseLockState handles missing expires', function (t) {
 
 // Test: parseLockState - should fallback to headers for expires
 helper.test('parseLockState uses header fallback', function (t) {
-    function parseLockState(self, existingLock, uploadId) {
+    function parseLockState(self, existingLock, _uploadId) {
         try {
             var existingData = JSON.parse(existingLock.value || '{}');
             var expiresValue = existingData.expires;
@@ -237,7 +237,7 @@ helper.test('parseLockState uses header fallback', function (t) {
 
 // Test: parseLockState - should handle invalid JSON
 helper.test('parseLockState handles invalid JSON', function (t) {
-    function parseLockState(self, existingLock, uploadId) {
+    function parseLockState(self, existingLock, _uploadId) {
         try {
             var existingData = JSON.parse(existingLock.value || '{}');
             var expiresValue = existingData.expires;

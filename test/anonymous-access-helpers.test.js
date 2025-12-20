@@ -537,7 +537,7 @@ helper.test('executeHandlerChain catches handler exceptions', function (t) {
 
     var thrownError = new Error('Handler threw exception');
 
-    var handler1 = function (req, res, next) {
+    var handler1 = function (_req, _res, _next) {
         throw thrownError;
     };
 

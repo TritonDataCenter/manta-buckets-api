@@ -135,7 +135,6 @@ helper.test('createLockAtomic handles ObjectExistsError', function (t) {
         var lockDataArg = mockLockParams.lockData;
         var instanceId = mockLockParams.instanceId;
         var metadataLocation = mockLockParams.metadataLocation;
-        var _uploadId = mockLockParams.uploadId;
 
         client.createObject(owner, lockReq.bucket.id, lockKey,
             lockObjectId, lockContentArg.length, lockMD5,

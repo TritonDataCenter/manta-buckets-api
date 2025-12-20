@@ -212,7 +212,8 @@ helper.test('createIsChunkedFunction returns false for non-chunked',
 
 // Test: configureDurabilityLevel - should use upload record durability
 helper.test('configureDurabilityLevel uses uploadRecord value', function (t) {
-    function configureDurabilityLevel(partReqArg, reqArg, uploadRecordArg, uploadId) {
+    function configureDurabilityLevel(partReqArg, reqArg, uploadRecordArg,
+        uploadId) {
         var durabilityLevel = uploadRecordArg.durabilityLevel ||
             parseInt(reqArg.header('durability-level') ||
                 reqArg.header('x-durability-level') ||
@@ -246,7 +247,8 @@ helper.test('configureDurabilityLevel uses uploadRecord value', function (t) {
 
 // Test: configureDurabilityLevel - should use header as fallback
 helper.test('configureDurabilityLevel uses header as fallback', function (t) {
-    function configureDurabilityLevel(partReqArg, reqArg, uploadRecordArg, uploadId) {
+    function configureDurabilityLevel(partReqArg, reqArg, uploadRecordArg,
+        uploadId) {
         var durabilityLevel = uploadRecordArg.durabilityLevel ||
             parseInt(reqArg.header('durability-level') ||
                 reqArg.header('x-durability-level') ||
@@ -285,7 +287,8 @@ helper.test('configureDurabilityLevel uses header as fallback', function (t) {
 
 // Test: configureDurabilityLevel - should use default value
 helper.test('configureDurabilityLevel uses default value', function (t) {
-    function configureDurabilityLevel(partReqArg, reqArg, uploadRecordArg, uploadId) {
+    function configureDurabilityLevel(partReqArg, reqArg, uploadRecordArg,
+        uploadId) {
         var durabilityLevel = uploadRecordArg.durabilityLevel ||
             parseInt(reqArg.header('durability-level') ||
                 reqArg.header('x-durability-level') ||

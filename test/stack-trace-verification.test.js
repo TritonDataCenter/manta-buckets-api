@@ -21,7 +21,8 @@ var helper = require('./s3-test-helper.js');
 
 ///--- Stack Trace Verification Tests
 
-helper.test('named functions appear in stack traces - middleware', function (t) {
+helper.test('named functions appear in stack traces - middleware',
+    function (t) {
     // Test that middleware function names are visible
     var middlewareModule = require('../lib/server/middleware.js');
 
@@ -69,7 +70,7 @@ helper.test('stack trace shows named function - demonstration', function (t) {
     // Demonstrate that a stack trace from a named function includes the name
     function namedTestFunction() {
         var stackTrace = new Error().stack;
-        return stackTrace;
+        return (stackTrace);
     }
 
     var stack = namedTestFunction();
@@ -140,11 +141,13 @@ helper.test('debugging improvement demonstration', function (t) {
     t.end();
 });
 
-helper.test('verify modules load without errors after refactoring', function (t) {
+helper.test('verify modules load without errors after refactoring',
+    function (t) {
     // Ensure all refactored modules still load correctly
-    // Note: Some modules (s3-routes, s3-multipart, s3-compat, s3-mako-v2-commit)
-    // depend on lib/common.js which requires bignum (architecture issue on
-    // ARM64 Macs). We test the modules we can load without bignum.
+    // Note: Some modules (s3-routes, s3-multipart, s3-compat,
+    // s3-mako-v2-commit) depend on lib/common.js which requires bignum
+    // (architecture issue on ARM64 Macs). We test the modules we can load
+    // without bignum.
     var modules = [
         '../lib/server/middleware.js',
         '../lib/auth/signature-verifier.js'

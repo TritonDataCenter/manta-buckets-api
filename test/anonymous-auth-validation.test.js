@@ -105,7 +105,8 @@ exports['validates UUID format names'] = function (t) {
 };
 
 exports['validates 64 character limit'] = function (t) {
-    var name64 = 'a123456789012345678901234567890123456789012345678901234567890123';
+    var name64 =
+        'a123456789012345678901234567890123456789012345678901234567890123';
     t.equal(name64.length, 64, 'test string should be exactly 64 chars');
     t.ok(anonymousAuth.isValidAccountName(name64),
          '64 character name should be valid');
@@ -143,7 +144,8 @@ exports['rejects names with slashes'] = function (t) {
 };
 
 exports['rejects names that are too long'] = function (t) {
-    var name65 = 'a1234567890123456789012345678901234567890123456789012345678901234';
+    var name65 =
+        'a1234567890123456789012345678901234567890123456789012345678901234';
     t.equal(name65.length, 65, 'test string should be exactly 65 chars');
     t.equal(anonymousAuth.isValidAccountName(name65), false,
             '65 character name should be rejected');
@@ -198,7 +200,7 @@ exports['rejects names with special characters'] = function (t) {
 };
 
 exports['rejects injection attempt patterns'] = function (t) {
-    t.equal(anonymousAuth.isValidAccountName("'; DROP TABLE--"), false,
+    t.equal(anonymousAuth.isValidAccountName('\'; DROP TABLE--'), false,
             'SQL injection attempt should be rejected');
     t.equal(anonymousAuth.isValidAccountName('<script>alert(1)</script>'),
             false, 'XSS attempt should be rejected');

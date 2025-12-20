@@ -257,7 +257,8 @@ helper.test('createLockAtomic handles system errors', function (t) {
 
 // Test: updateLockAtomic - should update expired lock successfully
 helper.test('updateLockAtomic updates expired lock', function (t) {
-    function updateLockAtomic(mockClient, mockLockParams, existingObjectId, callback) {
+    function updateLockAtomic(mockClient, mockLockParams, existingObjectId,
+        callback) {
         var self = mockLockParams.self;
         var owner = mockLockParams.owner;
         var lockReq = mockLockParams.lockReq;
@@ -351,7 +352,8 @@ helper.test('updateLockAtomic updates expired lock', function (t) {
 
 // Test: updateLockAtomic - should handle lock deleted by another instance
 helper.test('updateLockAtomic handles ObjectNotFoundError', function (t) {
-    function updateLockAtomic(mockClient, mockLockParams, existingObjectId, callback) {
+    function updateLockAtomic(mockClient, mockLockParams, existingObjectId,
+        callback) {
         var self = mockLockParams.self;
         var owner = mockLockParams.owner;
         var lockReq = mockLockParams.lockReq;
@@ -404,7 +406,8 @@ helper.test('updateLockAtomic handles ObjectNotFoundError', function (t) {
 
 // Test: updateLockAtomic - should handle system errors
 helper.test('updateLockAtomic handles system errors', function (t) {
-    function updateLockAtomic(mockClient, mockLockParams, existingObjectId, callback) {
+    function updateLockAtomic(mockClient, mockLockParams, existingObjectId,
+        callback) {
         var self = mockLockParams.self;
         var owner = mockLockParams.owner;
         var lockReq = mockLockParams.lockReq;

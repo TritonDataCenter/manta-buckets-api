@@ -68,7 +68,8 @@ helper.test('E2E: Upload object to shark cluster with streaming', function (t) {
                     {},
                     'test-request',
                     function (createErr, metadata) {
-                        t.ok(!createErr, 'should create metadata without error');
+                        t.ok(!createErr,
+                            'should create metadata without error');
                         t.equal(metadata.id, objectId, 'should set object ID');
                         t.equal(metadata.content_length, testData.length,
                             'should store size');
@@ -208,7 +209,8 @@ helper.test('E2E: Complete multipart upload workflow', function (t) {
 
                             mpuManager.completeUpload(uploadId, partsXML,
                                 function (completeErr, completeResult) {
-                                    t.ok(!completeErr, 'should complete upload');
+                                    t.ok(!completeErr,
+                                        'should complete upload');
                                     t.ok(completeResult.etag,
                                         'should return final ETag');
                                     var expectedSize = part1Data.length +
@@ -334,7 +336,8 @@ helper.test('E2E: Abort multipart upload cleans up parts', function (t) {
             var part1Stream = new stream.PassThrough();
             part1Stream.end('Part 1');
 
-            mpuManager.uploadPart(uploadId, 1, part1Stream, function (uploadErr) {
+            mpuManager.uploadPart(uploadId, 1, part1Stream,
+                function (uploadErr) {
                 t.ok(!uploadErr, 'should upload part');
 
                 // Verify part exists

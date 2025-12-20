@@ -26,10 +26,10 @@ function createMockRequest(options) {
         headers: headers,
         query: options.query || {},
         path: function () {
-            return options.path || '/';
+            return (options.path || '/');
         },
         isChunked: function () {
-            return options.isChunked || false;
+            return (options.isChunked || false);
         },
         log: {
             debug: function (obj, msg) {
@@ -60,7 +60,7 @@ function createMockRequest(options) {
         }
     };
 
-    return mockReq;
+    return (mockReq);
 }
 
 function createMockNext() {
@@ -72,10 +72,10 @@ function createMockNext() {
         error = err;
     }
 
-    next.wasCalled = function () { return called; };
-    next.getError = function () { return error; };
+    next.wasCalled = function () { return (called); };
+    next.getError = function () { return (error); };
 
-    return next;
+    return (next);
 }
 
 exports['logAllRequests logs request details'] = function (t) {

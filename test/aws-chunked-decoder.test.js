@@ -25,23 +25,23 @@ function bufferIndexOf(buffer, searchString) {
             }
         }
         if (match) {
-            return i;
+            return (i);
         }
     }
-    return -1;
+    return (-1);
 }
 
 // Compatibility helper for Buffer.equals (not available in Node.js v0.10.48)
 function bufferEquals(buf1, buf2) {
     if (buf1.length !== buf2.length) {
-        return false;
+        return (false);
     }
     for (var i = 0; i < buf1.length; i++) {
         if (buf1[i] !== buf2[i]) {
-            return false;
+            return (false);
         }
     }
-    return true;
+    return (true);
 }
 
 // Mock AWS chunked decoder based on the actual implementation

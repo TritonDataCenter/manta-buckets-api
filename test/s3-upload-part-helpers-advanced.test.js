@@ -112,8 +112,8 @@ helper.test('configureBasicPartRequest header function works', function (t) {
 // upload record
 helper.test('configurePreAllocatedSharks sets sharks from record',
     function (t) {
-    function configurePreAllocatedSharks(partReqArg, reqArg, uploadRecordArg, partNumber,
-        uploadId) {
+    function configurePreAllocatedSharks(partReqArg, reqArg, uploadRecordArg,
+        partNumber, uploadId) {
         if (uploadRecordArg.preAllocatedSharks &&
             Array.isArray(uploadRecordArg.preAllocatedSharks) &&
             uploadRecordArg.preAllocatedSharks.length > 0) {
@@ -158,8 +158,8 @@ helper.test('configurePreAllocatedSharks sets sharks from record',
 // Test: configurePreAllocatedSharks - should log error for missing sharks
 helper.test('configurePreAllocatedSharks logs error for missing sharks',
     function (t) {
-    function configurePreAllocatedSharks(partReqArg, reqArg, uploadRecordArg, partNumber,
-        uploadId) {
+    function configurePreAllocatedSharks(partReqArg, reqArg, uploadRecordArg,
+        partNumber, uploadId) {
         if (uploadRecordArg.preAllocatedSharks &&
             Array.isArray(uploadRecordArg.preAllocatedSharks) &&
             uploadRecordArg.preAllocatedSharks.length > 0) {

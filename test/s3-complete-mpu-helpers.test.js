@@ -270,7 +270,8 @@ helper.test('transformAssemblyError uses default generic error message',
 
 // Test: releaseLockSafely - should handle null lockInfo
 helper.test('releaseLockSafely handles null lockInfo', function (t) {
-    function releaseLockSafely(lockManager, lockInfo, lockReq, uploadId, callback) {
+    function releaseLockSafely(lockManager, lockInfo, lockReq, uploadId,
+        callback) {
         if (!lockInfo) {
             return (callback());
         }
@@ -300,7 +301,8 @@ helper.test('releaseLockSafely handles null lockInfo', function (t) {
 
 // Test: releaseLockSafely - should call releaseLock for valid lockInfo
 helper.test('releaseLockSafely calls releaseLock', function (t) {
-    function releaseLockSafely(lockManager, lockInfo, lockReq, uploadId, callback) {
+    function releaseLockSafely(lockManager, lockInfo, lockReq, uploadId,
+        callback) {
         if (!lockInfo) {
             return (callback());
         }
@@ -342,7 +344,8 @@ helper.test('releaseLockSafely calls releaseLock', function (t) {
 
 // Test: releaseLockSafely - should handle release errors
 helper.test('releaseLockSafely handles release errors', function (t) {
-    function releaseLockSafely(lockManager, lockInfo, lockReq, uploadId, callback) {
+    function releaseLockSafely(lockManager, lockInfo, lockReq, uploadId,
+        callback) {
         if (!lockInfo) {
             return (callback());
         }
@@ -397,7 +400,8 @@ helper.test('cleanupAndExit releases lock before exit', function (t) {
 
     function cleanupAndExit(error, lockManager, lockInfo, lockReq, uploadId,
         callback) {
-        releaseLockSafely(lockManager, lockInfo, lockReq, uploadId, function () {
+        releaseLockSafely(lockManager, lockInfo, lockReq, uploadId,
+            function () {
             callback(error);
         });
     }

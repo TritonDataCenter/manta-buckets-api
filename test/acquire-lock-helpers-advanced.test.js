@@ -33,7 +33,7 @@ helper.test('createLockAtomic creates lock on success', function (t) {
         var metadataLocation = lockParams.metadataLocation;
 
         self.req.log.debug({
-            uploadId: uploadId,
+            uploadId: _uploadId,
             instanceId: instanceId,
             lockKey: lockKey
         }, 'No existing lock found, attempting atomic creation');
@@ -51,20 +51,20 @@ helper.test('createLockAtomic creates lock on success', function (t) {
                 if (createErr) {
                     if (createErr.name === 'ObjectExistsError') {
                         self.req.log.debug({
-                            uploadId: uploadId
+                            uploadId: _uploadId
                         }, 'Lost creation race, will retry');
                         return (callback({action: 'retry-race'}));
                     }
 
                     self.req.log.error({
                         err: createErr,
-                        uploadId: uploadId
+                        uploadId: _uploadId
                     }, 'Failed to create lock due to system error');
                     return (callback({action: 'error', error: createErr}));
                 }
 
                 self.req.log.debug({
-                    uploadId: uploadId,
+                    uploadId: _uploadId,
                     instanceId: instanceId,
                     lockKey: lockKey,
                     expires: lockData.expires
@@ -218,7 +218,7 @@ helper.test('createLockAtomic handles system errors', function (t) {
                     }
                     self.req.log.error({
                         err: createErr,
-                        uploadId: uploadId
+                        uploadId: _uploadId
                     }, 'Failed to create lock');
                     return (callback({action: 'error', error: createErr}));
                 }
@@ -270,7 +270,7 @@ helper.test('updateLockAtomic updates expired lock', function (t) {
         var metadataLocation = lockParams.metadataLocation;
 
         self.req.log.debug({
-            uploadId: uploadId,
+            uploadId: _uploadId,
             existingObjectId: existingObjectId,
             newOwner: instanceId
         }, 'Attempting atomic update of expired lock');
@@ -287,20 +287,20 @@ helper.test('updateLockAtomic updates expired lock', function (t) {
                 if (updateErr) {
                     if (updateErr.name === 'ObjectNotFoundError') {
                         self.req.log.debug({
-                            uploadId: uploadId
+                            uploadId: _uploadId
                         }, 'Expired lock was deleted by someone else');
                         return (callback({action: 'retry-deleted'}));
                     }
 
                     self.req.log.error({
                         err: updateErr,
-                        uploadId: uploadId
+                        uploadId: _uploadId
                     }, 'Failed to update lock');
                     return (callback({action: 'error', error: updateErr}));
                 }
 
                 self.req.log.debug({
-                    uploadId: uploadId,
+                    uploadId: _uploadId,
                     instanceId: instanceId
                 }, 'Successfully claimed expired lock');
 
@@ -431,7 +431,7 @@ helper.test('updateLockAtomic handles system errors', function (t) {
                     }
                     self.req.log.error({
                         err: updateErr,
-                        uploadId: uploadId
+                        uploadId: _uploadId
                     }, 'Failed to update lock');
                     return (callback({action: 'error', error: updateErr}));
                 }

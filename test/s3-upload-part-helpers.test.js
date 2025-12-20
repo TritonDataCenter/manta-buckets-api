@@ -77,12 +77,12 @@ helper.test('generatePartKey handles various inputs', function (t) {
 
 // Test: resolveETag - should prioritize captured ETag
 helper.test('resolveETag prioritizes captured ETag', function (t) {
-    function resolveETag(capturedETag, result) {
+    function resolveETag(capturedETag, resultArg) {
         if (capturedETag) {
             return (capturedETag);
         }
-        if (result && result.id) {
-            return (result.id);
+        if (resultArg && resultArg.id) {
+            return (resultArg.id);
         }
         return ('unknown');
     }
@@ -96,12 +96,12 @@ helper.test('resolveETag prioritizes captured ETag', function (t) {
 
 // Test: resolveETag - should use result.id when no captured ETag
 helper.test('resolveETag uses result.id as fallback', function (t) {
-    function resolveETag(capturedETag, result) {
+    function resolveETag(capturedETag, resultArg) {
         if (capturedETag) {
             return (capturedETag);
         }
-        if (result && result.id) {
-            return (result.id);
+        if (resultArg && resultArg.id) {
+            return (resultArg.id);
         }
         return ('unknown');
     }
@@ -115,12 +115,12 @@ helper.test('resolveETag uses result.id as fallback', function (t) {
 
 // Test: resolveETag - should return 'unknown' when no ETag available
 helper.test('resolveETag returns unknown as last resort', function (t) {
-    function resolveETag(capturedETag, result) {
+    function resolveETag(capturedETag, resultArg) {
         if (capturedETag) {
             return (capturedETag);
         }
-        if (result && result.id) {
-            return (result.id);
+        if (resultArg && resultArg.id) {
+            return (resultArg.id);
         }
         return ('unknown');
     }
@@ -139,10 +139,10 @@ helper.test('resolveETag returns unknown as last resort', function (t) {
 // transfer-encoding
 helper.test('createIsChunkedFunction checks transfer-encoding header',
     function (t) {
-    function createIsChunkedFunction(req, partReq) {
+    function createIsChunkedFunction(reqArg, partReqArg) {
         return function () {
-            return req.isChunked ? req.isChunked() :
-                (partReq.headers['transfer-encoding'] === 'chunked');
+            return reqArg.isChunked ? reqArg.isChunked() :
+                (partReqArg.headers['transfer-encoding'] === 'chunked');
         };
     }
 
@@ -163,10 +163,10 @@ helper.test('createIsChunkedFunction checks transfer-encoding header',
 // Test: createIsChunkedFunction - should use req.isChunked if available
 helper.test('createIsChunkedFunction uses req.isChunked when available',
     function (t) {
-    function createIsChunkedFunction(req, partReq) {
+    function createIsChunkedFunction(reqArg, partReqArg) {
         return function () {
-            return req.isChunked ? req.isChunked() :
-                (partReq.headers['transfer-encoding'] === 'chunked');
+            return reqArg.isChunked ? reqArg.isChunked() :
+                (partReqArg.headers['transfer-encoding'] === 'chunked');
         };
     }
 
@@ -190,10 +190,10 @@ helper.test('createIsChunkedFunction uses req.isChunked when available',
 // Test: createIsChunkedFunction - should return false for non-chunked
 helper.test('createIsChunkedFunction returns false for non-chunked',
     function (t) {
-    function createIsChunkedFunction(req, partReq) {
+    function createIsChunkedFunction(reqArg, partReqArg) {
         return function () {
-            return req.isChunked ? req.isChunked() :
-                (partReq.headers['transfer-encoding'] === 'chunked');
+            return reqArg.isChunked ? reqArg.isChunked() :
+                (partReqArg.headers['transfer-encoding'] === 'chunked');
         };
     }
 
@@ -212,18 +212,18 @@ helper.test('createIsChunkedFunction returns false for non-chunked',
 
 // Test: configureDurabilityLevel - should use upload record durability
 helper.test('configureDurabilityLevel uses uploadRecord value', function (t) {
-    function configureDurabilityLevel(partReq, req, uploadRecord, uploadId) {
-        var durabilityLevel = uploadRecord.durabilityLevel ||
-            parseInt(req.header('durability-level') ||
-                req.header('x-durability-level') ||
+    function configureDurabilityLevel(partReqArg, reqArg, uploadRecordArg, uploadId) {
+        var durabilityLevel = uploadRecordArg.durabilityLevel ||
+            parseInt(reqArg.header('durability-level') ||
+                reqArg.header('x-durability-level') ||
                 2, 10);
 
-        req.log.debug({
+        reqArg.log.debug({
             uploadId: uploadId,
             durabilityLevel: durabilityLevel
         }, 'Using durability level for part upload');
 
-        partReq.headers['durability-level'] = durabilityLevel.toString();
+        partReqArg.headers['durability-level'] = durabilityLevel.toString();
 
         return (durabilityLevel);
     }
@@ -246,18 +246,18 @@ helper.test('configureDurabilityLevel uses uploadRecord value', function (t) {
 
 // Test: configureDurabilityLevel - should use header as fallback
 helper.test('configureDurabilityLevel uses header as fallback', function (t) {
-    function configureDurabilityLevel(partReq, req, uploadRecord, uploadId) {
-        var durabilityLevel = uploadRecord.durabilityLevel ||
-            parseInt(req.header('durability-level') ||
-                req.header('x-durability-level') ||
+    function configureDurabilityLevel(partReqArg, reqArg, uploadRecordArg, uploadId) {
+        var durabilityLevel = uploadRecordArg.durabilityLevel ||
+            parseInt(reqArg.header('durability-level') ||
+                reqArg.header('x-durability-level') ||
                 2, 10);
 
-        req.log.debug({
+        reqArg.log.debug({
             uploadId: uploadId,
             durabilityLevel: durabilityLevel
         }, 'Using durability level for part upload');
 
-        partReq.headers['durability-level'] = durabilityLevel.toString();
+        partReqArg.headers['durability-level'] = durabilityLevel.toString();
 
         return (durabilityLevel);
     }
@@ -285,18 +285,18 @@ helper.test('configureDurabilityLevel uses header as fallback', function (t) {
 
 // Test: configureDurabilityLevel - should use default value
 helper.test('configureDurabilityLevel uses default value', function (t) {
-    function configureDurabilityLevel(partReq, req, uploadRecord, uploadId) {
-        var durabilityLevel = uploadRecord.durabilityLevel ||
-            parseInt(req.header('durability-level') ||
-                req.header('x-durability-level') ||
+    function configureDurabilityLevel(partReqArg, reqArg, uploadRecordArg, uploadId) {
+        var durabilityLevel = uploadRecordArg.durabilityLevel ||
+            parseInt(reqArg.header('durability-level') ||
+                reqArg.header('x-durability-level') ||
                 2, 10);
 
-        req.log.debug({
+        reqArg.log.debug({
             uploadId: uploadId,
             durabilityLevel: durabilityLevel
         }, 'Using durability level for part upload');
 
-        partReq.headers['durability-level'] = durabilityLevel.toString();
+        partReqArg.headers['durability-level'] = durabilityLevel.toString();
 
         return (durabilityLevel);
     }

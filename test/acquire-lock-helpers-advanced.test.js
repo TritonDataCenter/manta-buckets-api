@@ -20,18 +20,17 @@ var crypto = require('crypto');
 // Test: createLockAtomic - should create lock successfully
 helper.test('createLockAtomic creates lock on success', function (t) {
     function createLockAtomic(mockClient, mockLockParams, callback) {
-        var lockParams = mockLockParams;
-        var self = lockParams.self;
-        var owner = lockParams.owner;
-        var lockReq = lockParams.lockReq;
-        var lockKey = lockParams.lockKey;
-        var lockObjectId = lockParams.lockObjectId;
-        var lockContent = lockParams.lockContent;
-        var lockMD5 = lockParams.lockMD5;
-        var lockData = lockParams.lockData;
-        var instanceId = lockParams.instanceId;
-        var metadataLocation = lockParams.metadataLocation;
-        var _uploadId = lockParams.uploadId;
+        var self = mockLockParams.self;
+        var owner = mockLockParams.owner;
+        var lockReq = mockLockParams.lockReq;
+        var lockKey = mockLockParams.lockKey;
+        var lockObjectId = mockLockParams.lockObjectId;
+        var lockContentArg = mockLockParams.lockContent;
+        var lockMD5 = mockLockParams.lockMD5;
+        var lockDataArg = mockLockParams.lockData;
+        var instanceId = mockLockParams.instanceId;
+        var metadataLocation = mockLockParams.metadataLocation;
+        var _uploadId = mockLockParams.uploadId;
 
         self.req.log.debug({
             uploadId: _uploadId,
@@ -40,12 +39,12 @@ helper.test('createLockAtomic creates lock on success', function (t) {
         }, 'No existing lock found, attempting atomic creation');
 
         client.createObject(owner, lockReq.bucket.id, lockKey,
-            lockObjectId, lockContent.length, lockMD5,
+            lockObjectId, lockContentArg.length, lockMD5,
             'application/json', {
                 'x-lock-instance': instanceId,
-                'x-lock-expires': lockData.expires,
+                'x-lock-expires': lockDataArg.expires,
                 'x-lock-operation': 'complete-multipart',
-                'x-lock-hostname': lockData.hostname
+                'x-lock-hostname': lockDataArg.hostname
             }, [], {}, metadataLocation.vnode, {},
             self.req.getId(),
             function (createErr, _result) {
@@ -68,7 +67,7 @@ helper.test('createLockAtomic creates lock on success', function (t) {
                     uploadId: _uploadId,
                     instanceId: instanceId,
                     lockKey: lockKey,
-                    expires: lockData.expires
+                    expires: lockDataArg.expires
                 }, 'Successfully acquired distributed lock');
 
                 callback({
@@ -77,8 +76,8 @@ helper.test('createLockAtomic creates lock on success', function (t) {
                         lockKey: lockKey,
                         instanceId: instanceId,
                         objectId: lockObjectId,
-                        acquired: lockData.acquired,
-                        expires: lockData.expires
+                        acquired: lockDataArg.acquired,
+                        expires: lockDataArg.expires
                     }
                 });
             });
@@ -126,24 +125,23 @@ helper.test('createLockAtomic creates lock on success', function (t) {
 // Test: createLockAtomic - should handle race condition
 helper.test('createLockAtomic handles ObjectExistsError', function (t) {
     function createLockAtomic(mockClient, mockLockParams, callback) {
-        var lockParams = mockLockParams;
-        var self = lockParams.self;
-        var owner = lockParams.owner;
-        var lockReq = lockParams.lockReq;
-        var lockKey = lockParams.lockKey;
-        var lockObjectId = lockParams.lockObjectId;
-        var lockContent = lockParams.lockContent;
-        var lockMD5 = lockParams.lockMD5;
-        var lockData = lockParams.lockData;
-        var instanceId = lockParams.instanceId;
-        var metadataLocation = lockParams.metadataLocation;
-        var _uploadId = lockParams.uploadId;
+        var self = mockLockParams.self;
+        var owner = mockLockParams.owner;
+        var lockReq = mockLockParams.lockReq;
+        var lockKey = mockLockParams.lockKey;
+        var lockObjectId = mockLockParams.lockObjectId;
+        var lockContentArg = mockLockParams.lockContent;
+        var lockMD5 = mockLockParams.lockMD5;
+        var lockDataArg = mockLockParams.lockData;
+        var instanceId = mockLockParams.instanceId;
+        var metadataLocation = mockLockParams.metadataLocation;
+        var _uploadId = mockLockParams.uploadId;
 
         client.createObject(owner, lockReq.bucket.id, lockKey,
-            lockObjectId, lockContent.length, lockMD5,
+            lockObjectId, lockContentArg.length, lockMD5,
             'application/json', {
                 'x-lock-instance': instanceId,
-                'x-lock-expires': lockData.expires
+                'x-lock-expires': lockDataArg.expires
             }, [], {}, metadataLocation.vnode, {},
             self.req.getId(),
             function (createErr, _result) {
@@ -194,24 +192,23 @@ helper.test('createLockAtomic handles ObjectExistsError', function (t) {
 // Test: createLockAtomic - should handle system errors
 helper.test('createLockAtomic handles system errors', function (t) {
     function createLockAtomic(mockClient, mockLockParams, callback) {
-        var lockParams = mockLockParams;
-        var self = lockParams.self;
-        var owner = lockParams.owner;
-        var lockReq = lockParams.lockReq;
-        var lockKey = lockParams.lockKey;
-        var lockObjectId = lockParams.lockObjectId;
-        var lockContent = lockParams.lockContent;
-        var lockMD5 = lockParams.lockMD5;
-        var lockData = lockParams.lockData;
-        var instanceId = lockParams.instanceId;
-        var metadataLocation = lockParams.metadataLocation;
-        var _uploadId = lockParams.uploadId;
+        var self = mockLockParams.self;
+        var owner = mockLockParams.owner;
+        var lockReq = mockLockParams.lockReq;
+        var lockKey = mockLockParams.lockKey;
+        var lockObjectId = mockLockParams.lockObjectId;
+        var lockContentArg = mockLockParams.lockContent;
+        var lockMD5 = mockLockParams.lockMD5;
+        var lockDataArg = mockLockParams.lockData;
+        var instanceId = mockLockParams.instanceId;
+        var metadataLocation = mockLockParams.metadataLocation;
+        var _uploadId = mockLockParams.uploadId;
 
         client.createObject(owner, lockReq.bucket.id, lockKey,
-            lockObjectId, lockContent.length, lockMD5,
+            lockObjectId, lockContentArg.length, lockMD5,
             'application/json', {
                 'x-lock-instance': instanceId,
-                'x-lock-expires': lockData.expires
+                'x-lock-expires': lockDataArg.expires
             }, [], {}, metadataLocation.vnode, {},
             self.req.getId(),
             function (createErr, _result) {
@@ -262,16 +259,15 @@ helper.test('createLockAtomic handles system errors', function (t) {
 // Test: updateLockAtomic - should update expired lock successfully
 helper.test('updateLockAtomic updates expired lock', function (t) {
     function updateLockAtomic(mockClient, mockLockParams, existingObjectId, callback) {
-        var lockParams = mockLockParams;
-        var self = lockParams.self;
-        var owner = lockParams.owner;
-        var lockReq = lockParams.lockReq;
-        var lockKey = lockParams.lockKey;
-        var lockContent = lockParams.lockContent;
-        var lockData = lockParams.lockData;
-        var instanceId = lockParams.instanceId;
-        var metadataLocation = lockParams.metadataLocation;
-        var _uploadId = lockParams.uploadId;
+        var self = mockLockParams.self;
+        var owner = mockLockParams.owner;
+        var lockReq = mockLockParams.lockReq;
+        var lockKey = mockLockParams.lockKey;
+        var lockContentArg = mockLockParams.lockContent;
+        var lockDataArg = mockLockParams.lockData;
+        var instanceId = mockLockParams.instanceId;
+        var metadataLocation = mockLockParams.metadataLocation;
+        var _uploadId = mockLockParams.uploadId;
 
         self.req.log.debug({
             uploadId: _uploadId,
@@ -282,9 +278,9 @@ helper.test('updateLockAtomic updates expired lock', function (t) {
         client.updateObject(owner, lockReq.bucket.id, lockKey,
             existingObjectId, 'application/json', {
                 'x-lock-instance': instanceId,
-                'x-lock-expires': lockData.expires,
-                'x-lock-hostname': lockData.hostname,
-                'content-length': String(lockContent.length)
+                'x-lock-expires': lockDataArg.expires,
+                'x-lock-hostname': lockDataArg.hostname,
+                'content-length': String(lockContentArg.length)
             }, {}, metadataLocation.vnode, {},
             self.req.getId(),
             function (updateErr, _updateResult) {
@@ -314,8 +310,8 @@ helper.test('updateLockAtomic updates expired lock', function (t) {
                         lockKey: lockKey,
                         instanceId: instanceId,
                         objectId: existingObjectId,
-                        acquired: lockData.acquired,
-                        expires: lockData.expires
+                        acquired: lockDataArg.acquired,
+                        expires: lockDataArg.expires
                     }
                 });
             });
@@ -357,18 +353,18 @@ helper.test('updateLockAtomic updates expired lock', function (t) {
 // Test: updateLockAtomic - should handle lock deleted by another instance
 helper.test('updateLockAtomic handles ObjectNotFoundError', function (t) {
     function updateLockAtomic(mockClient, mockLockParams, existingObjectId, callback) {
-        var self = lockParams.self;
-        var owner = lockParams.owner;
-        var lockReq = lockParams.lockReq;
-        var lockKey = lockParams.lockKey;
-        var lockData = lockParams.lockData;
-        var instanceId = lockParams.instanceId;
-        var metadataLocation = lockParams.metadataLocation;
+        var self = mockLockParams.self;
+        var owner = mockLockParams.owner;
+        var lockReq = mockLockParams.lockReq;
+        var lockKey = mockLockParams.lockKey;
+        var lockDataArg = mockLockParams.lockData;
+        var instanceId = mockLockParams.instanceId;
+        var metadataLocation = mockLockParams.metadataLocation;
 
         client.updateObject(owner, lockReq.bucket.id, lockKey,
             existingObjectId, 'application/json', {
                 'x-lock-instance': instanceId,
-                'x-lock-expires': lockData.expires
+                'x-lock-expires': lockDataArg.expires
             }, {}, metadataLocation.vnode, {},
             self.req.getId(),
             function (updateErr, _updateResult) {
@@ -410,20 +406,19 @@ helper.test('updateLockAtomic handles ObjectNotFoundError', function (t) {
 // Test: updateLockAtomic - should handle system errors
 helper.test('updateLockAtomic handles system errors', function (t) {
     function updateLockAtomic(mockClient, mockLockParams, existingObjectId, callback) {
-        var lockParams = mockLockParams;
-        var self = lockParams.self;
-        var owner = lockParams.owner;
-        var lockReq = lockParams.lockReq;
-        var lockKey = lockParams.lockKey;
-        var lockData = lockParams.lockData;
-        var instanceId = lockParams.instanceId;
-        var metadataLocation = lockParams.metadataLocation;
-        var _uploadId = lockParams.uploadId;
+        var self = mockLockParams.self;
+        var owner = mockLockParams.owner;
+        var lockReq = mockLockParams.lockReq;
+        var lockKey = mockLockParams.lockKey;
+        var lockDataArg = mockLockParams.lockData;
+        var instanceId = mockLockParams.instanceId;
+        var metadataLocation = mockLockParams.metadataLocation;
+        var _uploadId = mockLockParams.uploadId;
 
         client.updateObject(owner, lockReq.bucket.id, lockKey,
             existingObjectId, 'application/json', {
                 'x-lock-instance': instanceId,
-                'x-lock-expires': lockData.expires
+                'x-lock-expires': lockDataArg.expires
             }, {}, metadataLocation.vnode, {},
             self.req.getId(),
             function (updateErr, _updateResult) {

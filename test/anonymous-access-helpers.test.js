@@ -77,11 +77,11 @@ helper.test('parseMantaBucketObjectPath handles nested paths', function (t) {
 // Test: isMantaAnonymousObjectAccess - should return true for valid path
 helper.test('isMantaAnonymousObjectAccess returns true for valid path',
     function (t) {
-    function isMantaAnonymousObjectAccess(pathParts, req) {
-        return (pathParts.length >= 5 &&
-                pathParts[1] === 'buckets' &&
-                pathParts[3] === 'objects' &&
-                req.potentialAnonymousAccess);
+    function isMantaAnonymousObjectAccess(pathPartsArg, reqArg) {
+        return (pathPartsArg.length >= 5 &&
+                pathPartsArg[1] === 'buckets' &&
+                pathPartsArg[3] === 'objects' &&
+                reqArg.potentialAnonymousAccess);
     }
 
     var pathParts = ['account', 'buckets', 'mybucket', 'objects', 'file.txt'];
@@ -97,11 +97,11 @@ helper.test('isMantaAnonymousObjectAccess returns true for valid path',
 // potentialAnonymousAccess
 helper.test('isMantaAnonymousObjectAccess checks potentialAnonymousAccess flag',
     function (t) {
-    function isMantaAnonymousObjectAccess(pathParts, req) {
-        return (pathParts.length >= 5 &&
-                pathParts[1] === 'buckets' &&
-                pathParts[3] === 'objects' &&
-                req.potentialAnonymousAccess);
+    function isMantaAnonymousObjectAccess(pathPartsArg, reqArg) {
+        return (pathPartsArg.length >= 5 &&
+                pathPartsArg[1] === 'buckets' &&
+                pathPartsArg[3] === 'objects' &&
+                reqArg.potentialAnonymousAccess);
     }
 
     var pathParts = ['account', 'buckets', 'mybucket', 'objects', 'file.txt'];
@@ -115,11 +115,11 @@ helper.test('isMantaAnonymousObjectAccess checks potentialAnonymousAccess flag',
 
 // Test: isMantaAnonymousObjectAccess - should return false for short path
 helper.test('isMantaAnonymousObjectAccess checks path length', function (t) {
-    function isMantaAnonymousObjectAccess(pathParts, req) {
-        return (pathParts.length >= 5 &&
-                pathParts[1] === 'buckets' &&
-                pathParts[3] === 'objects' &&
-                req.potentialAnonymousAccess);
+    function isMantaAnonymousObjectAccess(pathPartsArg, reqArg) {
+        return (pathPartsArg.length >= 5 &&
+                pathPartsArg[1] === 'buckets' &&
+                pathPartsArg[3] === 'objects' &&
+                reqArg.potentialAnonymousAccess);
     }
 
     var pathParts = ['account', 'buckets', 'mybucket'];
@@ -135,11 +135,11 @@ helper.test('isMantaAnonymousObjectAccess checks path length', function (t) {
 // path format
 helper.test('isMantaAnonymousObjectAccess validates path format',
     function (t) {
-    function isMantaAnonymousObjectAccess(pathParts, req) {
-        return (pathParts.length >= 5 &&
-                pathParts[1] === 'buckets' &&
-                pathParts[3] === 'objects' &&
-                req.potentialAnonymousAccess);
+    function isMantaAnonymousObjectAccess(pathPartsArg, reqArg) {
+        return (pathPartsArg.length >= 5 &&
+                pathPartsArg[1] === 'buckets' &&
+                pathPartsArg[3] === 'objects' &&
+                reqArg.potentialAnonymousAccess);
     }
 
     var pathParts = ['account', 'wrong', 'mybucket', 'format', 'file.txt'];
@@ -153,16 +153,16 @@ helper.test('isMantaAnonymousObjectAccess validates path format',
 
 // Test: setupMantaObjectParams - should extract parameters correctly
 helper.test('setupMantaObjectParams extracts parameters', function (t) {
-    function setupMantaObjectParams(req, pathParts) {
-        req.params = req.params || {};
-        req.params.account = pathParts[0];
-        req.params.bucket_name = pathParts[2];
-        req.params.object_name = pathParts.slice(4).join('/');
+    function setupMantaObjectParams(reqArg, pathPartsArg) {
+        reqArg.params = reqArg.params || {};
+        reqArg.params.account = pathPartsArg[0];
+        reqArg.params.bucket_name = pathPartsArg[2];
+        reqArg.params.object_name = pathPartsArg.slice(4).join('/');
 
-        req.log.debug({
-            account: req.params.account,
-            bucket_name: req.params.bucket_name,
-            object_name: req.params.object_name
+        reqArg.log.debug({
+            account: reqArg.params.account,
+            bucket_name: reqArg.params.bucket_name,
+            object_name: reqArg.params.object_name
         }, 'Set up Manta route parameters');
     }
 
@@ -184,16 +184,16 @@ helper.test('setupMantaObjectParams extracts parameters', function (t) {
 
 // Test: setupMantaObjectParams - should handle nested object paths
 helper.test('setupMantaObjectParams handles nested object paths', function (t) {
-    function setupMantaObjectParams(req, pathParts) {
-        req.params = req.params || {};
-        req.params.account = pathParts[0];
-        req.params.bucket_name = pathParts[2];
-        req.params.object_name = pathParts.slice(4).join('/');
+    function setupMantaObjectParams(reqArg, pathPartsArg) {
+        reqArg.params = reqArg.params || {};
+        reqArg.params.account = pathPartsArg[0];
+        reqArg.params.bucket_name = pathPartsArg[2];
+        reqArg.params.object_name = pathPartsArg.slice(4).join('/');
 
-        req.log.debug({
-            account: req.params.account,
-            bucket_name: req.params.bucket_name,
-            object_name: req.params.object_name
+        reqArg.log.debug({
+            account: reqArg.params.account,
+            bucket_name: reqArg.params.bucket_name,
+            object_name: reqArg.params.object_name
         }, 'Set up Manta route parameters');
     }
 
@@ -214,16 +214,16 @@ helper.test('setupMantaObjectParams handles nested object paths', function (t) {
 
 // Test: setupMantaObjectParams - should create params object if missing
 helper.test('setupMantaObjectParams creates params object', function (t) {
-    function setupMantaObjectParams(req, pathParts) {
-        req.params = req.params || {};
-        req.params.account = pathParts[0];
-        req.params.bucket_name = pathParts[2];
-        req.params.object_name = pathParts.slice(4).join('/');
+    function setupMantaObjectParams(reqArg, pathPartsArg) {
+        reqArg.params = reqArg.params || {};
+        reqArg.params.account = pathPartsArg[0];
+        reqArg.params.bucket_name = pathPartsArg[2];
+        reqArg.params.object_name = pathPartsArg.slice(4).join('/');
 
-        req.log.debug({
-            account: req.params.account,
-            bucket_name: req.params.bucket_name,
-            object_name: req.params.object_name
+        reqArg.log.debug({
+            account: reqArg.params.account,
+            bucket_name: reqArg.params.bucket_name,
+            object_name: reqArg.params.object_name
         }, 'Set up Manta route parameters');
     }
 
@@ -242,9 +242,9 @@ helper.test('setupMantaObjectParams creates params object', function (t) {
 
 // Test: flattenHandlers - should flatten nested handler arrays
 helper.test('flattenHandlers flattens nested arrays', function (t) {
-    function flattenHandlers(rawHandlers) {
+    function flattenHandlers(rawHandlersArg) {
         var handlers = [];
-        rawHandlers.forEach(function (handler) {
+        rawHandlersArg.forEach(function (handler) {
             if (Array.isArray(handler)) {
                 handlers = handlers.concat(handler);
             } else {
@@ -277,9 +277,9 @@ helper.test('flattenHandlers flattens nested arrays', function (t) {
 
 // Test: flattenHandlers - should handle all nested arrays
 helper.test('flattenHandlers handles all nested arrays', function (t) {
-    function flattenHandlers(rawHandlers) {
+    function flattenHandlers(rawHandlersArg) {
         var handlers = [];
-        rawHandlers.forEach(function (handler) {
+        rawHandlersArg.forEach(function (handler) {
             if (Array.isArray(handler)) {
                 handlers = handlers.concat(handler);
             } else {
@@ -305,9 +305,9 @@ helper.test('flattenHandlers handles all nested arrays', function (t) {
 
 // Test: flattenHandlers - should handle no nesting
 helper.test('flattenHandlers handles non-nested handlers', function (t) {
-    function flattenHandlers(rawHandlers) {
+    function flattenHandlers(rawHandlersArg) {
         var handlers = [];
-        rawHandlers.forEach(function (handler) {
+        rawHandlersArg.forEach(function (handler) {
             if (Array.isArray(handler)) {
                 handlers = handlers.concat(handler);
             } else {
@@ -332,7 +332,7 @@ helper.test('flattenHandlers handles non-nested handlers', function (t) {
 
 // Test: executeHandlerChain - should execute all handlers in sequence
 helper.test('executeHandlerChain executes handlers sequentially', function (t) {
-    function executeHandlerChain(handlers, req, res, next) {
+    function executeHandlerChain(handlersArg, reqArg, res, next) {
         var index = 0;
 
         function executeNext(err) {
@@ -340,20 +340,20 @@ helper.test('executeHandlerChain executes handlers sequentially', function (t) {
                 return (next(err));
             }
 
-            if (index >= handlers.length) {
+            if (index >= handlersArg.length) {
                 return (next());
             }
 
-            var currentHandler = handlers[index++];
+            var currentHandler = handlersArg[index++];
 
             if (typeof (currentHandler) === 'function') {
                 try {
-                    currentHandler(req, res, executeNext);
+                    currentHandler(reqArg, res, executeNext);
                 } catch (e) {
                     next(e);
                 }
             } else {
-                req.log.error({
+                reqArg.log.error({
                     handlerIndex: index - 1,
                     handlerType: typeof (currentHandler),
                     handler: currentHandler
@@ -391,7 +391,7 @@ helper.test('executeHandlerChain executes handlers sequentially', function (t) {
 
 // Test: executeHandlerChain - should stop on error
 helper.test('executeHandlerChain stops on error', function (t) {
-    function executeHandlerChain(handlers, req, res, next) {
+    function executeHandlerChain(handlersArg, reqArg, res, next) {
         var index = 0;
 
         function executeNext(err) {
@@ -399,20 +399,20 @@ helper.test('executeHandlerChain stops on error', function (t) {
                 return (next(err));
             }
 
-            if (index >= handlers.length) {
+            if (index >= handlersArg.length) {
                 return (next());
             }
 
-            var currentHandler = handlers[index++];
+            var currentHandler = handlersArg[index++];
 
             if (typeof (currentHandler) === 'function') {
                 try {
-                    currentHandler(req, res, executeNext);
+                    currentHandler(reqArg, res, executeNext);
                 } catch (e) {
                     next(e);
                 }
             } else {
-                req.log.error({
+                reqArg.log.error({
                     handlerIndex: index - 1,
                     handlerType: typeof (currentHandler),
                     handler: currentHandler
@@ -450,7 +450,7 @@ helper.test('executeHandlerChain stops on error', function (t) {
 
 // Test: executeHandlerChain - should handle invalid handler
 helper.test('executeHandlerChain handles invalid handler', function (t) {
-    function executeHandlerChain(handlers, req, res, next) {
+    function executeHandlerChain(handlersArg, reqArg, res, next) {
         var index = 0;
 
         function executeNext(err) {
@@ -458,20 +458,20 @@ helper.test('executeHandlerChain handles invalid handler', function (t) {
                 return (next(err));
             }
 
-            if (index >= handlers.length) {
+            if (index >= handlersArg.length) {
                 return (next());
             }
 
-            var currentHandler = handlers[index++];
+            var currentHandler = handlersArg[index++];
 
             if (typeof (currentHandler) === 'function') {
                 try {
-                    currentHandler(req, res, executeNext);
+                    currentHandler(reqArg, res, executeNext);
                 } catch (e) {
                     next(e);
                 }
             } else {
-                req.log.error({
+                reqArg.log.error({
                     handlerIndex: index - 1,
                     handlerType: typeof (currentHandler),
                     handler: currentHandler
@@ -500,7 +500,7 @@ helper.test('executeHandlerChain handles invalid handler', function (t) {
 
 // Test: executeHandlerChain - should catch handler exceptions
 helper.test('executeHandlerChain catches handler exceptions', function (t) {
-    function executeHandlerChain(handlers, req, res, next) {
+    function executeHandlerChain(handlersArg, reqArg, res, next) {
         var index = 0;
 
         function executeNext(err) {
@@ -508,20 +508,20 @@ helper.test('executeHandlerChain catches handler exceptions', function (t) {
                 return (next(err));
             }
 
-            if (index >= handlers.length) {
+            if (index >= handlersArg.length) {
                 return (next());
             }
 
-            var currentHandler = handlers[index++];
+            var currentHandler = handlersArg[index++];
 
             if (typeof (currentHandler) === 'function') {
                 try {
-                    currentHandler(req, res, executeNext);
+                    currentHandler(reqArg, res, executeNext);
                 } catch (e) {
                     next(e);
                 }
             } else {
-                req.log.error({
+                reqArg.log.error({
                     handlerIndex: index - 1,
                     handlerType: typeof (currentHandler),
                     handler: currentHandler

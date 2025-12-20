@@ -18,28 +18,28 @@ var mocks = require('./mock-infrastructure.js');
 
 // Test: configureBasicPartRequest - should set up part request correctly
 helper.test('configureBasicPartRequest sets up part request', function (t) {
-    function configureBasicPartRequest(partReq, req, bucketName, partKey,
+    function configureBasicPartRequest(partReqArg, reqArg, bucketName, partKey,
         partId) {
-        partReq.params = {
+        partReqArg.params = {
             bucket_name: bucketName,
             object_name: partKey
         };
-        partReq.objectId = partId;
+        partReqArg.objectId = partId;
 
         // Copy headers manually for Node.js v0.10.48 compatibility
-        partReq.headers = {};
-        var sourceHeaders = req.headers || {};
+        partReqArg.headers = {};
+        var sourceHeaders = reqArg.headers || {};
         Object.keys(sourceHeaders).forEach(function (k) {
-            partReq.headers[k] = sourceHeaders[k];
+            partReqArg.headers[k] = sourceHeaders[k];
         });
-        partReq.header = function (name, defaultValue) {
-            return (partReq.headers[name.toLowerCase()] || defaultValue);
+        partReqArg.header = function (name, defaultValue) {
+            return (partReqArg.headers[name.toLowerCase()] || defaultValue);
         };
 
-        partReq.isS3Request = true;
-        partReq.method = 'PUT';
+        partReqArg.isS3Request = true;
+        partReqArg.method = 'PUT';
 
-        return (partReq);
+        return (partReqArg);
     }
 
     var req = mocks.createMockRequest({
@@ -70,28 +70,28 @@ helper.test('configureBasicPartRequest sets up part request', function (t) {
 
 // Test: configureBasicPartRequest - header function should work
 helper.test('configureBasicPartRequest header function works', function (t) {
-    function configureBasicPartRequest(partReq, req, bucketName, partKey,
+    function configureBasicPartRequest(partReqArg, reqArg, bucketName, partKey,
         partId) {
-        partReq.params = {
+        partReqArg.params = {
             bucket_name: bucketName,
             object_name: partKey
         };
-        partReq.objectId = partId;
+        partReqArg.objectId = partId;
 
         // Copy headers manually for Node.js v0.10.48 compatibility
-        partReq.headers = {};
-        var sourceHeaders = req.headers || {};
+        partReqArg.headers = {};
+        var sourceHeaders = reqArg.headers || {};
         Object.keys(sourceHeaders).forEach(function (k) {
-            partReq.headers[k] = sourceHeaders[k];
+            partReqArg.headers[k] = sourceHeaders[k];
         });
-        partReq.header = function (name, defaultValue) {
-            return (partReq.headers[name.toLowerCase()] || defaultValue);
+        partReqArg.header = function (name, defaultValue) {
+            return (partReqArg.headers[name.toLowerCase()] || defaultValue);
         };
 
-        partReq.isS3Request = true;
-        partReq.method = 'PUT';
+        partReqArg.isS3Request = true;
+        partReqArg.method = 'PUT';
 
-        return (partReq);
+        return (partReqArg);
     }
 
     var req = mocks.createMockRequest({
@@ -112,24 +112,24 @@ helper.test('configureBasicPartRequest header function works', function (t) {
 // upload record
 helper.test('configurePreAllocatedSharks sets sharks from record',
     function (t) {
-    function configurePreAllocatedSharks(partReq, req, uploadRecord, partNumber,
+    function configurePreAllocatedSharks(partReqArg, reqArg, uploadRecordArg, partNumber,
         uploadId) {
-        if (uploadRecord.preAllocatedSharks &&
-            Array.isArray(uploadRecord.preAllocatedSharks) &&
-            uploadRecord.preAllocatedSharks.length > 0) {
+        if (uploadRecordArg.preAllocatedSharks &&
+            Array.isArray(uploadRecordArg.preAllocatedSharks) &&
+            uploadRecordArg.preAllocatedSharks.length > 0) {
 
-            req.log.debug({
+            reqArg.log.debug({
                 uploadId: uploadId,
                 partNumber: partNumber,
-                sharkCount: uploadRecord.preAllocatedSharks.length,
-                sharks: uploadRecord.preAllocatedSharks.map(function (s) {
+                sharkCount: uploadRecordArg.preAllocatedSharks.length,
+                sharks: uploadRecordArg.preAllocatedSharks.map(function (s) {
                     return (s.manta_storage_id);
                 })
             }, 'Using pre-allocated sharks from upload record');
 
-            partReq.preAllocatedSharks = uploadRecord.preAllocatedSharks;
+            partReqArg.preAllocatedSharks = uploadRecordArg.preAllocatedSharks;
         } else {
-            req.log.error({
+            reqArg.log.error({
                 uploadId: uploadId,
                 partNumber: partNumber
             }, 'No pre-allocated sharks found in upload record');
@@ -158,21 +158,21 @@ helper.test('configurePreAllocatedSharks sets sharks from record',
 // Test: configurePreAllocatedSharks - should log error for missing sharks
 helper.test('configurePreAllocatedSharks logs error for missing sharks',
     function (t) {
-    function configurePreAllocatedSharks(partReq, req, uploadRecord, partNumber,
+    function configurePreAllocatedSharks(partReqArg, reqArg, uploadRecordArg, partNumber,
         uploadId) {
-        if (uploadRecord.preAllocatedSharks &&
-            Array.isArray(uploadRecord.preAllocatedSharks) &&
-            uploadRecord.preAllocatedSharks.length > 0) {
+        if (uploadRecordArg.preAllocatedSharks &&
+            Array.isArray(uploadRecordArg.preAllocatedSharks) &&
+            uploadRecordArg.preAllocatedSharks.length > 0) {
 
-            req.log.debug({
+            reqArg.log.debug({
                 uploadId: uploadId,
                 partNumber: partNumber,
-                sharkCount: uploadRecord.preAllocatedSharks.length
+                sharkCount: uploadRecordArg.preAllocatedSharks.length
             }, 'Using pre-allocated sharks from upload record');
 
-            partReq.preAllocatedSharks = uploadRecord.preAllocatedSharks;
+            partReqArg.preAllocatedSharks = uploadRecordArg.preAllocatedSharks;
         } else {
-            req.log.error({
+            reqArg.log.error({
                 uploadId: uploadId,
                 partNumber: partNumber
             }, 'No pre-allocated sharks found in upload record');
@@ -194,9 +194,9 @@ helper.test('configurePreAllocatedSharks logs error for missing sharks',
 // Test: createETagCapturingResponse - should capture ETag from header()
 helper.test('createETagCapturingResponse captures ETag from header',
     function (t) {
-    function createETagCapturingResponse(res, _req, _partNumber, _uploadId) {
+    function createETagCapturingResponse(resArg, _req, _partNumber, _uploadId) {
         var partETag = null;
-        var customRes = Object.create(res);
+        var customRes = Object.create(resArg);
 
         customRes.send = function (statusCode, _body) {
             req.log.debug({
@@ -213,7 +213,7 @@ helper.test('createETagCapturingResponse captures ETag from header',
                     headerName: name
                 }, 'Captured ETag from part upload (header)');
             }
-            return (res.header(name, value));
+            return (resArg.header(name, value));
         };
 
         customRes.setHeader = function (name, value) {
@@ -224,7 +224,7 @@ helper.test('createETagCapturingResponse captures ETag from header',
                     headerName: name
                 }, 'Captured ETag from part upload (setHeader)');
             }
-            return (res.setHeader(name, value));
+            return (resArg.setHeader(name, value));
         };
 
         return {
@@ -250,9 +250,9 @@ helper.test('createETagCapturingResponse captures ETag from header',
 // Test: createETagCapturingResponse - should capture ETag from setHeader()
 helper.test('createETagCapturingResponse captures ETag from setHeader',
     function (t) {
-    function createETagCapturingResponse(res, _req, _partNumber, _uploadId) {
+    function createETagCapturingResponse(resArg, _req, _partNumber, _uploadId) {
         var partETag = null;
-        var customRes = Object.create(res);
+        var customRes = Object.create(resArg);
 
         customRes.send = function (statusCode, _body) {
             req.log.debug({
@@ -265,14 +265,14 @@ helper.test('createETagCapturingResponse captures ETag from setHeader',
             if (name.toLowerCase() === 'etag') {
                 partETag = value;
             }
-            return (res.header(name, value));
+            return (resArg.header(name, value));
         };
 
         customRes.setHeader = function (name, value) {
             if (name.toLowerCase() === 'etag') {
                 partETag = value;
             }
-            return (res.setHeader(name, value));
+            return (resArg.setHeader(name, value));
         };
 
         return {
@@ -298,9 +298,9 @@ helper.test('createETagCapturingResponse captures ETag from setHeader',
 // Test: createETagCapturingResponse - should handle case-insensitive ETag
 helper.test('createETagCapturingResponse handles case-insensitive ETag',
     function (t) {
-    function createETagCapturingResponse(res, _req, _partNumber, _uploadId) {
+    function createETagCapturingResponse(resArg, _req, _partNumber, _uploadId) {
         var partETag = null;
-        var customRes = Object.create(res);
+        var customRes = Object.create(resArg);
 
         customRes.send = function (_statusCode, _body) {
             // Don't actually send
@@ -310,14 +310,14 @@ helper.test('createETagCapturingResponse handles case-insensitive ETag',
             if (name.toLowerCase() === 'etag') {
                 partETag = value;
             }
-            return (res.header(name, value));
+            return (resArg.header(name, value));
         };
 
         customRes.setHeader = function (name, value) {
             if (name.toLowerCase() === 'etag') {
                 partETag = value;
             }
-            return (res.setHeader(name, value));
+            return (resArg.setHeader(name, value));
         };
 
         return {
@@ -347,22 +347,22 @@ helper.test('createETagCapturingResponse handles case-insensitive ETag',
 // Test: createETagCapturingResponse - should return null for missing ETag
 helper.test('createETagCapturingResponse returns null without ETag',
     function (t) {
-    function createETagCapturingResponse(res, _req, _partNumber, _uploadId) {
+    function createETagCapturingResponse(resArg, _req, _partNumber, _uploadId) {
         var partETag = null;
-        var customRes = Object.create(res);
+        var customRes = Object.create(resArg);
 
         customRes.send = function (_statusCode, _body) {};
         customRes.header = function (name, value) {
             if (name.toLowerCase() === 'etag') {
                 partETag = value;
             }
-            return (res.header(name, value));
+            return (resArg.header(name, value));
         };
         customRes.setHeader = function (name, value) {
             if (name.toLowerCase() === 'etag') {
                 partETag = value;
             }
-            return (res.setHeader(name, value));
+            return (resArg.setHeader(name, value));
         };
 
         return {

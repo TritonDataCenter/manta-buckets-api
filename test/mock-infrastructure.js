@@ -156,9 +156,9 @@ function createMockMantaClient(options) {
             }
 
             if (options.simulateRaceCondition) {
-                var err = new Error('Object already exists');
-                err.name = 'ObjectExistsError';
-                return (callback(err));
+                var raceErr = new Error('Object already exists');
+                raceErr.name = 'ObjectExistsError';
+                return (callback(raceErr));
             }
 
             callback(null, {
@@ -178,9 +178,9 @@ function createMockMantaClient(options) {
             }
 
             if (options.simulateLockDeleted) {
-                var err = new Error('Object not found');
-                err.name = 'ObjectNotFoundError';
-                return (callback(err));
+                var lockDeletedErr = new Error('Object not found');
+                lockDeletedErr.name = 'ObjectNotFoundError';
+                return (callback(lockDeletedErr));
             }
 
             callback(null, {
@@ -199,9 +199,9 @@ function createMockMantaClient(options) {
             }
 
             if (options.noLockFound) {
-                var err = new Error('Object not found');
-                err.name = 'ObjectNotFoundError';
-                return (callback(err));
+                var noLockErr = new Error('Object not found');
+                noLockErr.name = 'ObjectNotFoundError';
+                return (callback(noLockErr));
             }
 
             callback(null, options.existingLock || {
@@ -483,9 +483,9 @@ function createMockSharkNode(sharkId, options) {
             var data = storage[objectId];
 
             if (!data) {
-                var err = new Error('Object not found on shark ' + sharkId);
-                err.name = 'ObjectNotFoundError';
-                return (callback(err));
+                var notFoundErr = new Error('Object not found on shark ' + sharkId);
+                notFoundErr.name = 'ObjectNotFoundError';
+                return (callback(notFoundErr));
             }
 
             // Create readable stream from buffer
@@ -635,9 +635,9 @@ function createMockSharkCluster(sharks, options) {
 
             function tryNextShark() {
                 if (attemptIndex >= sharkIds.length) {
-                    var err = new Error('Object not found on any shark');
-                    err.name = 'ObjectNotFoundError';
-                    return (callback(err));
+                    var noSharksErr = new Error('Object not found on any shark');
+                    noSharksErr.name = 'ObjectNotFoundError';
+                    return (callback(noSharksErr));
                 }
 
                 var sharkId = sharkIds[attemptIndex++];
@@ -715,9 +715,9 @@ function createMockStorinfoClient(options) {
     return {
         choose: function (opts, callback) {
             if (options.simulateNoSharks) {
-                var err = new Error('No sharks available');
-                err.name = 'NoSharksAvailableError';
-                return (callback(err));
+                var noSharksAvailErr = new Error('No sharks available');
+                noSharksAvailErr.name = 'NoSharksAvailableError';
+                return (callback(noSharksAvailErr));
             }
 
             var numCopies = opts.replicas || 2;
@@ -758,19 +758,19 @@ function createMockMetadataClientE2E(options) {
 
             // Check conditional headers
             if (opts && opts['if-none-match'] === '*' && objects[key]) {
-                var err = new Error('Object already exists');
-                err.name = 'ObjectExistsError';
-                err.statusCode = 412;
-                return (callback(err));
+                var existsErr = new Error('Object already exists');
+                existsErr.name = 'ObjectExistsError';
+                existsErr.statusCode = 412;
+                return (callback(existsErr));
             }
 
             if (opts && opts['if-match']) {
                 var existing = objects[key];
                 if (!existing || existing.id !== opts['if-match']) {
-                    var err = new Error('Precondition failed');
-                    err.name = 'PreconditionFailedError';
-                    err.statusCode = 412;
-                    return (callback(err));
+                    var preconditionErr = new Error('Precondition failed');
+                    preconditionErr.name = 'PreconditionFailedError';
+                    preconditionErr.statusCode = 412;
+                    return (callback(preconditionErr));
                 }
             }
 
@@ -805,24 +805,24 @@ function createMockMetadataClientE2E(options) {
             var obj = objects[key];
 
             if (!obj) {
-                var err = new Error('Object not found');
-                err.name = 'ObjectNotFoundError';
-                err.statusCode = 404;
-                return (callback(err));
+                var notFoundErr = new Error('Object not found');
+                notFoundErr.name = 'ObjectNotFoundError';
+                notFoundErr.statusCode = 404;
+                return (callback(notFoundErr));
             }
 
             // Handle conditional headers
             if (opts && opts['if-match'] && opts['if-match'] !== obj.id) {
-                var err = new Error('Precondition failed');
-                err.statusCode = 412;
-                return (callback(err));
+                var preconditionErr = new Error('Precondition failed');
+                preconditionErr.statusCode = 412;
+                return (callback(preconditionErr));
             }
 
             if (opts && opts['if-none-match'] &&
                 opts['if-none-match'] === obj.id) {
-                var err = new Error('Not modified');
-                err.statusCode = 304;
-                return (callback(err));
+                var notModifiedErr = new Error('Not modified');
+                notModifiedErr.statusCode = 304;
+                return (callback(notModifiedErr));
             }
 
             callback(null, obj);
@@ -838,9 +838,9 @@ function createMockMetadataClientE2E(options) {
             var obj = objects[key];
 
             if (!obj) {
-                var err = new Error('Object not found');
-                err.name = 'ObjectNotFoundError';
-                return (callback(err));
+                var notFoundErr = new Error('Object not found');
+                notFoundErr.name = 'ObjectNotFoundError';
+                return (callback(notFoundErr));
             }
 
             // Update fields
@@ -861,9 +861,9 @@ function createMockMetadataClientE2E(options) {
             var key = bucketId + ':' + objectName;
 
             if (!objects[key]) {
-                var err = new Error('Object not found');
-                err.name = 'ObjectNotFoundError';
-                return (callback(err));
+                var notFoundErr = new Error('Object not found');
+                notFoundErr.name = 'ObjectNotFoundError';
+                return (callback(notFoundErr));
             }
 
             delete objects[key];
@@ -902,9 +902,9 @@ function createMockMetadataClientE2E(options) {
         getBucket: function (bucketId, callback) {
             var bucket = buckets[bucketId];
             if (!bucket) {
-                var err = new Error('Bucket not found');
-                err.name = 'BucketNotFoundError';
-                return (callback(err));
+                var notFoundErr = new Error('Bucket not found');
+                notFoundErr.name = 'BucketNotFoundError';
+                return (callback(notFoundErr));
             }
             callback(null, bucket);
         }
@@ -954,9 +954,9 @@ function createMockMultipartManager(metadataClient, sharkCluster, options) {
         uploadPart: function (uploadId, partNumber, dataStream, callback) {
             var upload = uploads[uploadId];
             if (!upload) {
-                var err = new Error('Upload not found');
-                err.name = 'NoSuchUploadError';
-                return (callback(err));
+                var uploadNotFoundErr = new Error('Upload not found');
+                uploadNotFoundErr.name = 'NoSuchUploadError';
+                return (callback(uploadNotFoundErr));
             }
 
             var partKey = uploadId + ':' + partNumber;
@@ -994,9 +994,9 @@ if (err) {
         completeUpload: function (uploadId, partsFromXML, callback) {
             var upload = uploads[uploadId];
             if (!upload) {
-                var err = new Error('Upload not found');
-                err.name = 'NoSuchUploadError';
-                return (callback(err));
+                var uploadNotFoundErr = new Error('Upload not found');
+                uploadNotFoundErr.name = 'NoSuchUploadError';
+                return (callback(uploadNotFoundErr));
             }
 
             // Validate all parts exist
@@ -1009,15 +1009,15 @@ if (err) {
                 var part = parts[partKey];
 
                 if (!part) {
-                    var err = new Error('Invalid part: ' + xmlPart.partNumber);
-                    err.name = 'InvalidPartError';
-                    return (callback(err));
+                    var invalidPartErr = new Error('Invalid part: ' + xmlPart.partNumber);
+                    invalidPartErr.name = 'InvalidPartError';
+                    return (callback(invalidPartErr));
                 }
 
                 if (part.etag !== xmlPart.etag) {
-                    var err = new Error('Part ETag mismatch');
-                    err.name = 'InvalidPartError';
-                    return (callback(err));
+                    var etagMismatchErr = new Error('Part ETag mismatch');
+                    etagMismatchErr.name = 'InvalidPartError';
+                    return (callback(etagMismatchErr));
                 }
 
                 allParts.push(part);
@@ -1071,9 +1071,9 @@ if (err) {
         abortUpload: function (uploadId, callback) {
             var upload = uploads[uploadId];
             if (!upload) {
-                var err = new Error('Upload not found');
-                err.name = 'NoSuchUploadError';
-                return (callback(err));
+                var uploadNotFoundErr = new Error('Upload not found');
+                uploadNotFoundErr.name = 'NoSuchUploadError';
+                return (callback(uploadNotFoundErr));
             }
 
             // Cleanup all parts

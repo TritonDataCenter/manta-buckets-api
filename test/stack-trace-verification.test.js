@@ -68,8 +68,8 @@ helper.test('named functions in auth/signature-verifier.js', function (t) {
 helper.test('stack trace shows named function - demonstration', function (t) {
     // Demonstrate that a stack trace from a named function includes the name
     function namedTestFunction() {
-        var stack = new Error().stack;
-        return stack;
+        var stackTrace = new Error().stack;
+        return stackTrace;
     }
 
     var stack = namedTestFunction();

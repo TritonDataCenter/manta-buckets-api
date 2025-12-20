@@ -11,7 +11,7 @@
 var helper = require('./s3-test-helper.js');
 var crypto = require('crypto');
 var stream = require('stream');
-var util = require('util');
+// var util = require('util'); // Unused import
 
 // Compatibility helper for Buffer.indexOf (not available in Node.js v0.10.48)
 function bufferIndexOf(buffer, searchString) {

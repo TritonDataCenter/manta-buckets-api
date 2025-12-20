@@ -101,8 +101,8 @@ function createMockRequest(options) {
 /**
  * Create a mock response object
  */
-function createMockResponse(options) {
-    options = options || {};
+function createMockResponse(_options) {
+    _options = _options || {};
 
     var headers = {};
     var statusCode = null;
@@ -227,14 +227,14 @@ function createMockMetadataPlacement(options) {
     options = options || {};
 
     return {
-        getObjectLocation: function (owner, bucketId, hash) {
+        getObjectLocation: function (_owner, _bucketId, _hash) {
             return options.location || {
                 pnode: 'tcp://127.0.0.1:2020',
                 vnode: 123,
                 data: 1
             };
         },
-        getBucketsMdapiClient: function (location) {
+        getBucketsMdapiClient: function (_location) {
             return (options.client ||
                 createMockMantaClient(options.clientOptions));
         }
@@ -428,14 +428,13 @@ if (call.args[i] !== expectedArgs[i]) {
 
 var crypto = require('crypto');
 var stream = require('stream');
-var util = require('util');
 
 /**
  * Create a mock shark node with streaming support
  * Simulates a Manta storage node that can store/retrieve object data
  */
-function createMockSharkNode(sharkId, options) {
-    options = options || {};
+function createMockSharkNode(sharkId, _options) {
+    _options = _options || {};
 
     var storage = {}; // objectId -> Buffer
 
@@ -739,8 +738,8 @@ function createMockStorinfoClient(options) {
 /**
  * Create enhanced mock metadata client with full CRUD support
  */
-function createMockMetadataClientE2E(options) {
-    options = options || {};
+function createMockMetadataClientE2E(_options) {
+    _options = _options || {};
 
     // In-memory storage
     var buckets = {}; // bucketId -> bucket metadata
@@ -914,8 +913,8 @@ function createMockMetadataClientE2E(options) {
 /**
  * Create mock multipart upload manager
  */
-function createMockMultipartManager(metadataClient, sharkCluster, options) {
-    options = options || {};
+function createMockMultipartManager(metadataClient, sharkCluster, _options) {
+    _options = _options || {};
 
     var uploads = {}; // uploadId -> upload record
     var parts = {};   // uploadId:partNumber -> part metadata
@@ -1046,7 +1045,7 @@ if (err) {
                 null,
                 {},
                 'complete-mpu',
-                function (err, metadata) {
+                function (err, _metadata) {
 if (err) {
                         return (callback(err));
                     }

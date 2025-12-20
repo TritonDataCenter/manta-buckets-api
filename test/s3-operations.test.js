@@ -9,7 +9,7 @@
  */
 
 var helper = require('./helper.js');
-var http = require('http');
+// var http = require('http'); // Unused import
 var crypto = require('crypto');
 
 ///--- Globals
@@ -107,7 +107,7 @@ test('S3 list buckets', function (t) {
     client.get({
         path: path,
         headers: headers
-    }, function (err, req, res, data) {
+    }, function (err, req, _res, _data) {
         // Note: This test may fail due to authentication requirements
         // but we're testing the S3 route detection and path conversion
         t.ok(req, 'request should be created');
@@ -135,7 +135,7 @@ test('S3 create bucket', function (t) {
     client.put({
         path: path,
         headers: headers
-    }, function (err, req, res, data) {
+    }, function (err, req, _res, _data) {
         t.ok(req, 'request should be created');
 
         if (err && err.statusCode === 401) {
@@ -160,7 +160,7 @@ test('S3 list bucket objects', function (t) {
     client.get({
         path: path,
         headers: headers
-    }, function (err, req, res, data) {
+    }, function (err, req, _res, _data) {
         t.ok(req, 'request should be created');
 
         if (err && err.statusCode === 401) {
@@ -187,7 +187,7 @@ test('S3 head bucket', function (t) {
     client.head({
         path: path,
         headers: headers
-    }, function (err, req, res) {
+    }, function (err, req, _res) {
         t.ok(req, 'request should be created');
 
         if (err && err.statusCode === 401) {
@@ -214,7 +214,7 @@ test('S3 delete bucket', function (t) {
     client.del({
         path: path,
         headers: headers
-    }, function (err, req, res) {
+    }, function (err, req, _res) {
         t.ok(req, 'request should be created');
 
         if (err && err.statusCode === 401) {
@@ -246,7 +246,7 @@ test('S3 create object', function (t) {
     client.put({
         path: path,
         headers: headers
-    }, body, function (err, req, res, data) {
+    }, body, function (err, req, _res, _data) {
         t.ok(req, 'request should be created');
 
         if (err && err.statusCode === 401) {
@@ -274,7 +274,7 @@ test('S3 get object', function (t) {
     client.get({
         path: path,
         headers: headers
-    }, function (err, req, res, data) {
+    }, function (err, req, _res, _data) {
         t.ok(req, 'request should be created');
 
         if (err && err.statusCode === 401) {
@@ -302,7 +302,7 @@ test('S3 head object', function (t) {
     client.head({
         path: path,
         headers: headers
-    }, function (err, req, res) {
+    }, function (err, req, _res) {
         t.ok(req, 'request should be created');
 
         if (err && err.statusCode === 401) {
@@ -330,7 +330,7 @@ test('S3 delete object', function (t) {
     client.del({
         path: path,
         headers: headers
-    }, function (err, req, res) {
+    }, function (err, req, _res) {
         t.ok(req, 'request should be created');
 
         if (err && err.statusCode === 401) {
@@ -357,7 +357,7 @@ test('Manta paths should not be processed as S3', function (t) {
     client.get({
         path: path,
         headers: headers
-    }, function (err, req, res, data) {
+    }, function (err, req, _res, _data) {
         t.ok(req, 'request should be created');
 
         // This should be processed as a Manta request, not S3
@@ -387,7 +387,7 @@ test('S3 paths with nested objects', function (t) {
     client.get({
         path: path,
         headers: headers
-    }, function (err, req, res, data) {
+    }, function (err, req, _res, _data) {
         t.ok(req, 'request should be created');
 
         if (err && err.statusCode === 401) {

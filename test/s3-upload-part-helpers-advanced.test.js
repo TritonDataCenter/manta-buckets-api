@@ -194,11 +194,11 @@ helper.test('configurePreAllocatedSharks logs error for missing sharks',
 // Test: createETagCapturingResponse - should capture ETag from header()
 helper.test('createETagCapturingResponse captures ETag from header',
     function (t) {
-    function createETagCapturingResponse(res, req, partNumber, uploadId) {
+    function createETagCapturingResponse(res, _req, _partNumber, _uploadId) {
         var partETag = null;
         var customRes = Object.create(res);
 
-        customRes.send = function (statusCode, body) {
+        customRes.send = function (statusCode, _body) {
             req.log.debug({
                 statusCode: statusCode,
                 capturedETag: partETag
@@ -250,11 +250,11 @@ helper.test('createETagCapturingResponse captures ETag from header',
 // Test: createETagCapturingResponse - should capture ETag from setHeader()
 helper.test('createETagCapturingResponse captures ETag from setHeader',
     function (t) {
-    function createETagCapturingResponse(res, req, partNumber, uploadId) {
+    function createETagCapturingResponse(res, _req, _partNumber, _uploadId) {
         var partETag = null;
         var customRes = Object.create(res);
 
-        customRes.send = function (statusCode, body) {
+        customRes.send = function (statusCode, _body) {
             req.log.debug({
                 statusCode: statusCode,
                 capturedETag: partETag
@@ -298,11 +298,11 @@ helper.test('createETagCapturingResponse captures ETag from setHeader',
 // Test: createETagCapturingResponse - should handle case-insensitive ETag
 helper.test('createETagCapturingResponse handles case-insensitive ETag',
     function (t) {
-    function createETagCapturingResponse(res, req, partNumber, uploadId) {
+    function createETagCapturingResponse(res, _req, _partNumber, _uploadId) {
         var partETag = null;
         var customRes = Object.create(res);
 
-        customRes.send = function (statusCode, body) {
+        customRes.send = function (_statusCode, _body) {
             // Don't actually send
         };
 
@@ -347,11 +347,11 @@ helper.test('createETagCapturingResponse handles case-insensitive ETag',
 // Test: createETagCapturingResponse - should return null for missing ETag
 helper.test('createETagCapturingResponse returns null without ETag',
     function (t) {
-    function createETagCapturingResponse(res, req, partNumber, uploadId) {
+    function createETagCapturingResponse(res, _req, _partNumber, _uploadId) {
         var partETag = null;
         var customRes = Object.create(res);
 
-        customRes.send = function (statusCode, body) {};
+        customRes.send = function (_statusCode, _body) {};
         customRes.header = function (name, value) {
             if (name.toLowerCase() === 'etag') {
                 partETag = value;

@@ -10,7 +10,7 @@
  * Purpose:  Unit tests for account name validation in anonymous access
  */
 
-var test = require('nodeunit');
+// var test = require('nodeunit'); // Unused import
 var anonymousAuth = require('../lib/anonymous-auth');
 
 // Test exports availability

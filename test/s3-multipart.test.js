@@ -11,17 +11,8 @@
 var helper = require('./s3-test-helper.js');
 var crypto = require('crypto');
 var uuid = require('uuid');
-var EventEmitter = require('events').EventEmitter;
-var util = require('util');
-
-// Import the module we're testing
-var s3Multipart;
-try {
-    s3Multipart = require('../lib/s3-multipart');
-} catch (e) {
-    // Handle case where s3-multipart exports specific functions
-    s3Multipart = {};
-}
+// var EventEmitter = require('events').EventEmitter; // Unused import
+// var util = require('util'); // Unused import
 
 ///--- Mock Data and Helpers
 
@@ -85,21 +76,6 @@ function createMockRequest(options) {
     };
 }
 
-// Mock response object
-function createMockResponse() {
-    return {
-        setHeader: function (name, value) {
-            this._headers = this._headers || {};
-            this._headers[name] = value;
-        },
-        getHeader: function (name) {
-            return (this._headers && this._headers[name]);
-        },
-        writeHead: function (statusCode) { this._statusCode = statusCode; },
-        end: function (data) { this._data = data; }
-    };
-}
-
 ///--- Unit Tests
 
 helper.test('Upload ID generation should create valid UUID', function (t) {
@@ -157,7 +133,7 @@ helper.test('ETag validation - multiple format support', function (t) {
 
     // Test ETag validation logic
     // (simulating the fixed logic from s3-multipart.js)
-    function validateETag(expectedETag, partMetadata, request) {
+    function validateETag(expectedETag, partMetadata, _request) {
         var storedHexMD5 = partMetadata.hexMD5;
         var storedUUID = partMetadata.id;
         var etagMatches = false;

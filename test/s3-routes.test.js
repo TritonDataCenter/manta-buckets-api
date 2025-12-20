@@ -140,16 +140,6 @@ function parseS3Route(method, path, query) {
     };
 }
 
-// Mock request object for route testing
-function createMockRouteRequest(method, path, query) {
-    return {
-        method: method,
-        path: function () { return (path); },
-        query: query || {},
-        log: helper.createLogger('test')
-    };
-}
-
 ///--- S3 Route Parsing Tests
 
 helper.test('S3 route parsing - list buckets', function (t) {

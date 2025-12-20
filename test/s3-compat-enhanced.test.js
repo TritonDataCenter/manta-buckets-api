@@ -10,7 +10,7 @@
 
 var helper = require('./s3-test-helper.js');
 var s3Compat = require('../lib/s3-compat');
-var restify = require('restify');
+// var restify = require('restify'); // Unused import
 
 ///--- Enhanced Mock Helpers
 

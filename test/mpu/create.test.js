@@ -24,7 +24,6 @@ var before = testHelper.before;
 var test = testHelper.test;
 
 var ifErr = helper.ifErr;
-var computePartsMD5 = helper.computePartsMD5;
 
 
 before(function (cb) {
@@ -41,7 +40,7 @@ after(function (cb) {
 test('create upload', function (t) {
     var self = this;
     var h = {};
-    self.createUpload(self.path, h, function (err, o) {
+    self.createUpload(self.path, h, function (err, _o) {
         if (ifErr(t, err, 'created upload')) {
             t.end();
             return;
@@ -66,7 +65,7 @@ test('create upload: upload record creation time', function (t) {
     var self = this;
     var h = {};
     var beforeUpload = Date.now();
-    self.createUpload(self.path, h, function (err, o) {
+    self.createUpload(self.path, h, function (err, _o) {
         if (ifErr(t, err, 'created upload')) {
             t.end();
             return;
@@ -95,7 +94,7 @@ test('create upload: content-length header', function (t) {
         'content-length': size
     };
 
-    self.createUpload(self.path, h, function (err, o) {
+    self.createUpload(self.path, h, function (err, _o) {
          if (ifErr(t, err, 'created upload')) {
              t.end();
              return;
@@ -123,7 +122,7 @@ test('create upload: durability-level header', function (t) {
         'durability-level': copies
     };
 
-    self.createUpload(self.path, h, function (err, o) {
+    self.createUpload(self.path, h, function (err, _o) {
         if (ifErr(t, err, 'created upload')) {
             t.end();
             return;
@@ -151,7 +150,7 @@ test('create upload: x-durability-level header', function (t) {
         'x-durability-level': copies
     };
 
-    self.createUpload(self.path, h, function (err, o) {
+    self.createUpload(self.path, h, function (err, _o) {
         if (ifErr(t, err, 'got upload')) {
             t.end();
             return;
@@ -178,7 +177,7 @@ test('create upload: content-md5 header', function (t) {
         'content-md5': 'JdMoQCNCYOHEGq1fgaYyng=='
     };
 
-    self.createUpload(self.path, h, function (err, o) {
+    self.createUpload(self.path, h, function (err, _o) {
         if (ifErr(t, err, 'created upload')) {
             t.end();
             return;
@@ -212,7 +211,7 @@ test('create upload: various headers', function (t) {
         'm-my-custom-header': 'my-custom-value'
     };
 
-    self.createUpload(self.path, h, function (err, o) {
+    self.createUpload(self.path, h, function (err, _o) {
         if (ifErr(t, err, 'created upload')) {
             t.end();
             return;
@@ -252,7 +251,7 @@ test('create upload: mixed case headers', function (t) {
         'm-my-custom-header': 'my-custom-value'
     };
 
-    self.createUpload(self.path, h, function (err, o) {
+    self.createUpload(self.path, h, function (err, _o) {
         if (ifErr(t, err, 'created upload')) {
             t.end();
             return;
@@ -277,7 +276,7 @@ test('create upload: mixed case headers', function (t) {
 test('create upload: no input object path', function (t) {
     var self = this;
 
-    self.createUpload(null, null, function (err, o) {
+    self.createUpload(null, null, function (err, _o) {
         t.ok(err);
         if (!err) {
             return (t.end());
@@ -309,7 +308,7 @@ test('create upload: object path under a nonexistent account', function (t) {
 test('create upload: object path not a string', function (t) {
     var self = this;
 
-    self.createUpload([], null, function (err, o) {
+    self.createUpload([], null, function (err, _o) {
         t.ok(err); //TODO error message name
         if (!err) {
             return (t.end());
@@ -325,7 +324,7 @@ test('create upload: if-match header disalowed', function (t) {
         'if-match': 'foo'
     };
 
-    self.createUpload(self.path, h, function (err, o) {
+    self.createUpload(self.path, h, function (err, _o) {
         t.ok(err);
         if (!err) {
             return (t.end());
@@ -343,7 +342,7 @@ test('create upload: if-none-match header disalowed', function (t) {
         'if-none-match': 'foo'
     };
 
-    self.createUpload(self.path, h, function (err, o) {
+    self.createUpload(self.path, h, function (err, _o) {
         t.ok(err);
         if (!err) {
             return (t.end());
@@ -361,7 +360,7 @@ test('create upload: if-modified-since header disalowed', function (t) {
         'if-modified-since': 'foo'
     };
 
-    self.createUpload(self.path, h, function (err, o) {
+    self.createUpload(self.path, h, function (err, _o) {
         t.ok(err);
         if (!err) {
             return (t.end());
@@ -378,7 +377,7 @@ test('create upload: if-unmodified-since header disalowed', function (t) {
         'if-unmodified-since': 'foo'
     };
 
-    self.createUpload(self.path, h, function (err, o) {
+    self.createUpload(self.path, h, function (err, _o) {
         t.ok(err);
         if (!err) {
             return (t.end());
@@ -397,7 +396,7 @@ test('create upload: content-length less than allowed', function (t) {
         'content-length': size
     };
 
-    self.createUpload(self.path, h, function (err, o) {
+    self.createUpload(self.path, h, function (err, _o) {
         t.ok(err);
         if (!err) {
             return (t.end());
@@ -416,7 +415,7 @@ test('create upload: durability-level greater than allowed', function (t) {
         'durability-level': copies
     };
 
-    self.createUpload(self.path, h, function (err, o) {
+    self.createUpload(self.path, h, function (err, _o) {
         t.ok(err);
         if (!err) {
             return (t.end());
@@ -434,7 +433,7 @@ test('create upload: x-durability-level greater than allowed', function (t) {
         'x-durability-level': copies
     };
 
-    self.createUpload(self.path, h, function (err, o) {
+    self.createUpload(self.path, h, function (err, _o) {
         t.ok(err);
         if (!err) {
             return (t.end());
@@ -453,7 +452,7 @@ test('create upload: durability-level less than allowed', function (t) {
         'durability-level': copies
     };
 
-    self.createUpload(self.path, h, function (err, o) {
+    self.createUpload(self.path, h, function (err, _o) {
         t.ok(err);
         if (!err) {
             return (t.end());
@@ -472,7 +471,7 @@ test('create upload: x-durability-level less than allowed', function (t) {
         'x-durability-level': copies
     };
 
-    self.createUpload(self.path, h, function (err, o) {
+    self.createUpload(self.path, h, function (err, _o) {
         t.ok(err);
         if (!err) {
             return (t.end());
@@ -491,7 +490,7 @@ test('create upload: content-disposition header', function (t) {
         'content-disposition': cd
     };
 
-    self.createUpload(self.path, h, function (err, o) {
+    self.createUpload(self.path, h, function (err, _o) {
         if (ifErr(t, err, 'created upload')) {
             t.end();
             return;
@@ -517,7 +516,7 @@ test('create upload: invalid content-disposition', function (t) {
         'content-disposition': 'attachment;'
     };
 
-    self.createUpload(self.path, h, function (err, o) {
+    self.createUpload(self.path, h, function (err, _o) {
         t.ok(err, 'Expect error');
         if (!err) {
             return (t.end());

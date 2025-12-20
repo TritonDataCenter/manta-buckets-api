@@ -10,8 +10,8 @@
 
 var helper = require('./helper.js');
 var s3Compat = require('../lib/s3-compat');
-var restify = require('restify');
-var bunyan = require('bunyan');
+// var restify = require('restify'); // Unused import
+// var bunyan = require('bunyan'); // Unused import
 
 // Mock request helper
 function createMockRequest(method, path, query, headers) {

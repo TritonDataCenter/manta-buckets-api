@@ -482,7 +482,8 @@ function createMockSharkNode(sharkId, _options) {
             var data = storage[objectId];
 
             if (!data) {
-                var notFoundErr = new Error('Object not found on shark ' + sharkId);
+                var notFoundErr =
+                    new Error('Object not found on shark ' + sharkId);
                 notFoundErr.name = 'ObjectNotFoundError';
                 return (callback(notFoundErr));
             }
@@ -634,7 +635,8 @@ function createMockSharkCluster(sharks, options) {
 
             function tryNextShark() {
                 if (attemptIndex >= sharkIds.length) {
-                    var noSharksErr = new Error('Object not found on any shark');
+                    var noSharksErr =
+                        new Error('Object not found on any shark');
                     noSharksErr.name = 'ObjectNotFoundError';
                     return (callback(noSharksErr));
                 }
@@ -1008,7 +1010,8 @@ if (err) {
                 var part = parts[partKey];
 
                 if (!part) {
-                    var invalidPartErr = new Error('Invalid part: ' + xmlPart.partNumber);
+                    var invalidPartErr =
+                        new Error('Invalid part: ' + xmlPart.partNumber);
                     invalidPartErr.name = 'InvalidPartError';
                     return (callback(invalidPartErr));
                 }

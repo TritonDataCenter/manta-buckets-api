@@ -30,6 +30,7 @@
  *
  */
 
+var assert = require('assert-plus');
 
 /**
  * @brief Handle CORS OPTIONS preflight requests

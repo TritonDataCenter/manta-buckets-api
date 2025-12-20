@@ -30,6 +30,7 @@ require('../errors');
 ///--- Globals
 
 var TOKEN_ALG = 'aes-128-cbc';
+var TOKEN_ENC = 'base64';
 
 
 ///--- Internal Functions

@@ -11,6 +11,7 @@
 var auth = require('../auth');
 var buckets = require('./buckets');
 var common = require('./common');
+var errors = require('../errors');
 
 function createBucket(req, res, next) {
 

@@ -369,7 +369,7 @@ function preSignedUrl(req, res, next) {
 
     try {
         expires = parseInt(req.query.expires, 10);
-    } catch (_e) {
+    } catch (e) {
         next(new PreSignedRequestError('expires is invalid'));
         return;
     }
@@ -981,7 +981,7 @@ function sigv4Handler(req, res, next) {
                 }, 'S3_AUTH_DEBUG:'+
                 ' Fixed query parameter encoding for SigV4 verification');
             }
-        } catch (_e) {
+        } catch (e) {
             // If decoding fails, keep original URL but still apply directory
             // creation logic
             var errorFinalPathPart = pathPart;
@@ -1384,7 +1384,7 @@ function verifySignature(req, res, next) {
     var key = keys[keyId];
     try {
         var ok = httpSignature.verifySignature(signature, key);
-    } catch (_e) {
+    } catch (e) {
         next(new InternalError(e));
         return;
     }

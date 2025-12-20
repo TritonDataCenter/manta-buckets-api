@@ -5,14 +5,15 @@
  */
 
 /*
- * Copyright 2020 Joyent, Inc.
+ * Copyright 2019 Joyent, Inc.
  */
 
 var auth = require('../auth');
 var buckets = require('./buckets');
 var common = require('./common');
+var errors = require('../errors');
 
-function createBucket(req, res, next) {
+function headBucket(req, res, next) {
 
     var owner = req.owner.account.uuid;
     var bucket = req.bucket;
@@ -22,15 +23,9 @@ function createBucket(req, res, next) {
     log.debug({
         owner: owner,
         bucket: bucket.name
-    }, 'createBucket: entered');
+    }, 'headBucket: requested');
 
-    var onCreateBucket = function onCreate(err, bucket_data) {
-        if (bucket_data !== undefined && bucket_data._node) {
-            // Record the name of the shard and vnode contacted.
-            req.entryShard = bucket_data._node.pnode;
-            req.entryVnode = bucket_data._node.vnode;
-        }
-
+    var onGetBucket = function onGet(err, bucket_data) {
         if (err) {
             err = common.translateBucketError(req, err);
 
@@ -38,7 +33,7 @@ function createBucket(req, res, next) {
                 err: err,
                 owner: owner,
                 bucket: bucket.name
-            }, 'createBucket: error creating bucket');
+            }, 'headBucket: failed');
 
             next(err);
             return;
@@ -46,28 +41,27 @@ function createBucket(req, res, next) {
 
         log.debug({
             owner: owner,
-            bucket: bucket.name,
-            data: bucket_data
-        }, 'createBucket: done');
-        res.send(204, bucket_data);
-        next(null, bucket_data);
+            bucket: bucket.name
+        }, 'headBucket: done');
+        next();
     };
 
     var metadataLocation =
         req.metadataPlacement.getBucketLocation(owner, bucket.name);
     var client = req.metadataPlacement.getBucketsMdapiClient(metadataLocation);
 
-    client.createBucket(owner, bucket.name, metadataLocation.vnode, requestId,
-        onCreateBucket);
+    client.getBucket(owner, bucket.name, metadataLocation.vnode, requestId,
+        onGetBucket);
 }
 
 module.exports = {
 
-    createBucketHandler: function createBucketHandler() {
+    headBucketHandler: function headBucketHandler() {
         var chain = [
             buckets.loadRequest,
+            headBucket,
             auth.authorizationHandler(),
-            createBucket
+            buckets.successHandler
         ];
         return (chain);
     }

@@ -138,7 +138,7 @@ function authorize(opts) {
     // before reaching this point. This is standard Manta RBAC authorization.
     try {
         mahi.authorize(opts.context);
-    } catch (_e) {
+    } catch (e) {
         error = e;
     }
 
@@ -154,7 +154,7 @@ function authorize(opts) {
 
         try {
             mahi.authorize(opts.context);
-        } catch (_e) {
+        } catch (e) {
             throw error; // throw the error from when we attempted to authorize
                          // as the user himself, not as the anonymous user, as
                          // that feedback is more likely something the user can

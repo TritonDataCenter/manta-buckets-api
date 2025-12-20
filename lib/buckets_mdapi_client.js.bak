@@ -11,6 +11,7 @@
 
 var assert = require('assert-plus');
 var clone = require('clone');
+var fs = require('fs');
 var buckets_mdapi = require('buckets-mdapi');
 var url = require('url');
 var verror = require('verror');

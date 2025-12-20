@@ -8,8 +8,10 @@
  * Copyright 2025 Edgecast Cloud LLC.
  */
 
+var assert = require('assert-plus');
 var auth = require('../../auth');
 var buckets = require('../buckets');
+var common = require('../common');
 var anonymousAuth = require('../../anonymous-auth');
 var constants = require('../../constants');
 

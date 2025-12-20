@@ -60,7 +60,7 @@ function loadOwnerFromPath(req, p, next) {
         // Traditional Manta path: /account/buckets/bucket -> extract account
         try {
             account = decodeURIComponent(p.split('/', 2).pop());
-        } catch (_e) {
+        } catch (e) {
             next(new InvalidPathError(p));
             return;
         }
@@ -419,7 +419,7 @@ function authorize(req, res, next) {
             context: req.authContext,
             log: req.log
         });
-    } catch (_e) {
+    } catch (e) {
         // Debug IAM policy errors
         if (req.caller.assumedRole &&
             req.caller.assumedRole.permissionPolicies) {

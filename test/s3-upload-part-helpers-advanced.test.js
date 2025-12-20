@@ -26,7 +26,12 @@ helper.test('configureBasicPartRequest sets up part request', function (t) {
         };
         partReq.objectId = partId;
 
-        partReq.headers = Object.assign({}, req.headers || {});
+        // Copy headers manually for Node.js v0.10.48 compatibility
+        partReq.headers = {};
+        var sourceHeaders = req.headers || {};
+        Object.keys(sourceHeaders).forEach(function (k) {
+            partReq.headers[k] = sourceHeaders[k];
+        });
         partReq.header = function (name, defaultValue) {
             return (partReq.headers[name.toLowerCase()] || defaultValue);
         };
@@ -73,7 +78,12 @@ helper.test('configureBasicPartRequest header function works', function (t) {
         };
         partReq.objectId = partId;
 
-        partReq.headers = Object.assign({}, req.headers || {});
+        // Copy headers manually for Node.js v0.10.48 compatibility
+        partReq.headers = {};
+        var sourceHeaders = req.headers || {};
+        Object.keys(sourceHeaders).forEach(function (k) {
+            partReq.headers[k] = sourceHeaders[k];
+        });
         partReq.header = function (name, defaultValue) {
             return (partReq.headers[name.toLowerCase()] || defaultValue);
         };

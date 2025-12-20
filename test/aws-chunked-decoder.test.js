@@ -13,11 +13,42 @@ var crypto = require('crypto');
 var stream = require('stream');
 var util = require('util');
 
+// Compatibility helper for Buffer.indexOf (not available in Node.js v0.10.48)
+function bufferIndexOf(buffer, searchString) {
+    var searchBuf = new Buffer(searchString, 'ascii');
+    for (var i = 0; i <= buffer.length - searchBuf.length; i++) {
+        var match = true;
+        for (var j = 0; j < searchBuf.length; j++) {
+            if (buffer[i + j] !== searchBuf[j]) {
+                match = false;
+                break;
+            }
+        }
+        if (match) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+// Compatibility helper for Buffer.equals (not available in Node.js v0.10.48)
+function bufferEquals(buf1, buf2) {
+    if (buf1.length !== buf2.length) {
+        return false;
+    }
+    for (var i = 0; i < buf1.length; i++) {
+        if (buf1[i] !== buf2[i]) {
+            return false;
+        }
+    }
+    return true;
+}
+
 // Mock AWS chunked decoder based on the actual implementation
 function createMockAWSChunkedDecoder() {
     var decoder = new stream.Transform();
 
-    decoder._buffer = Buffer.alloc(0);
+    decoder._buffer = new Buffer(0);
     decoder._chunkSize = -1;
     decoder._chunkBytesRead = 0;
     decoder._totalBytesRead = 0;
@@ -31,7 +62,7 @@ function createMockAWSChunkedDecoder() {
         try {
             while (self._buffer.length > 0) {
                 if (self._state === 'reading-chunk-size') {
-                    var crlfIndex = self._buffer.indexOf('\r\n');
+                    var crlfIndex = bufferIndexOf(self._buffer, '\r\n');
                     if (crlfIndex === -1) {
                         break; // Need more data
                     }
@@ -89,7 +120,7 @@ function createMockAWSChunkedDecoder() {
 
                 if (self._state === 'reading-trailing-headers') {
                     // Look for final CRLF that ends the request
-                    var finalCrlfIndex = self._buffer.indexOf('\r\n');
+                    var finalCrlfIndex = bufferIndexOf(self._buffer, '\r\n');
                     if (finalCrlfIndex === -1) {
                         break; // Need more data
                     }
@@ -115,13 +146,13 @@ function createAWSChunkedData(dataChunks) {
 
     dataChunks.forEach(function (data) {
         var chunkSize = data.length.toString(16);
-        chunks.push(Buffer.from(chunkSize + '\r\n', 'ascii'));
+        chunks.push(new Buffer(chunkSize + '\r\n', 'ascii'));
         chunks.push(data);
-        chunks.push(Buffer.from('\r\n', 'ascii'));
+        chunks.push(new Buffer('\r\n', 'ascii'));
     });
 
     // Final chunk
-    chunks.push(Buffer.from('0\r\n\r\n', 'ascii'));
+    chunks.push(new Buffer('0\r\n\r\n', 'ascii'));
 
     return (Buffer.concat(chunks));
 }
@@ -130,7 +161,7 @@ function createAWSChunkedData(dataChunks) {
 
 helper.test('AWS chunked decoder - single chunk', function (t) {
     var decoder = createMockAWSChunkedDecoder();
-    var testData = Buffer.from('Hello, AWS chunked world!', 'utf8');
+    var testData = new Buffer('Hello, AWS chunked world!', 'utf8');
     var chunkedData = createAWSChunkedData([testData]);
 
     var outputChunks = [];
@@ -146,7 +177,7 @@ helper.test('AWS chunked decoder - single chunk', function (t) {
 
         t.equal(totalBytes, testData.length,
                 'should output correct number of bytes');
-        t.ok(finalData.equals(testData), 'should output original data');
+        t.ok(bufferEquals(finalData, testData), 'should output original data');
         t.end();
     });
 
@@ -161,9 +192,9 @@ helper.test('AWS chunked decoder - single chunk', function (t) {
 
 helper.test('AWS chunked decoder - multiple chunks', function (t) {
     var decoder = createMockAWSChunkedDecoder();
-    var chunk1 = Buffer.from('First chunk of data', 'utf8');
-    var chunk2 = Buffer.from('Second chunk of data', 'utf8');
-    var chunk3 = Buffer.from('Third and final chunk', 'utf8');
+    var chunk1 = new Buffer('First chunk of data', 'utf8');
+    var chunk2 = new Buffer('Second chunk of data', 'utf8');
+    var chunk3 = new Buffer('Third and final chunk', 'utf8');
 
     var chunkedData = createAWSChunkedData([chunk1, chunk2, chunk3]);
     var expectedData = Buffer.concat([chunk1, chunk2, chunk3]);
@@ -181,7 +212,7 @@ helper.test('AWS chunked decoder - multiple chunks', function (t) {
 
         t.equal(totalBytes, expectedData.length,
                 'should output correct total bytes');
-        t.ok(finalData.equals(expectedData),
+        t.ok(bufferEquals(finalData, expectedData),
              'should reconstruct original data correctly');
         t.end();
     });
@@ -197,7 +228,7 @@ helper.test('AWS chunked decoder - multiple chunks', function (t) {
 
 helper.test('AWS chunked decoder - streaming input', function (t) {
     var decoder = createMockAWSChunkedDecoder();
-    var testData = Buffer.from(
+    var testData = new Buffer(
         'This is streaming test data for AWS chunked encoding',
         'utf8');
     var chunkedData = createAWSChunkedData([testData]);
@@ -214,7 +245,7 @@ helper.test('AWS chunked decoder - streaming input', function (t) {
         var reconstructed = Buffer.concat(outputChunks);
 
         t.equal(bytesReceived, testData.length, 'should receive all bytes');
-        t.ok(reconstructed.equals(testData),
+        t.ok(bufferEquals(reconstructed, testData),
              'should reconstruct data correctly');
         t.end();
     });
@@ -251,7 +282,7 @@ helper.test('AWS chunked decoder - large data integrity', function (t) {
 
     // Create larger test data (simulate multipart upload part)
     var partSize = 1024 * 1024; // 1MB
-    var testData = Buffer.alloc(partSize);
+    var testData = new Buffer(partSize);
 
     // Fill with recognizable pattern
     for (var i = 0; i < partSize; i++) {
@@ -282,7 +313,7 @@ helper.test('AWS chunked decoder - large data integrity', function (t) {
                 'reconstructed data should have correct length');
         t.equal(outputMD5, expectedMD5,
                 'MD5 hashes should match - no data corruption');
-        t.ok(reconstructed.equals(testData),
+        t.ok(bufferEquals(reconstructed, testData),
              'reconstructed data should match original');
 
         t.end();
@@ -299,8 +330,8 @@ helper.test('AWS chunked decoder - large data integrity', function (t) {
 
 helper.test('AWS chunked decoder - empty chunk handling', function (t) {
     var decoder = createMockAWSChunkedDecoder();
-    var emptyChunk = Buffer.alloc(0);
-    var dataChunk = Buffer.from('Non-empty data', 'utf8');
+    var emptyChunk = new Buffer(0);
+    var dataChunk = new Buffer('Non-empty data', 'utf8');
 
     var chunkedData = createAWSChunkedData([emptyChunk, dataChunk, emptyChunk]);
 
@@ -315,7 +346,7 @@ helper.test('AWS chunked decoder - empty chunk handling', function (t) {
 
         t.equal(reconstructed.length, dataChunk.length,
                 'should only output non-empty data');
-        t.ok(reconstructed.equals(dataChunk),
+        t.ok(bufferEquals(reconstructed, dataChunk),
              'should match non-empty chunk data');
         t.end();
     });
@@ -332,7 +363,7 @@ helper.test('AWS chunked decoder - empty chunk handling', function (t) {
 helper.test('AWS chunked decoder - malformed input error handling',
            function (t) {
     var decoder = createMockAWSChunkedDecoder();
-    var malformedData = Buffer.from('zzz\r\nInvalid hex chunk size\r\n',
+    var malformedData = new Buffer('zzz\r\nInvalid hex chunk size\r\n',
                                     'ascii');
 
     var errorReceived = false;
@@ -357,7 +388,7 @@ helper.test('AWS chunked decoder - malformed input error handling',
 helper.test('AWS chunked decoder - partial chunk boundary handling',
            function (t) {
     var decoder = createMockAWSChunkedDecoder();
-    var testData = Buffer.from('Test data for boundary handling', 'utf8');
+    var testData = new Buffer('Test data for boundary handling', 'utf8');
     var chunkedData = createAWSChunkedData([testData]);
 
     var outputChunks = [];
@@ -368,7 +399,7 @@ helper.test('AWS chunked decoder - partial chunk boundary handling',
 
     decoder.on('end', function () {
         var reconstructed = Buffer.concat(outputChunks);
-        t.ok(reconstructed.equals(testData),
+        t.ok(bufferEquals(reconstructed, testData),
              'should handle partial boundaries correctly');
         t.end();
     });
@@ -398,7 +429,8 @@ helper.test('AWS chunked decoder - memory efficiency test', function (t) {
     var testChunks = [];
 
     for (var i = 0; i < numChunks; i++) {
-        var chunk = Buffer.alloc(chunkSize, i % 256);
+        var chunk = new Buffer(chunkSize);
+        chunk.fill(i % 256);
         testChunks.push(chunk);
     }
 
@@ -419,7 +451,7 @@ helper.test('AWS chunked decoder - memory efficiency test', function (t) {
         t.equal(reconstructed.length, expectedData.length,
                 'should process all data');
         t.ok(chunksReceived > 0, 'should receive data in chunks');
-        t.ok(reconstructed.equals(expectedData),
+        t.ok(bufferEquals(reconstructed, expectedData),
              'should reconstruct data correctly');
 
         // Check internal buffer isn't holding onto too much data
@@ -447,7 +479,7 @@ helper.test('AWS chunked decoder - state management', function (t) {
     t.equal(decoder._chunkBytesRead, 0, 'should initialize bytes read to 0');
     t.equal(decoder._totalBytesRead, 0, 'should initialize total bytes to 0');
 
-    var testData = Buffer.from('State test data', 'utf8');
+    var testData = new Buffer('State test data', 'utf8');
     var chunkedData = createAWSChunkedData([testData]);
 
     decoder.on('end', function () {

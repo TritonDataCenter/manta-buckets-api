@@ -231,3 +231,282 @@ exports['full pipeline - non-S3 request'] = function (t) {
     t.ok(!req._binaryMode, 'should not enable binary mode');
     t.done();
 };
+
+// Helper to create event emitter mock for stream testing
+function createStreamMockRequest(options) {
+    var req = createMockRequest(options);
+    var listeners = {
+        data: [],
+        end: [],
+        error: []
+    };
+    var paused = false;
+    var resumed = false;
+
+    req.pause = function () {
+        paused = true;
+    };
+
+    req.resume = function () {
+        resumed = true;
+    };
+
+    req.on = function (event, callback) {
+        if (listeners[event]) {
+            listeners[event].push(callback);
+        }
+    };
+
+    req._isPaused = function () { return paused; };
+    req._isResumed = function () { return resumed; };
+    req._emit = function (event, data) {
+        if (listeners[event]) {
+            listeners[event].forEach(function (cb) {
+                cb(data);
+            });
+        }
+    };
+
+    return (req);
+}
+
+exports['preserveRawBody detects CompleteMultipartUpload with uploadId'] =
+function (t) {
+    var req = createStreamMockRequest({
+        method: 'POST',
+        url: '/bucket/object.txt?uploadId=abc123',
+        headers: {
+            'authorization': 'AWS4-HMAC-SHA256 Credential=...',
+            'content-type': 'application/xml',
+            'content-length': '100'
+        }
+    });
+
+    var next = createMockNext();
+    middleware.preserveRawBodyPreMiddleware(req, {}, next);
+
+    // Verify stream was paused and resumed
+    t.ok(req._isPaused(), 'should pause stream');
+    t.ok(req._isResumed(), 'should resume stream');
+
+    // Emit end event to trigger next()
+    req._emit('end');
+
+    t.ok(next.wasCalled(), 'should call next()');
+    t.done();
+};
+
+exports['preserveRawBody excludes InitiateMultipartUpload with ' +
+    'uploads param'] = function (t) {
+    var req = createStreamMockRequest({
+        method: 'POST',
+        url: '/bucket/object.txt?uploads',
+        headers: {
+            'authorization': 'AWS4-HMAC-SHA256 Credential=...',
+            'content-type': 'text/plain',
+            'content-length': '100'
+        }
+    });
+
+    var next = createMockNext();
+    middleware.preserveRawBodyPreMiddleware(req, {}, next);
+
+    // Should not pause/resume because uploads param means
+    // InitiateMultipartUpload and content-type is not XML
+    t.ok(!req._isPaused(), 'should not pause for InitiateMultipartUpload');
+
+    // Since it's not detected as a raw body operation, next() is
+    // called immediately
+    t.ok(next.wasCalled(), 'should call next()');
+    t.done();
+};
+
+exports['preserveRawBody handles object path containing uploads'] =
+function (t) {
+    var req = createStreamMockRequest({
+        method: 'POST',
+        url: '/bucket/my-uploads-file.txt?uploadId=xyz789',
+        headers: {
+            'authorization': 'AWS4-HMAC-SHA256 Credential=...',
+            'content-type': 'application/xml',
+            'content-length': '100'
+        }
+    });
+
+    var next = createMockNext();
+    middleware.preserveRawBodyPreMiddleware(req, {}, next);
+
+    // Verify stream was paused (CompleteMultipartUpload detected)
+    t.ok(req._isPaused(),
+        'should pause stream even when path contains uploads');
+    t.ok(req._isResumed(), 'should resume stream');
+
+    // Emit end event to trigger next()
+    req._emit('end');
+
+    t.ok(next.wasCalled(), 'should call next()');
+    t.done();
+};
+
+exports['preserveRawBody handles nested path with uploads'] =
+function (t) {
+    var req = createStreamMockRequest({
+        method: 'POST',
+        url: '/bucket/data/uploads/document.pdf?uploadId=def456',
+        headers: {
+            'authorization': 'AWS4-HMAC-SHA256 Credential=...',
+            'content-type': 'application/xml',
+            'content-length': '100'
+        }
+    });
+
+    var next = createMockNext();
+    middleware.preserveRawBodyPreMiddleware(req, {}, next);
+
+    t.ok(req._isPaused(),
+        'should detect CompleteMultipartUpload for nested path');
+    t.ok(req._isResumed(), 'should resume stream');
+
+    req._emit('end');
+    t.ok(next.wasCalled(), 'should call next()');
+    t.done();
+};
+
+exports['preserveRawBody differentiates uploadId vs uploads param'] =
+function (t) {
+    // Test case 1: uploadId only (CompleteMultipartUpload)
+    var req1 = createStreamMockRequest({
+        method: 'POST',
+        url: '/bucket/file.txt?uploadId=123',
+        headers: {
+            'authorization': 'AWS4-HMAC-SHA256 Credential=...',
+            'content-type': 'application/xml',
+            'content-length': '100'
+        }
+    });
+
+    middleware.preserveRawBodyPreMiddleware(req1, {}, createMockNext());
+    t.ok(req1._isPaused(), 'uploadId param should be detected');
+
+    // Test case 2: uploads only (InitiateMultipartUpload)
+    // Use non-XML content-type to isolate CompleteMultipartUpload detection
+    var req2 = createStreamMockRequest({
+        method: 'POST',
+        url: '/bucket/file.txt?uploads',
+        headers: {
+            'authorization': 'AWS4-HMAC-SHA256 Credential=...',
+            'content-type': 'text/plain',
+            'content-length': '100'
+        }
+    });
+
+    middleware.preserveRawBodyPreMiddleware(req2, {}, createMockNext());
+    t.ok(!req2._isPaused(), 'uploads param should not be detected as Complete');
+
+    // Test case 3: both params (should not happen in practice, but test
+    // precedence) - Use non-XML content-type
+    var req3 = createStreamMockRequest({
+        method: 'POST',
+        url: '/bucket/file.txt?uploads&uploadId=456',
+        headers: {
+            'authorization': 'AWS4-HMAC-SHA256 Credential=...',
+            'content-type': 'text/plain',
+            'content-length': '100'
+        }
+    });
+
+    middleware.preserveRawBodyPreMiddleware(req3, {}, createMockNext());
+    t.ok(!req3._isPaused(),
+        'both params should exclude (uploads takes precedence)');
+
+    t.done();
+};
+
+exports['preserveRawBody detects CORS configuration request'] =
+function (t) {
+    var req = createStreamMockRequest({
+        method: 'PUT',
+        url: '/bucket?cors',
+        headers: {
+            'authorization': 'AWS4-HMAC-SHA256 Credential=...',
+            'content-type': 'application/xml',
+            'content-length': '100'
+        }
+    });
+
+    var next = createMockNext();
+    middleware.preserveRawBodyPreMiddleware(req, {}, next);
+
+    t.ok(req._isPaused(), 'should pause stream for CORS request');
+    t.ok(req._isResumed(), 'should resume stream');
+
+    req._emit('end');
+    t.ok(next.wasCalled(), 'should call next()');
+    t.done();
+};
+
+exports['preserveRawBody handles object path containing cors'] =
+function (t) {
+    var req = createStreamMockRequest({
+        method: 'PUT',
+        url: '/bucket/mycorsfile.txt',
+        headers: {
+            'authorization': 'AWS4-HMAC-SHA256 Credential=...',
+            'content-type': 'text/plain',
+            'content-length': '100'
+        }
+    });
+
+    var next = createMockNext();
+    middleware.preserveRawBodyPreMiddleware(req, {}, next);
+
+    // Should not pause because 'cors' is in path, not query param
+    t.ok(!req._isPaused(),
+        'should not pause for object path containing cors');
+    t.ok(next.wasCalled(), 'should call next()');
+    t.done();
+};
+
+exports['preserveRawBody detects bulk delete request'] = function (t) {
+    var req = createStreamMockRequest({
+        method: 'POST',
+        url: '/bucket?delete',
+        headers: {
+            'authorization': 'AWS4-HMAC-SHA256 Credential=...',
+            'content-type': 'application/xml',
+            'content-length': '100'
+        }
+    });
+
+    var next = createMockNext();
+    middleware.preserveRawBodyPreMiddleware(req, {}, next);
+
+    t.ok(req._isPaused(), 'should pause stream for bulk delete');
+    t.ok(req._isResumed(), 'should resume stream');
+
+    req._emit('end');
+    t.ok(next.wasCalled(), 'should call next()');
+    t.done();
+};
+
+exports['preserveRawBody handles object path containing delete'] =
+function (t) {
+    var req = createStreamMockRequest({
+        method: 'POST',
+        url: '/bucket/delete-this-file.txt',
+        headers: {
+            'authorization': 'AWS4-HMAC-SHA256 Credential=...',
+            'content-type': 'text/plain',
+            'content-length': '100'
+        }
+    });
+
+    var next = createMockNext();
+    middleware.preserveRawBodyPreMiddleware(req, {}, next);
+
+    // Should not pause because 'delete' is in path, not query param
+    t.ok(!req._isPaused(),
+        'should not pause for object path containing delete');
+    t.ok(next.wasCalled(), 'should call next()');
+    t.done();
+};

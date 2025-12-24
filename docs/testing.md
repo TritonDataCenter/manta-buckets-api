@@ -32,11 +32,15 @@ make test-s3
 ./node_modules/.bin/nodeunit test/s3-multipart.test.js
 ```
 
-### AWS CLI Test Suite (`test/s3-compat-awscli-test.sh`)
+### AWS CLI Test Suite (Modular) (`test/run-s3-tests.sh`)
 
-Comprehensive testing using AWS CLI (aws s3api commands) for low-level S3 API operations.
+Comprehensive modular testing using AWS CLI (aws s3api commands) for low-level S3 API operations. The test suite has been refactored into 14 focused modules for better organization and maintainability.
+
+**Status:** The original monolithic test file (`s3-compat-awscli-test.sh`) has been deprecated and replaced with a modular suite. See `test/README.md` for details.
 
 **Key Features:**
+- 14 focused test modules (S3, IAM, STS)
+- Modular test runner with selective execution
 - Raw S3 API testing using `aws s3api` commands
 - Manual multipart upload part management
 - ETag extraction and validation
@@ -44,6 +48,8 @@ Comprehensive testing using AWS CLI (aws s3api commands) for low-level S3 API op
 - Conditional header testing (If-Match, If-None-Match, etc.)
 - Error scenario validation (EntityTooSmall, etc.)
 - **S3 Presigned URL testing** (GET operations and expiry validation)
+- IAM role and policy management
+- STS operations (GetSessionToken, AssumeRole)
 
 ### s3cmd Test Suite (`test/s3-compat-s3cmd-test.sh`)
 
@@ -105,8 +111,8 @@ export S3_ENDPOINT="https://manta.example.com:8080"
 export AWS_ACCESS_KEY_ID="your-access-key"
 export AWS_SECRET_ACCESS_KEY="your-secret-key"
 
-# Run tests
-./test/s3-compat-awscli-test.sh
+# Run modular test suite
+./test/run-s3-tests.sh --all
 ```
 
 ## Prerequisites
@@ -165,39 +171,49 @@ cd test && composer install
 
 ## Running Tests
 
-### AWS CLI Test Suite
+### AWS CLI Test Suite (Modular)
 
 #### Run All Tests
 ```bash
 cd /path/to/manta-buckets-api
-./test/s3-compat-awscli-test.sh
+./test/run-s3-tests.sh --all
 ```
 
-#### Run Specific Test Categories
+#### Run Specific Test Modules
 ```bash
+# Run only basic operations tests
+./test/run-s3-tests.sh basic-operations
+
 # Run only multipart upload tests
-./test/s3-compat-awscli-test.sh mpu
-
-# Run only basic CRUD tests  
-./test/s3-compat-awscli-test.sh basic
-
-# Run only error handling tests
-./test/s3-compat-awscli-test.sh errors
+./test/run-s3-tests.sh multipart-upload
 
 # Run only presigned URL tests
-./test/s3-compat-awscli-test.sh presigned
+./test/run-s3-tests.sh presigned-url
 
 # Run only ACL tests
-./test/s3-compat-awscli-test.sh acl
+./test/run-s3-tests.sh acl-access
 
-# Run all tests (explicit)
-./test/s3-compat-awscli-test.sh all
+# Run multiple specific modules
+./test/run-s3-tests.sh basic-operations multipart-upload
+
+# Run IAM and STS modules
+./test/run-s3-tests.sh iam-policy sts-operations
 ```
 
 #### Help and Options
 ```bash
+# List all available test modules
+./test/run-s3-tests.sh --list
+
 # Show help and usage
-./test/s3-compat-awscli-test.sh --help
+./test/run-s3-tests.sh --help
+```
+
+#### Legacy Monolithic Test (DEPRECATED)
+The original monolithic test file has been deprecated:
+```bash
+# DEPRECATED - Use modular suite instead
+./test/test-scripts/s3-compat-awscli-test.sh.deprecated
 ```
 
 ### s3cmd Test Suite
@@ -489,7 +505,7 @@ The test suites include comprehensive validation of S3 presigned URL functionali
 #### Running Presigned URL Tests
 ```bash
 # Run only presigned URL tests
-./test/s3-compat-awscli-test.sh presigned
+./test/run-s3-tests.sh presigned-url
 
 # Example output for successful presigned URL test
 ✅ AWS CLI presigned URL - Generated GET presigned URL
@@ -603,7 +619,7 @@ rm -rf /tmp/s3-compat-test /tmp/s3cmd-compat-test
 ### Enable Debug Output
 ```bash
 # For AWS CLI tests (verbose AWS CLI output)
-AWS_DEBUG=1 ./test/s3-compat-awscli-test.sh
+AWS_DEBUG=1 ./test/run-s3-tests.sh --all
 
 # For s3cmd tests (verbose s3cmd output)
 ./test/s3-compat-s3cmd-test.sh --debug

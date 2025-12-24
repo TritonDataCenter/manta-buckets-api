@@ -49,6 +49,7 @@ declare -a TEST_MODULES=(
     "s3-presigned-url-test.sh"
     "s3-sigv4-auth-test.sh"
     "s3-acl-access-test.sh"
+    "s3-aws-chunked-test.sh"
     "iam-role-management-test.sh"
     "iam-policy-test.sh"
     "sts-operations-test.sh"
@@ -78,6 +79,8 @@ get_module_description() {
             echo "S3 SigV4 Authentication Errors" ;;
         s3-acl-access-test.sh)
             echo "S3 ACL and Access Control" ;;
+        s3-aws-chunked-test.sh)
+            echo "S3 AWS Chunked Encoding with Signature Verification" ;;
         iam-role-management-test.sh)
             echo "IAM Role Management" ;;
         iam-policy-test.sh)
@@ -137,6 +140,7 @@ Module Names (short form - omit 'test.sh' suffix):
   presigned-url           S3 presigned URLs
   sigv4-auth              S3 SigV4 authentication
   acl-access              S3 ACL and access control
+  aws-chunked             S3 AWS chunked encoding with signature verification
   iam-role-management     IAM role management
   iam-policy              IAM permission policies
   sts-operations          STS operations
@@ -186,6 +190,8 @@ get_module_filename() {
             echo "s3-sigv4-auth-test.sh" ;;
         acl-access|acl|s3-acl-access-test.sh)
             echo "s3-acl-access-test.sh" ;;
+        aws-chunked|s3-aws-chunked-test.sh)
+            echo "s3-aws-chunked-test.sh" ;;
         iam-role-management|iam-role|iam-role-management-test.sh)
             echo "iam-role-management-test.sh" ;;
         iam-policy|iam-policy-test.sh)

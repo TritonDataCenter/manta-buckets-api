@@ -336,6 +336,125 @@ test_chunked_content_type() {
     aws_s3api delete-object --bucket "$TEST_BUCKET" --key "$test_key" >/dev/null 2>&1 || true
 }
 
+test_sync_large_files_multipart() {
+    log "Testing: AWS S3 sync with large files triggering multipart upload"
+
+    local source_dir="/tmp/aws-chunked-sync-source-$$"
+    local dest_dir="/tmp/aws-chunked-sync-dest-$$"
+    local s3_prefix="test-sync-$$"
+
+    # AWS CLI triggers multipart upload for files > 8MB by default
+    local file_size=$((10 * 1024 * 1024))  # 10 MB per file
+
+    # Create source directory with different file types
+    mkdir -p "$source_dir"
+
+    log "Creating test files (10 MB each, different types):"
+
+    # 1. Binary data file
+    log "  - binary.dat (random binary data)"
+    dd if=/dev/urandom of="$source_dir/binary.dat" bs="$file_size" count=1 2>/dev/null
+
+    # 2. Text file (repeating pattern) - use dd with /dev/zero and tr
+    log "  - textfile.txt (text data)"
+    dd if=/dev/zero of="$source_dir/textfile.txt" bs="$file_size" count=1 2>/dev/null
+    tr '\0' 'A' < "$source_dir/textfile.txt" > "$source_dir/textfile.txt.tmp"
+    mv "$source_dir/textfile.txt.tmp" "$source_dir/textfile.txt"
+
+    # 3. JSON file (structured data)
+    log "  - data.json (JSON structure)"
+    dd if=/dev/urandom of="$source_dir/data.json" bs="$file_size" count=1 2>/dev/null
+
+    # 4. Log-style file (simulated log entries) - use dd with random data
+    log "  - application.log (log format)"
+    dd if=/dev/urandom of="$source_dir/application.log" bs="$file_size" count=1 2>/dev/null
+
+    # Calculate source MD5 checksums for later verification
+    log "Calculating source file checksums..."
+    local checksums_file="/tmp/aws-chunked-checksums-$$.txt"
+    > "$checksums_file"  # Create empty file
+    for file in "$source_dir"/*; do
+        filename=$(basename "$file")
+        checksum=$(md5 -q "$file" 2>/dev/null || md5sum "$file" | awk '{print $1}')
+        echo "$filename:$checksum" >> "$checksums_file"
+        log "  $filename: $checksum"
+    done
+
+    # Sync to S3 (will use multipart upload + chunked encoding)
+    log "Syncing to S3 with multipart upload (chunked encoding)..."
+
+    set +e
+    sync_result=$(aws_s3 sync "$source_dir" "s3://$TEST_BUCKET/$s3_prefix/" 2>&1)
+    local sync_exit=$?
+    set -e
+
+    if [ $sync_exit -ne 0 ]; then
+        error "S3 sync upload failed: $sync_result"
+        rm -rf "$source_dir" "$dest_dir"
+        return 1
+    fi
+
+    success "Files synced to S3 successfully"
+
+    # Download back from S3 to verify integrity (download each file individually to avoid If-Match issues)
+    log "Downloading files from S3 to verify integrity..."
+    mkdir -p "$dest_dir"
+
+    # Download each file individually
+    for file in "$source_dir"/*; do
+        filename=$(basename "$file")
+        set +e
+        download_result=$(aws_s3 cp "s3://$TEST_BUCKET/$s3_prefix/$filename" "$dest_dir/$filename" 2>&1)
+        local download_exit=$?
+        set -e
+
+        if [ $download_exit -ne 0 ]; then
+            error "S3 download failed for $filename: $download_result"
+            rm -rf "$source_dir" "$dest_dir" "$checksums_file"
+            return 1
+        fi
+    done
+
+    success "Files downloaded from S3 successfully"
+
+    # Verify all files and their integrity
+    log "Verifying file integrity (comparing MD5 checksums)..."
+    local all_match=true
+
+    while IFS=: read -r filename source_md5; do
+        local dest_file="$dest_dir/$filename"
+
+        if [ ! -f "$dest_file" ]; then
+            error "File missing after sync: $filename"
+            all_match=false
+            continue
+        fi
+
+        local dest_md5=$(md5 -q "$dest_file" 2>/dev/null || md5sum "$dest_file" | awk '{print $1}')
+
+        if [ "$source_md5" = "$dest_md5" ]; then
+            success "  ✓ $filename: checksums match ($source_md5)"
+        else
+            error "  ✗ $filename: checksum mismatch!"
+            error "    Source: $source_md5"
+            error "    Dest:   $dest_md5"
+            all_match=false
+        fi
+    done < "$checksums_file"
+
+    # Cleanup
+    rm -rf "$source_dir" "$dest_dir" "$checksums_file"
+    aws_s3 rm "s3://$TEST_BUCKET/$s3_prefix/" --recursive >/dev/null 2>&1 || true
+
+    if [ "$all_match" = true ]; then
+        success "S3 sync with multipart upload - All files verified (4 files, 10 MB each)"
+        return 0
+    else
+        error "S3 sync integrity verification failed"
+        return 1
+    fi
+}
+
 # =============================================================================
 # Main Test Execution
 # =============================================================================
@@ -350,6 +469,7 @@ main() {
     log "  - Multiple file sizes"
     log "  - Multipart upload integration"
     log "  - Metadata and Content-Type preservation"
+    log "  - S3 sync with large files (MPU + integrity verification)"
     log ""
 
     # Ensure AWS CLI is configured
@@ -390,6 +510,7 @@ main() {
     test_chunked_multipart_upload
     test_chunked_with_metadata
     test_chunked_content_type
+    test_sync_large_files_multipart
 
     # Cleanup test bucket
     log "Cleaning up test bucket: $TEST_BUCKET"

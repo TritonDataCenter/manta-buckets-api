@@ -328,14 +328,17 @@ helper.test('AWS chunked decoder - large data integrity', function (t) {
     decoder.end();
 });
 
-helper.test('AWS chunked decoder - empty chunk handling', function (t) {
+helper.test('AWS chunked decoder - end-of-stream handling', function (t) {
     var decoder = createMockAWSChunkedDecoder();
-    var emptyChunk = new Buffer(0);
-    var dataChunk = new Buffer('Non-empty data', 'utf8');
+    var dataChunk1 = new Buffer('First chunk', 'utf8');
+    var dataChunk2 = new Buffer('Second chunk', 'utf8');
 
-    var chunkedData = createAWSChunkedData([emptyChunk, dataChunk, emptyChunk]);
+    // In AWS chunked encoding, only non-empty chunks should be included
+    // A 0-byte chunk signals end-of-stream
+    var chunkedData = createAWSChunkedData([dataChunk1, dataChunk2]);
 
     var outputChunks = [];
+    var expectedData = Buffer.concat([dataChunk1, dataChunk2]);
 
     decoder.on('data', function (chunk) {
         outputChunks.push(chunk);
@@ -344,15 +347,15 @@ helper.test('AWS chunked decoder - empty chunk handling', function (t) {
     decoder.on('end', function () {
         var reconstructed = Buffer.concat(outputChunks);
 
-        t.equal(reconstructed.length, dataChunk.length,
-                'should only output non-empty data');
-        t.ok(bufferEquals(reconstructed, dataChunk),
-             'should match non-empty chunk data');
+        t.equal(reconstructed.length, expectedData.length,
+                'should output all chunk data before end-of-stream');
+        t.ok(bufferEquals(reconstructed, expectedData),
+             'should correctly decode all chunks');
         t.end();
     });
 
     decoder.on('error', function (err) {
-        t.fail('should handle empty chunks without error: ' + err.message);
+        t.fail('should not error on valid chunked data: ' + err.message);
         t.end();
     });
 

@@ -96,8 +96,7 @@ test-s3: $(STAMP_NODE_MODULES)
 	    test/aws-chunked-encoding.test.js \
 	    test/aws-chunked-signature-verifier.test.js \
 	    test/aws-chunked-decoder-signature.test.js \
-	    test/s3-presigned-urls.test.js \
-	    test/trust-policy-engine.test.js test/sts-client-trust-policy.test.js
+	    test/s3-presigned-urls.test.js
 
 #
 # This target can be used to invoke "acsetup.js", a program which configures

@@ -86,14 +86,16 @@ test: $(STAMP_NODE_MODULES)
 	    $(NODE) ./node_modules/.bin/nodeunit --reporter=tap \
 	    test/*.test.js test/mpu/*.test.js
 
-# Run only S3-related unit tests (pure unit tests with mocks, no external dependencies)
+# Run only S3-related unit tests
 test-s3: $(STAMP_NODE_MODULES)
 	PATH=$(ROOT)/$(NODE_INSTALL)/bin:$(PATH) \
 	    DTRACE_ENABLED=0 \
 	    $(NODE) ./node_modules/.bin/nodeunit --reporter=tap \
 	    test/s3-multipart.test.js test/s3-compat-enhanced.test.js \
 	    test/s3-routes.test.js test/s3-role-mapping.test.js \
-	    test/aws-chunked-decoder.test.js test/s3-presigned-urls.test.js \
+	    test/aws-chunked-signature-verifier.test.js \
+	    test/aws-chunked-decoder-signature.test.js \
+	    test/s3-presigned-urls.test.js \
 	    test/trust-policy-engine.test.js test/sts-client-trust-policy.test.js
 
 #

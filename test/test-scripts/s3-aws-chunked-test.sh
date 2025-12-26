@@ -22,7 +22,7 @@ source "$SCRIPT_DIR/lib/s3-test-common.sh"
 # Test data sizes
 SMALL_CHUNK_SIZE=1024           # 1 KB
 MEDIUM_CHUNK_SIZE=65536         # 64 KB (typical AWS CLI chunk size)
-LARGE_CHUNK_SIZE=1048576        # 1 MB
+LARGE_CHUNK_SIZE=$((20 * 1024 * 1024))  # 20 MiB - ensures aws-chunked encoding
 
 # =============================================================================
 # Helper Functions
@@ -140,7 +140,7 @@ test_medium_chunked_upload() {
 }
 
 test_large_chunked_upload() {
-    log "Testing: Large file with chunked encoding (1 MB - multiple chunks)"
+    log "Testing: Large file with chunked encoding (20 MiB - multiple chunks)"
 
     local test_file="/tmp/aws-chunked-large-$$.dat"
     local test_key="test-chunked-large-$$.dat"
@@ -150,7 +150,7 @@ test_large_chunked_upload() {
 
     if upload_with_chunked "$test_file" "$test_key"; then
         if verify_download "$test_key" "$test_file" "$downloaded_file"; then
-            success "Large chunked upload - Complete (1 MB with signature chain)"
+            success "Large chunked upload - Complete (20 MiB with signature chain)"
         fi
     fi
 
@@ -164,10 +164,10 @@ test_chunked_multipart_upload() {
 
     local test_file="/tmp/aws-chunked-multipart-$$.dat"
     local test_key="test-chunked-multipart-$$.dat"
-    local part_size=$((6 * 1024 * 1024))  # 6 MB parts
+    local part_size=$((20 * 1024 * 1024))  # 20 MiB parts - ensures aws-chunked
 
-    # Generate 12 MB file (will be 2 parts)
-    generate_test_data $((2 * part_size)) "$test_file"
+    # Generate 20 MiB file (single part to test chunked encoding)
+    generate_test_data "$part_size" "$test_file"
 
     log "Initiating multipart upload for $test_key"
 
@@ -195,7 +195,7 @@ test_chunked_multipart_upload() {
     success "Multipart upload initiated - UploadId: $upload_id"
 
     # Upload parts (AWS CLI will use chunked encoding)
-    log "Uploading part 1 (6 MB with chunked encoding)"
+    log "Uploading part 1 (20 MiB with chunked encoding)"
 
     set +e
     part1_result=$(aws_s3api upload-part \
@@ -343,13 +343,14 @@ test_sync_large_files_multipart() {
     local dest_dir="/tmp/aws-chunked-sync-dest-$$"
     local s3_prefix="test-sync-$$"
 
-    # AWS CLI triggers multipart upload for files > 8MB by default
-    local file_size=$((10 * 1024 * 1024))  # 10 MB per file
+    # AWS CLI uses aws-chunked encoding for files >= 8 MiB
+    # Use 20 MiB to ensure chunked encoding is triggered
+    local file_size=$((20 * 1024 * 1024))  # 20 MiB per file
 
     # Create source directory with different file types
     mkdir -p "$source_dir"
 
-    log "Creating test files (10 MB each, different types):"
+    log "Creating test files (20 MiB each, different types):"
 
     # 1. Binary data file
     log "  - binary.dat (random binary data)"
@@ -447,7 +448,7 @@ test_sync_large_files_multipart() {
     aws_s3 rm "s3://$TEST_BUCKET/$s3_prefix/" --recursive >/dev/null 2>&1 || true
 
     if [ "$all_match" = true ]; then
-        success "S3 sync with multipart upload - All files verified (4 files, 10 MB each)"
+        success "S3 sync with aws-chunked encoding - All files verified (4 files, 20 MiB each)"
         return 0
     else
         error "S3 sync integrity verification failed"

@@ -93,6 +93,7 @@ test-s3: $(STAMP_NODE_MODULES)
 	    $(NODE) ./node_modules/.bin/nodeunit --reporter=tap \
 	    test/s3-multipart.test.js test/s3-compat-enhanced.test.js \
 	    test/s3-routes.test.js test/s3-role-mapping.test.js \
+	    test/aws-chunked-encoding.test.js \
 	    test/aws-chunked-signature-verifier.test.js \
 	    test/aws-chunked-decoder-signature.test.js \
 	    test/s3-presigned-urls.test.js \

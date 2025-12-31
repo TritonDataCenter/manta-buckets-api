@@ -13,6 +13,8 @@
  * in s3-multipart.js
  */
 
+var os = require('os');
+
 var helper = require('./s3-test-helper.js');
 
 // Test: createLockData - should create valid lock data structure
@@ -25,7 +27,7 @@ helper.test('createLockData creates valid structure', function (t) {
             expires: new Date(Date.now() + lockTimeout).toISOString(),
             operation: 'complete-multipart',
             processId: process.pid,
-            hostname: require('os').hostname()
+            hostname: os.hostname()
         };
     }
 
@@ -53,7 +55,7 @@ helper.test('createLockData sets future expiration', function (t) {
             expires: new Date(Date.now() + lockTimeout).toISOString(),
             operation: 'complete-multipart',
             processId: process.pid,
-            hostname: require('os').hostname()
+            hostname: os.hostname()
         };
     }
 

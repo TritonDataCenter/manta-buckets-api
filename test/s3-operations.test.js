@@ -11,6 +11,9 @@
 var helper = require('./helper.js');
 // var http = require('http'); // Unused import
 var crypto = require('crypto');
+var restifyClients = require('restify-clients');
+
+var bucketServer = require('../lib/server');
 
 ///--- Globals
 
@@ -26,7 +29,6 @@ var client;
 function createS3Client(opts) {
     opts = opts || {};
     var log = helper.createLogger();
-    var restifyClients = require('restify-clients');
 
     return restifyClients.createClient({
         agent: false,
@@ -76,7 +78,6 @@ before(function (callback) {
     };
 
     try {
-        var bucketServer = require('../lib/server');
         server = bucketServer.createServer(serverOptions, clients);
         server.listen(0, '127.0.0.1', function () {
             var addr = server.address();

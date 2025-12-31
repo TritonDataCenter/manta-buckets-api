@@ -17,6 +17,9 @@
  * descriptive function names instead of anonymous functions.
  */
 
+var middlewareModule = require('../lib/server/middleware.js');
+var signatureVerifier = require('../lib/auth/signature-verifier.js');
+
 var helper = require('./s3-test-helper.js');
 
 ///--- Stack Trace Verification Tests
@@ -24,8 +27,6 @@ var helper = require('./s3-test-helper.js');
 helper.test('named functions appear in stack traces - middleware',
     function (t) {
     // Test that middleware function names are visible
-    var middlewareModule = require('../lib/server/middleware.js');
-
     // These functions should exist and be named
     t.ok(typeof (middlewareModule.logAllRequests) === 'function',
          'logAllRequests should be exported');
@@ -47,8 +48,6 @@ helper.test('named functions appear in stack traces - middleware',
 
 helper.test('named functions in auth/signature-verifier.js', function (t) {
     // Verify that authentication handler functions are properly named
-    var signatureVerifier = require('../lib/auth/signature-verifier.js');
-
     t.ok(signatureVerifier, 'signature-verifier module should load');
     t.ok(typeof (signatureVerifier.sigv4Handler) === 'function',
          'sigv4Handler should be exported');

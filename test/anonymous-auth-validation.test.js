@@ -29,20 +29,22 @@ exports['validates basic alphanumeric names'] = function (t) {
          'testuser should be valid');
     t.ok(anonymousAuth.isValidAccountName('user123'),
          'user123 should be valid');
-    t.ok(anonymousAuth.isValidAccountName('123user'),
-         '123user should be valid');
+    // sdc-ufds LOGIN_RE requires names to start with letter (not digit)
+    t.equal(anonymousAuth.isValidAccountName('123user'), false,
+         '123user should be rejected (starts with digit)');
     t.ok(anonymousAuth.isValidAccountName('TestUser'),
          'TestUser should be valid (mixed case)');
     t.done();
 };
 
-exports['validates names with hyphens'] = function (t) {
-    t.ok(anonymousAuth.isValidAccountName('test-user'),
-         'test-user should be valid');
-    t.ok(anonymousAuth.isValidAccountName('my-test-account'),
-         'my-test-account should be valid');
-    t.ok(anonymousAuth.isValidAccountName('user-123'),
-         'user-123 should be valid');
+exports['rejects names with hyphens'] = function (t) {
+    // sdc-ufds LOGIN_RE does NOT allow hyphens
+    t.equal(anonymousAuth.isValidAccountName('test-user'), false,
+         'test-user should be rejected (hyphen not allowed)');
+    t.equal(anonymousAuth.isValidAccountName('my-test-account'), false,
+         'my-test-account should be rejected (hyphen not allowed)');
+    t.equal(anonymousAuth.isValidAccountName('user-123'), false,
+         'user-123 should be rejected (hyphen not allowed)');
     t.done();
 };
 
@@ -67,28 +69,37 @@ exports['validates names with periods'] = function (t) {
 };
 
 exports['validates mixed format names'] = function (t) {
-    t.ok(anonymousAuth.isValidAccountName('test-user_123.prod'),
-         'test-user_123.prod should be valid');
-    t.ok(anonymousAuth.isValidAccountName('my-account_v2.test'),
-         'my-account_v2.test should be valid');
-    t.ok(anonymousAuth.isValidAccountName('user.123-test_v1'),
-         'user.123-test_v1 should be valid');
+    // sdc-ufds LOGIN_RE allows: letters, digits, underscore, period, at-sign
+    // (hyphens NOT allowed)
+    t.ok(anonymousAuth.isValidAccountName('test_user123.prod'),
+         'test_user123.prod should be valid');
+    t.ok(anonymousAuth.isValidAccountName('myaccount_v2.test'),
+         'myaccount_v2.test should be valid');
+    t.ok(anonymousAuth.isValidAccountName('user.123test_v1'),
+         'user.123test_v1 should be valid');
+    t.ok(anonymousAuth.isValidAccountName('user@example.com'),
+         'user@example.com should be valid (at-sign allowed)');
     t.done();
 };
 
-exports['validates single character names'] = function (t) {
-    t.ok(anonymousAuth.isValidAccountName('a'),
-         'a should be valid');
-    t.ok(anonymousAuth.isValidAccountName('z'),
-         'z should be valid');
-    t.ok(anonymousAuth.isValidAccountName('9'),
-         '9 should be valid');
-    t.ok(anonymousAuth.isValidAccountName('A'),
-         'A should be valid');
+exports['rejects single and two character names'] = function (t) {
+    // sdc-ufds LOGIN_RE requires minimum 3 characters
+    t.equal(anonymousAuth.isValidAccountName('a'), false,
+         'a should be rejected (too short)');
+    t.equal(anonymousAuth.isValidAccountName('z'), false,
+         'z should be rejected (too short)');
+    t.equal(anonymousAuth.isValidAccountName('ab'), false,
+         'ab should be rejected (too short)');
+    t.equal(anonymousAuth.isValidAccountName('99'), false,
+         '99 should be rejected (too short)');
+    // 3 characters is minimum
+    t.ok(anonymousAuth.isValidAccountName('abc'),
+         'abc should be valid (3 chars minimum)');
     t.done();
 };
 
 exports['validates UUID format names'] = function (t) {
+    // sdc-ufds UUID_RE requires lowercase hex digits only
     t.ok(anonymousAuth.isValidAccountName(
         '550e8400-e29b-41d4-a716-446655440000'),
         'UUID v4 should be valid');
@@ -98,18 +109,24 @@ exports['validates UUID format names'] = function (t) {
     t.ok(anonymousAuth.isValidAccountName(
         'a1b2c3d4-5678-90ab-cdef-1234567890ab'),
         'UUID with lowercase hex should be valid');
-    t.ok(anonymousAuth.isValidAccountName(
-        'A1B2C3D4-5678-90AB-CDEF-1234567890AB'),
-        'UUID with uppercase hex should be valid');
+    // Uppercase UUIDs are NOT allowed by sdc-ufds UUID_RE
+    t.equal(anonymousAuth.isValidAccountName(
+        'A1B2C3D4-5678-90AB-CDEF-1234567890AB'), false,
+        'UUID with uppercase hex should be rejected');
     t.done();
 };
 
-exports['validates 64 character limit'] = function (t) {
-    var name64 =
-        'a123456789012345678901234567890123456789012345678901234567890123';
-    t.equal(name64.length, 64, 'test string should be exactly 64 chars');
-    t.ok(anonymousAuth.isValidAccountName(name64),
-         '64 character name should be valid');
+exports['validates 32 character maximum (sdc-ufds limit)'] = function (t) {
+    // sdc-ufds LOGIN_RE has 32 character maximum (not 64)
+    var name32 = 'a1234567890123456789012345678901';
+    t.equal(name32.length, 32, 'test string should be exactly 32 chars');
+    t.ok(anonymousAuth.isValidAccountName(name32),
+         '32 character name should be valid (maximum)');
+
+    var name33 = 'a12345678901234567890123456789012';
+    t.equal(name33.length, 33, 'test string should be exactly 33 chars');
+    t.equal(anonymousAuth.isValidAccountName(name33), false,
+         '33 character name should be rejected (exceeds maximum)');
     t.done();
 };
 
@@ -144,11 +161,11 @@ exports['rejects names with slashes'] = function (t) {
 };
 
 exports['rejects names that are too long'] = function (t) {
-    var name65 =
-        'a1234567890123456789012345678901234567890123456789012345678901234';
-    t.equal(name65.length, 65, 'test string should be exactly 65 chars');
-    t.equal(anonymousAuth.isValidAccountName(name65), false,
-            '65 character name should be rejected');
+    // sdc-ufds LOGIN_RE maximum is 32 characters
+    var name33 = 'a12345678901234567890123456789012';
+    t.equal(name33.length, 33, 'test string should be exactly 33 chars');
+    t.equal(anonymousAuth.isValidAccountName(name33), false,
+            '33 character name should be rejected (exceeds 32 max)');
     var name100 = new Array(101).join('a');
     t.equal(anonymousAuth.isValidAccountName(name100), false,
             '100 character name should be rejected');
@@ -165,25 +182,43 @@ exports['rejects empty or null values'] = function (t) {
     t.done();
 };
 
-exports['rejects names with invalid start or end characters'] = function (t) {
+exports['rejects names with invalid start characters'] = function (t) {
+    // sdc-ufds LOGIN_RE requires names to START with letter only
     t.equal(anonymousAuth.isValidAccountName('-user'), false,
             '-user should be rejected (starts with hyphen)');
-    t.equal(anonymousAuth.isValidAccountName('user-'), false,
-            'user- should be rejected (ends with hyphen)');
     t.equal(anonymousAuth.isValidAccountName('.user'), false,
             '.user should be rejected (starts with period)');
-    t.equal(anonymousAuth.isValidAccountName('user.'), false,
-            'user. should be rejected (ends with period)');
     t.equal(anonymousAuth.isValidAccountName('_user'), false,
             '_user should be rejected (starts with underscore)');
-    t.equal(anonymousAuth.isValidAccountName('user_'), false,
-            'user_ should be rejected (ends with underscore)');
+    t.equal(anonymousAuth.isValidAccountName('@user'), false,
+            '@user should be rejected (starts with at-sign)');
+
+    // Names CAN end with underscore, period, or at-sign
+    // (they're in allowed character set)
+    t.ok(anonymousAuth.isValidAccountName('user_'),
+            'user_ should be valid (ends with underscore)');
+    t.ok(anonymousAuth.isValidAccountName('user.'),
+            'user. should be valid (ends with period)');
+    t.ok(anonymousAuth.isValidAccountName('user@'),
+            'user@ should be valid (ends with at-sign)');
+
+    // But NOT with hyphen (not in allowed character set)
+    t.equal(anonymousAuth.isValidAccountName('user-'), false,
+            'user- should be rejected (hyphen not allowed)');
     t.done();
 };
 
-exports['rejects names with special characters'] = function (t) {
-    t.equal(anonymousAuth.isValidAccountName('user@host'), false,
-            'user@host should be rejected');
+exports['validates at-sign in names'] = function (t) {
+    // sdc-ufds LOGIN_RE allows @ for email-style logins
+    t.ok(anonymousAuth.isValidAccountName('user@host'),
+            'user@host should be valid (at-sign allowed)');
+    t.ok(anonymousAuth.isValidAccountName('user@example.com'),
+            'user@example.com should be valid');
+    t.done();
+};
+
+exports['rejects names with disallowed special characters'] = function (t) {
+    // Only letters, digits, underscore, period, at-sign are allowed
     t.equal(anonymousAuth.isValidAccountName('user#123'), false,
             'user#123 should be rejected');
     t.equal(anonymousAuth.isValidAccountName('user$123'), false,

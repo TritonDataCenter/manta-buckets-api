@@ -1248,7 +1248,7 @@ graph TB
     end
     
     subgraph "Authorization Resource Construction"
-        LoadRequest[loadRequest Function<br/>lib/buckets/buckets.js:33-37]
+        LoadRequest[loadRequest Function<br/>lib/buckets/buckets.js]
         ResourceKey[resource.key Construction]
         FullPath[Full Resource Path<br/>test-bucket/photos/image.jpg]
     end

@@ -80,7 +80,7 @@ module.exports = {
         } catch (err) {
             // Skip if this is a pre-existing infrastructure issue (bignum, etc)
             if (err.code === 'MODULE_NOT_FOUND' &&
-                err.message.includes('bignum')) {
+                err.message.indexOf('bignum') !== -1) {
                 // Skip this test - bignum dependency not available
                 t.done();
                 return;
@@ -128,7 +128,8 @@ module.exports = {
         }
 
         // Verify that s3-multipart IS required somewhere (lazy-loaded)
-        var hasLazyRequire = content.includes('require(\'./s3-multipart\')');
+        var hasLazyRequire = 
+		    content.indexOf('require(\'./s3-multipart\')') !== -1;
         t.ok(hasLazyRequire,
              's3-multipart is required somewhere in the file (lazy-loaded)');
 

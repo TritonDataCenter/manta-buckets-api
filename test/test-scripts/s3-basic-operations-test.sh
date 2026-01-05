@@ -1,5 +1,5 @@
 #!/bin/bash
-# Copyright 2025 Edgecast Cloud LLC.
+# Copyright 2026 Edgecast Cloud LLC.
 # S3 Compatibility Test - Basic Operations
 #
 # Tests basic S3 bucket and object operations:

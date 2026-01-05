@@ -1,5 +1,5 @@
 #!/bin/bash
-# Copyright 2025 Edgecast Cloud LLC.
+# Copyright 2026 Edgecast Cloud LLC.
 # S3 Compatibility Test - Presigned URL Operations
 #
 # Tests S3 presigned URL functionality:

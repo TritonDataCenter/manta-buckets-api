@@ -1,5 +1,5 @@
 #!/bin/bash
-# Copyright 2025 Edgecast Cloud LLC.
+# Copyright 2026 Edgecast Cloud LLC.
 # Common test infrastructure for S3 compatibility tests
 #
 # This file contains shared configuration, utility functions, and setup/cleanup

@@ -1,5 +1,5 @@
 #!/bin/bash
-# Copyright 2025 Edgecast Cloud LLC.
+# Copyright 2026 Edgecast Cloud LLC.
 # S3 Compatibility Test - Server-Side Copy and Conditional Headers
 #
 # Tests S3 server-side copy operations and conditional request headers:

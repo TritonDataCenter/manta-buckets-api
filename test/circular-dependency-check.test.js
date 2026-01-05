@@ -128,8 +128,8 @@ module.exports = {
         }
 
         // Verify that s3-multipart IS required somewhere (lazy-loaded)
-        var hasLazyRequire = 
-		    content.indexOf('require(\'./s3-multipart\')') !== -1;
+        var hasLazyRequire =
+            content.indexOf('require(\'./s3-multipart\')') !== -1;
         t.ok(hasLazyRequire,
              's3-multipart is required somewhere in the file (lazy-loaded)');
 

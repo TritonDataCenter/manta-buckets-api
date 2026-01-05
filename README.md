@@ -7,7 +7,7 @@
 <!--
     Copyright 2020 Joyent, Inc.
     Copyright 2023 MNX Cloud, Inc.
-    Copyright 2025 Edgecast Cloud LLC.
+    Copyright 2026 Edgecast Cloud LLC.
 -->
 
 # manta-buckets-api: The Manta Web API

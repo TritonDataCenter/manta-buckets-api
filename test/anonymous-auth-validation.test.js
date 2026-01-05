@@ -5,7 +5,7 @@
  */
 
 /*
- * Copyright 2025 Edgecast Cloud LLC.
+ * Copyright 2026 Edgecast Cloud LLC.
  * File:     anonymous-auth-validation.test.js
  * Purpose:  Unit tests for account name validation in anonymous access
  */

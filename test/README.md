@@ -162,4 +162,4 @@ main
 
 ## License
 
-Copyright 2025 Edgecast Cloud LLC.
+Copyright 2026 Edgecast Cloud LLC.

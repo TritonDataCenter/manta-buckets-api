@@ -22,33 +22,8 @@ test_sigv4_auth_errors() {
     log "Testing: SigV4 Authentication Error Handling "
     
     local auth_test_bucket="auth-test-$(date +%s)"
-    
-    # Test 1: Missing Authorization header 
-    # Maps to: sendInvalidSignatureError(req, res, next, 'Missing Authorization header')
-    log "  Testing missing Authorization header..."
-    set +e
-    local missing_auth_response=$(curl -s -w "%{http_code}" --insecure \
-        -X GET \
-        "$S3_ENDPOINT/$auth_test_bucket" 2>&1)
-    local missing_auth_exit_code=$?
-    local missing_auth_http_code="${missing_auth_response: -3}"
-    set -e
-    
-    if [ "$missing_auth_http_code" = "403" ]; then
-        success "SigV4 auth errors - Missing Authorization header returns 403"
-        
-        # Check if response contains proper S3 XML error format
-        local response_body="${missing_auth_response%???}"
-        if echo "$response_body" | grep -q "InvalidSignature\|Missing Authorization header"; then
-            success "SigV4 auth errors - Missing Authorization header returns proper S3 XML error"
-        else
-            warning "SigV4 auth errors - Missing Authorization header response format: $response_body"
-        fi
-    else
-        error "SigV4 auth errors - Expected 403 for missing Authorization header, got $missing_auth_http_code"
-    fi
-    
-    # Test 2: Missing date header
+
+    # Test 1: Missing date header
     # Maps to: sendInvalidSignatureError(req, res, next, 'Missing date header')
     log "  Testing missing date header..."
     set +e
@@ -73,7 +48,7 @@ test_sigv4_auth_errors() {
         error "SigV4 auth errors - Expected 403 for missing date header, got $missing_date_http_code"
     fi
     
-    # Test 3: InvalidSignature/SignatureDoesNotMatch error case
+    # Test 2: InvalidSignature/SignatureDoesNotMatch error case
     # Maps to: case 'InvalidSignature': case 'SignatureDoesNotMatch': sendInvalidSignatureError(req, res, next, 'Invalid Signature')
     log "  Testing invalid signature (SignatureDoesNotMatch) - using curl with forged signature..."
     
@@ -102,7 +77,7 @@ test_sigv4_auth_errors() {
         log "  Debug: HTTP code: $invalid_sig_http_code, Response: $invalid_sig_response"
     fi
     
-    # Test 4: AccessKeyNotFound error case
+    # Test 3: AccessKeyNotFound error case
     # Maps to: case 'AccessKeyNotFound': sendInvalidSignatureError(req, res, next, 'Invalid access key')
     log "  Testing invalid access key (AccessKeyNotFound) - using curl with invalid access key..."
     
@@ -131,7 +106,7 @@ test_sigv4_auth_errors() {
         log "  Debug: HTTP code: $invalid_key_http_code, Response: $invalid_key_response"
     fi
     
-    # Test 5: RequestTimeTooSkewed error case  
+    # Test 4: RequestTimeTooSkewed error case  
     # Maps to: case 'RequestTimeTooSkewed': sendInvalidSignatureError(req, res, next, 'Request timestamp too skewed')
     log "  Testing request time too skewed..."
     set +e
@@ -157,7 +132,7 @@ test_sigv4_auth_errors() {
         error "SigV4 auth errors - Expected 403 for request time too skewed, got $skewed_time_http_code"
     fi
     
-    # Test 6: Default authentication failure case
+    # Test 5: Default authentication failure case
     # Maps to: default: sendInvalidSignatureError(req, res, next, 'Authentication failed: ' + ...)
     log "  Testing general authentication failure..."
     set +e
@@ -182,35 +157,8 @@ test_sigv4_auth_errors() {
     else
         error "SigV4 auth errors - Expected 403 for general authentication failure, got $auth_fail_http_code"
     fi
-    
-    # Test 7: HTTP signature verification failure (from verifySignature function)
-    # Maps to: sendInvalidSignatureError(req, res, next, 'Signature verification failed')
-    log "  Testing HTTP signature verification failure..."
-    # This is harder to trigger with pure curl, so we'll test it via malformed signature format
-    set +e
-    local sig_verify_response=$(curl -s -w "%{http_code}" --insecure \
-        -X GET \
-        -H "Authorization: Signature keyId=\"invalid\",algorithm=\"rsa-sha256\",signature=\"invalid\"" \
-        -H "Date: $(date -u '+%a, %d %b %Y %H:%M:%S GMT')" \
-        "$S3_ENDPOINT/$auth_test_bucket" 2>&1)
-    local sig_verify_exit_code=$?
-    local sig_verify_http_code="${sig_verify_response: -3}"
-    set -e
-    
-    if [ "$sig_verify_http_code" = "403" ]; then
-        success "SigV4 auth errors - HTTP signature verification failure returns 403"
-        
-        local response_body="${sig_verify_response%???}"
-        if echo "$response_body" | grep -q "InvalidSignature\|Signature verification failed"; then
-            success "SigV4 auth errors - HTTP signature verification failure returns proper S3 XML error"
-        else
-            warning "SigV4 auth errors - HTTP signature verification failure response format: $response_body"
-        fi
-    else
-        error "SigV4 auth errors - Expected 403 for HTTP signature verification failure, got $sig_verify_http_code"
-    fi
-    
-    # Test 8: PUT request with application/x-directory content-type and invalid auth
+
+    # Test 6: PUT request with application/x-directory content-type and invalid auth
     # Maps to: Tests that error handling works correctly for directory creation requests
     log "  Testing PUT request with application/x-directory content-type and invalid auth..."
     

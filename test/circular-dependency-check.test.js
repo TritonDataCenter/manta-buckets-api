@@ -60,11 +60,11 @@ module.exports = {
             // Critical exports that must exist
             var requiredExports = [
                 'createFinalObjectMetadata',
-                'handleCompleteMultipartUpload',
-                'createMultipartUpload',
-                'uploadPart',
-                'listParts',
-                'abortMultipartUpload'
+                's3CompleteMultipartUploadHandler',
+                's3InitiateMultipartUploadHandler',
+                's3UploadPartHandler',
+                'listPartsHandler',
+                's3AbortMultipartUploadHandler'
             ];
 
             requiredExports.forEach(function (exportName) {

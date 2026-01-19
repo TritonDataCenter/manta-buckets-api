@@ -31,7 +31,7 @@
         "keep-alive-agent": "0.0.1",
         "keyapi": "git+https://github.com/TritonDataCenter/keyapi.git#bedd6fe",
         "lstream": "0.0.4",
-        "mahi": "git+https://github.com/TritonDataCenter/node-mahi.git#MANTA-5471",
+        "mahi": "2.5.0",
         "mime": "2.4.4",
         "moray": "3.8.1",
         "once": "1.4.0",

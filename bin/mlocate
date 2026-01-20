@@ -74,7 +74,7 @@ function parsePath(dataPath, cb) {
         '<user>/<bucket>/<object>');
     var pathArr = dataPath.split('/');
 
-    if (pathArr.length !== 2 && pathArr.length != 3) {
+    if (pathArr.length < 2) {
         cb(ERR);
         return;
     }
@@ -97,9 +97,14 @@ function parsePath(dataPath, cb) {
      * If the user specified a path of the form <user>/<bucket>/ with a trailing
      * slash, pathArr[2] will be an empty string. We allow this syntax and parse
      * this as meaning that no object was specified.
+     * For paths longer than 3 components, join the remaining parts as the
+     * object path.
      */
-    ret.object = pathArr[2] === undefined || pathArr[2] === '' ?
-        null : decodeURIComponent(pathArr[2]);
+    if (pathArr.length === 2 || (pathArr.length === 3 && pathArr[2] === '')) {
+        ret.object = null;
+    } else {
+        ret.object = decodeURIComponent(pathArr.slice(2).join('/'));
+    }
 
     cb(null, ret);
 }
@@ -275,7 +280,10 @@ function lookupAndFetchData(opts, cb) {
                 bucket,
                 object,
                 ctx.location.vnode,
-                uuidv4(),
+                {
+                    conditions: {}
+                },
+                 uuidv4(),
                 function onGetObject(err, data) {
                     if (err) {
                         next(err);

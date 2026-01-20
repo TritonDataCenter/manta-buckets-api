@@ -13,8 +13,8 @@ if (require.cache[_helper])
     delete require.cache[_helper];
 var helper = require(_helper);
 
-var util = require('util');
-var verror = require('verror');
+// var util = require('util'); // Unused import
+// var verror = require('verror'); // Unused import
 
 var errors = require('../lib/errors');
 

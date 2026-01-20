@@ -12,7 +12,8 @@
     "maxRequestAge": 600,
     "enableMPU": true,
     "multipartUpload": {
-        "prefixDirLen": 1
+        "prefixDirLen": 1,
+        "useNativeV2Commit": true
     },
     "numWorkers": 4,
     "port": 8080,
@@ -95,15 +96,15 @@
     "defaultMaxStreamingSizeMB": 5120
     },
     "sharkConfig": {
-        "connectTimeout": 2000,
-        "maxTimeout": 10000,
-        "delay": 250,
+        "connectTimeout": 15000,
+        "maxTimeout": 30000,
+        "delay": 500,
         "maxIdleTime": 10000,
         "maxClients": 50,
         "ping": "/ping",
         "pingInterval": 14400000,
         "retry": {
-          "retries": 2
+          "retries": 5
         },
         "spares": 2,
         "maximum": 2000,

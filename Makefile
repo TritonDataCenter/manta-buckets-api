@@ -6,6 +6,7 @@
 
 #
 # Copyright 2020 Joyent, Inc.
+# Copyright 2026 Edgecast Cloud LLC.
 #
 
 #
@@ -79,11 +80,23 @@ manta-scripts: deps/manta-scripts/.git
 	mkdir -p $(BUILD)/scripts
 	cp deps/manta-scripts/*.sh $(BUILD)/scripts
 
-.PHONY: test
+.PHONY: test test-s3
 test: $(STAMP_NODE_MODULES)
 	PATH=$(ROOT)/$(NODE_INSTALL)/bin:$(PATH) \
 	    $(NODE) ./node_modules/.bin/nodeunit --reporter=tap \
 	    test/*.test.js test/mpu/*.test.js
+
+# Run only S3-related unit tests
+test-s3: $(STAMP_NODE_MODULES)
+	PATH=$(ROOT)/$(NODE_INSTALL)/bin:$(PATH) \
+	    DTRACE_ENABLED=0 \
+	    $(NODE) ./node_modules/.bin/nodeunit --reporter=tap \
+	    test/s3-multipart.test.js test/s3-compat-enhanced.test.js \
+	    test/s3-routes.test.js test/s3-role-mapping.test.js \
+	    test/aws-chunked-encoding.test.js \
+	    test/aws-chunked-signature-verifier.test.js \
+	    test/aws-chunked-decoder-signature.test.js \
+	    test/s3-presigned-urls.test.js
 
 #
 # This target can be used to invoke "acsetup.js", a program which configures

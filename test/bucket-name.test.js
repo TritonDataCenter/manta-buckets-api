@@ -8,7 +8,7 @@
  * Copyright 2019 Joyent, Inc.
  */
 
-var bunyan = require('bunyan');
+// var bunyan = require('bunyan'); // Unused import
 var isValidBucketName = require('../lib/buckets/common.js').isValidBucketName;
 
 exports.bucketName = function bucketName(t) {

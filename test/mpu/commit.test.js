@@ -254,7 +254,7 @@ test('commit upload: ensure etag exists on target object', function (t) {
                 };
                 setImmediate(s.end.bind(s, string));
 
-                self.client.put(self.path, s, opts, function (err4, res) {
+                self.client.put(self.path, s, opts, function (err4, _res) {
                     if (ifErr(t, err4, 'overwriting target object')) {
                         t.end();
                         return;
@@ -504,7 +504,7 @@ test('commit upload: non-final part less than min part size', function (t) {
                 });
             },
             inputs: [0, 1, 2]
-        }, function (errp, results) {
+        }, function (errp, _results) {
             if (ifErr(t, errp, 'uploading parts')) {
                 t.end();
                 return;
@@ -816,7 +816,7 @@ test('commit upload: non-existent id', function (t) {
     var self = this;
     var bogus = uuidv4();
     self.uploadId = bogus;
-    self.commitUpload(bogus, [], function (err, upload) {
+    self.commitUpload(bogus, [], function (err, _upload) {
         t.ok(err);
         if (!err) {
             return (t.end());
@@ -828,7 +828,7 @@ test('commit upload: non-existent id', function (t) {
 
 test('commit upload: error on undefined parts array', function (t) {
     var self = this;
-    self.createUpload(self.path, null, function (err) {
+    self.createUpload(self.path, null, function (_err) {
         self.commitUpload(self.uploadId, undefined, function (err2) {
             t.ok(err2);
             if (!err2) {

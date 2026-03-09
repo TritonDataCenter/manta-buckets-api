@@ -1628,7 +1628,10 @@ test_iam_sts_integration_with_deny_policies() {
     
     local role_name="StsIntegrationRole"
     local account_uuid=$(get_account_uuid)
-    
+
+    # Clean up role from any previous run
+    aws_iam delete-role --role-name "$role_name" 2>/dev/null || true
+
     # Create a role that allows current user but denies others
     local trust_policy=$(cat <<EOF
 {
@@ -1693,6 +1696,11 @@ main() {
     log "=========================================="
 
     setup
+
+    # Pre-cleanup: remove stale roles from interrupted previous runs
+    log "Pre-cleanup: removing stale IAM roles from previous runs..."
+    cleanup_deny_test_roles
+    cleanup_trust_policy_test_roles
 
     # Run IAM-STS integration tests in order
     test_iam_create_role_with_session_token

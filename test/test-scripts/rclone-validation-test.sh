@@ -7,11 +7,9 @@
 # Requires:
 #   - rclone installed with an S3 remote named "dev02" configured in
 #     ~/.config/rclone/rclone.conf
-#   - MANTA_USER environment variable set
 #
 # Usage:
-#   MANTA_USER=neirac ./rclone-validation-test.sh
-#   RCLONE_REMOTE=dev02 MANTA_USER=neirac ./rclone-validation-test.sh
+#   RCLONE_REMOTE=dev02  ./rclone-validation-test.sh
 
 set -eo pipefail
 
@@ -21,12 +19,6 @@ set -eo pipefail
 
 RCLONE_REMOTE=${RCLONE_REMOTE:-"dev02"}
 RCLONE_FLAGS="--no-check-certificate --s3-provider=Other"
-MANTA_USER=${MANTA_USER:-""}
-
-if [ -z "$MANTA_USER" ]; then
-    echo "ERROR: MANTA_USER environment variable is required"
-    exit 1
-fi
 
 if ! command -v rclone &>/dev/null; then
     echo "ERROR: rclone is not installed"

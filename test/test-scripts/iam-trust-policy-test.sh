@@ -542,6 +542,9 @@ EOF
     else
         error "AWS IAM Principal Formats - Failed to create principal formats role: $create_result"
     fi
+
+    # Cleanup
+    aws_iam delete-role --role-name "$role_name" 2>/dev/null || true
 }
 
 # Test 9: Error handling for malformed policies

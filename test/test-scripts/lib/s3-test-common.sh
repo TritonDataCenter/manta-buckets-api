@@ -10,6 +10,11 @@
 
 set -eo pipefail  # Exit on error, pipe failures (removed -u for compatibility)
 
+# macOS + Homebrew Python 3.14: pyexpat needs Homebrew's libexpat
+if [ -d "/opt/homebrew/opt/expat/lib" ]; then
+    export DYLD_LIBRARY_PATH="/opt/homebrew/opt/expat/lib${DYLD_LIBRARY_PATH:+:$DYLD_LIBRARY_PATH}"
+fi
+
 # =============================================================================
 # Configuration Variables
 # =============================================================================

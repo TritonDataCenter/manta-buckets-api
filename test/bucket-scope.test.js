@@ -94,7 +94,7 @@ exports['parseScope: missing permissions returns null'] = function (t) {
 // ============================================================================
 
 exports['scopeGrantsAccess: read level allows read'] = function (t) {
-    var perms = [{ bucket: 'b1', level: 'read' }];
+    var perms = [ { bucket: 'b1', level: 'read' } ];
     t.ok(bucketScope.scopeGrantsAccess(
         perms, 'b1', bucketScope.LEVEL_READ),
         'read level should allow read');
@@ -102,7 +102,7 @@ exports['scopeGrantsAccess: read level allows read'] = function (t) {
 };
 
 exports['scopeGrantsAccess: read level denies write'] = function (t) {
-    var perms = [{ bucket: 'b1', level: 'read' }];
+    var perms = [ { bucket: 'b1', level: 'read' } ];
     t.equal(bucketScope.scopeGrantsAccess(
         perms, 'b1', bucketScope.LEVEL_READWRITE),
         false, 'read level should deny readwrite');
@@ -110,7 +110,7 @@ exports['scopeGrantsAccess: read level denies write'] = function (t) {
 };
 
 exports['scopeGrantsAccess: readwrite allows read'] = function (t) {
-    var perms = [{ bucket: 'b1', level: 'readwrite' }];
+    var perms = [ { bucket: 'b1', level: 'readwrite' } ];
     t.ok(bucketScope.scopeGrantsAccess(
         perms, 'b1', bucketScope.LEVEL_READ),
         'readwrite should allow read');
@@ -118,7 +118,7 @@ exports['scopeGrantsAccess: readwrite allows read'] = function (t) {
 };
 
 exports['scopeGrantsAccess: readwrite allows readwrite'] = function (t) {
-    var perms = [{ bucket: 'b1', level: 'readwrite' }];
+    var perms = [ { bucket: 'b1', level: 'readwrite' } ];
     t.ok(bucketScope.scopeGrantsAccess(
         perms, 'b1', bucketScope.LEVEL_READWRITE),
         'readwrite should allow readwrite');
@@ -126,7 +126,7 @@ exports['scopeGrantsAccess: readwrite allows readwrite'] = function (t) {
 };
 
 exports['scopeGrantsAccess: readwrite denies full'] = function (t) {
-    var perms = [{ bucket: 'b1', level: 'readwrite' }];
+    var perms = [ { bucket: 'b1', level: 'readwrite' } ];
     t.equal(bucketScope.scopeGrantsAccess(
         perms, 'b1', bucketScope.LEVEL_FULL),
         false, 'readwrite should deny full');
@@ -134,7 +134,7 @@ exports['scopeGrantsAccess: readwrite denies full'] = function (t) {
 };
 
 exports['scopeGrantsAccess: full allows everything'] = function (t) {
-    var perms = [{ bucket: 'b1', level: 'full' }];
+    var perms = [ { bucket: 'b1', level: 'full' } ];
     t.ok(bucketScope.scopeGrantsAccess(
         perms, 'b1', bucketScope.LEVEL_READ),
         'full should allow read');
@@ -148,7 +148,7 @@ exports['scopeGrantsAccess: full allows everything'] = function (t) {
 };
 
 exports['scopeGrantsAccess: wrong bucket denied'] = function (t) {
-    var perms = [{ bucket: 'b1', level: 'full' }];
+    var perms = [ { bucket: 'b1', level: 'full' } ];
     t.equal(bucketScope.scopeGrantsAccess(
         perms, 'b2', bucketScope.LEVEL_READ),
         false, 'different bucket should be denied');
@@ -156,7 +156,7 @@ exports['scopeGrantsAccess: wrong bucket denied'] = function (t) {
 };
 
 exports['scopeGrantsAccess: wildcard pattern'] = function (t) {
-    var perms = [{ bucket: 'logs-*', level: 'readwrite' }];
+    var perms = [ { bucket: 'logs-*', level: 'readwrite' } ];
     t.ok(bucketScope.scopeGrantsAccess(
         perms, 'logs-jan', bucketScope.LEVEL_READ),
         'wildcard should match and allow read');

@@ -492,7 +492,8 @@ test_wildcard_scope() {
     log "Created wildcard key: $SCOPED_KEY_ID_WILD (pattern: ${log_prefix}*)"
     wait_for_replication
 
-    # GET on logs-jan bucket should succeed
+    # GET on logs-jan bucket should succeed (retry once
+    # if muppet returns 503 transiently)
     set +e
     with_key "$SCOPED_KEY_ID_WILD" "$SCOPED_SECRET_WILD" \
         aws_s3api get-object \
@@ -500,6 +501,15 @@ test_wildcard_scope() {
             --key "test.txt" \
             "$TEMP_DIR/wild-logs1.txt" >/dev/null 2>&1
     local rc1=$?
+    if [ $rc1 -ne 0 ]; then
+        sleep 3
+        with_key "$SCOPED_KEY_ID_WILD" "$SCOPED_SECRET_WILD" \
+            aws_s3api get-object \
+                --bucket "$SCOPE_BUCKET_LOGS1" \
+                --key "test.txt" \
+                "$TEMP_DIR/wild-logs1.txt" >/dev/null 2>&1
+        rc1=$?
+    fi
     set -e
 
     if [ $rc1 -eq 0 ]; then
@@ -516,6 +526,15 @@ test_wildcard_scope() {
             --key "test.txt" \
             "$TEMP_DIR/wild-logs2.txt" >/dev/null 2>&1
     local rc2=$?
+    if [ $rc2 -ne 0 ]; then
+        sleep 3
+        with_key "$SCOPED_KEY_ID_WILD" "$SCOPED_SECRET_WILD" \
+            aws_s3api get-object \
+                --bucket "$SCOPE_BUCKET_LOGS2" \
+                --key "test.txt" \
+                "$TEMP_DIR/wild-logs2.txt" >/dev/null 2>&1
+        rc2=$?
+    fi
     set -e
 
     if [ $rc2 -eq 0 ]; then

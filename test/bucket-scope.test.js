@@ -266,7 +266,6 @@ function mockReq(opts) {
             warn: function () {},
             error: function () {}
         },
-        _bucketScopeFilter: null
     };
 }
 
@@ -438,7 +437,7 @@ function (t) {
     });
 };
 
-exports['enforceBucketScope: root path sets filter'] =
+exports['enforceBucketScope: root path sets scopeContext'] =
 function (t) {
     var scope = JSON.stringify({
         version: 1,
@@ -454,11 +453,61 @@ function (t) {
     });
     bucketScope.enforceBucketScope(req, {}, function (err) {
         t.ok(!err, 'root path should pass through');
-        t.ok(req._bucketScopeFilter,
-            'should set _bucketScopeFilter');
-        t.equal(req._bucketScopeFilter.length, 2);
-        t.equal(req._bucketScopeFilter[0], 'b1');
-        t.equal(req._bucketScopeFilter[1], 'b2');
+        t.ok(req.scopeContext,
+            'should set scopeContext');
+        t.ok(req.scopeContext.scope,
+            'scopeContext.scope should be set');
+        t.equal(req.scopeContext.scope.version, 1);
+        t.ok(req.scopeContext.patterns,
+            'scopeContext.patterns should be set');
+        t.equal(req.scopeContext.patterns.length, 2);
+        t.equal(req.scopeContext.patterns[0], 'b1');
+        t.equal(req.scopeContext.patterns[1], 'b2');
+        t.done();
+    });
+};
+
+exports['enforceBucketScope: sets scopeContext on allow'] =
+function (t) {
+    var scope = JSON.stringify({
+        version: 1,
+        permissions: [
+            { bucket: 'my-bucket', level: 'read' }
+        ]
+    });
+    var req = mockReq({
+        method: 'GET',
+        urlPath: '/my-bucket/my-key',
+        bucketScope: scope,
+        bucketParam: 'my-bucket'
+    });
+    bucketScope.enforceBucketScope(req, {}, function (err) {
+        t.ok(!err, 'should allow');
+        t.ok(req.scopeContext,
+            'scopeContext should be set');
+        t.ok(req.scopeContext.scope,
+            'scope should be set');
+        t.equal(
+            req.scopeContext.patterns.length, 1);
+        t.equal(
+            req.scopeContext.patterns[0],
+            'my-bucket');
+        t.done();
+    });
+};
+
+exports['enforceBucketScope: no scopeContext without scope'] =
+function (t) {
+    var req = mockReq({
+        method: 'GET',
+        urlPath: '/my-bucket/my-key',
+        bucketScope: null,
+        bucketParam: 'my-bucket'
+    });
+    bucketScope.enforceBucketScope(req, {}, function (err) {
+        t.ok(!err, 'should pass through');
+        t.ok(!req.scopeContext,
+            'scopeContext should not be set');
         t.done();
     });
 };
@@ -482,4 +531,129 @@ function (t) {
             'wildcard scope should allow matching bucket');
         t.done();
     });
+};
+
+// ============================================================================
+// levelName tests
+// ============================================================================
+
+exports['levelName: maps read level'] = function (t) {
+    t.equal(bucketScope.levelName(bucketScope.LEVEL_READ),
+        'read', 'LEVEL_READ should map to "read"');
+    t.done();
+};
+
+exports['levelName: maps readwrite level'] = function (t) {
+    t.equal(bucketScope.levelName(bucketScope.LEVEL_READWRITE),
+        'readwrite',
+        'LEVEL_READWRITE should map to "readwrite"');
+    t.done();
+};
+
+exports['levelName: maps full level'] = function (t) {
+    t.equal(bucketScope.levelName(bucketScope.LEVEL_FULL),
+        'full', 'LEVEL_FULL should map to "full"');
+    t.done();
+};
+
+exports['levelName: unknown returns unknown'] = function (t) {
+    t.equal(bucketScope.levelName(99), 'unknown',
+        'unrecognized level should return "unknown"');
+    t.equal(bucketScope.levelName(0), 'unknown',
+        'zero should return "unknown"');
+    t.done();
+};
+
+// ============================================================================
+// highestGrantedLevel tests
+// ============================================================================
+
+exports['highestGrantedLevel: matching bucket'] = function (t) {
+    var perms = [
+        { bucket: 'b1', level: 'read' },
+        { bucket: 'b1', level: 'readwrite' }
+    ];
+    t.equal(bucketScope.highestGrantedLevel(perms, 'b1'),
+        bucketScope.LEVEL_READWRITE,
+        'should return highest matching level');
+    t.done();
+};
+
+exports['highestGrantedLevel: no match returns 0'] =
+function (t) {
+    var perms = [
+        { bucket: 'b1', level: 'full' }
+    ];
+    t.equal(bucketScope.highestGrantedLevel(perms, 'b2'),
+        0, 'non-matching bucket should return 0');
+    t.done();
+};
+
+exports['highestGrantedLevel: wildcard pattern'] =
+function (t) {
+    var perms = [
+        { bucket: 'logs-*', level: 'read' },
+        { bucket: 'logs-*', level: 'full' }
+    ];
+    t.equal(
+        bucketScope.highestGrantedLevel(perms, 'logs-jan'),
+        bucketScope.LEVEL_FULL,
+        'wildcard should match and return highest');
+    t.done();
+};
+
+exports['highestGrantedLevel: empty perms returns 0'] =
+function (t) {
+    t.equal(bucketScope.highestGrantedLevel([], 'b1'),
+        0, 'empty permissions should return 0');
+    t.done();
+};
+
+// ============================================================
+// matchBucketPattern: wildcard edge cases
+// ============================================================
+
+exports['matchBucketPattern: bare * matches everything'] =
+    function (t) {
+    t.ok(bucketScope.matchBucketPattern('*', 'a'));
+    t.ok(bucketScope.matchBucketPattern(
+        '*', 'my-bucket'));
+    t.ok(bucketScope.matchBucketPattern(
+        '*', 'very-long-bucket-name-123'));
+    t.done();
+};
+
+exports['matchBucketPattern: trailing wildcard prefix'] =
+    function (t) {
+    t.ok(bucketScope.matchBucketPattern(
+        'app-*', 'app-data'));
+    t.ok(bucketScope.matchBucketPattern(
+        'app-*', 'app-'));
+    t.ok(bucketScope.matchBucketPattern(
+        'app-*', 'app-data-2026'));
+    t.equal(bucketScope.matchBucketPattern(
+        'app-*', 'ap'), false);
+    t.equal(bucketScope.matchBucketPattern(
+        'app-*', 'application'), false);
+    t.done();
+};
+
+exports['matchBucketPattern: no partial wildcard match'] =
+    function (t) {
+    /* These patterns would be rejected by validation,
+     * but matchBucketPattern itself should not match
+     * them as trailing wildcards */
+    t.equal(bucketScope.matchBucketPattern(
+        'exact', 'exact'), true);
+    t.equal(bucketScope.matchBucketPattern(
+        'exact', 'exactlynot'), false);
+    t.done();
+};
+
+exports['matchBucketPattern: single char bucket names'] =
+    function (t) {
+    t.ok(bucketScope.matchBucketPattern('a', 'a'));
+    t.equal(bucketScope.matchBucketPattern('a', 'b'),
+        false);
+    t.done();
 };

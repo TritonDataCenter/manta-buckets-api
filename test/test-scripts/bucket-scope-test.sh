@@ -97,13 +97,16 @@ cloudapi() {
 # Create an access key with optional scope via CloudAPI
 # Usage: create_scoped_key '[ {"bucket":"b","level":"read"} ]'
 # Sets LAST_KEY_ID and LAST_KEY_SECRET
+#
+# The scope array is wrapped in the canonical envelope:
+#   {"version":1,"permissions":[...]}
 create_scoped_key() {
     local scope_json="$1"
     local body
 
     if [ -n "$scope_json" ]; then
-        body=$(jq -n --argjson scope "$scope_json" \
-            '{ scope: $scope }')
+        body=$(jq -n --argjson perms "$scope_json" \
+            '{ scope: { version: 1, permissions: $perms } }')
     else
         body='{}'
     fi
@@ -138,8 +141,8 @@ update_key_scope() {
     if [ "$scope_json" = "null" ] || [ "$scope_json" = "" ]; then
         body='{ "scope": "" }'
     else
-        body=$(jq -n --argjson scope "$scope_json" \
-            '{ scope: $scope }')
+        body=$(jq -n --argjson perms "$scope_json" \
+            '{ scope: { version: 1, permissions: $perms } }')
     fi
 
     cloudapi POST "/accesskeys/$key_id" -d "$body" 2>/dev/null

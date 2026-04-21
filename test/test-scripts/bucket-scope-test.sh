@@ -64,15 +64,10 @@ SCOPED_SECRET_WILD=""
 # CloudAPI helpers
 # =============================================================================
 
-# Call CloudAPI with HTTP signature auth using the account's SSH key.
-# SDC_ACCOUNT and SDC_KEY_ID must be set, or defaults to MANTA_USER.
-SDC_ACCOUNT=${SDC_ACCOUNT:-$MANTA_USER}
-SDC_KEY_FILE=${SDC_KEY_FILE:-"$HOME/.ssh/id_rsa"}
-# Key ID is the MD5 fingerprint of the SSH key
-if [ -z "${SDC_KEY_ID:-}" ]; then
-    SDC_KEY_ID=$(ssh-keygen -l -E md5 -f "${SDC_KEY_FILE}.pub" 2>/dev/null \
-        | awk '{print $2}' | sed 's/MD5://')
-fi
+# Call CloudAPI with HTTP signature auth using ~/.ssh/id_rsa.
+# SDC_ACCOUNT defaults to MANTA_USER.
+SDC_ACCOUNT=${SDC_ACCOUNT:-"neirac"}
+SDC_URL=${CLOUDAPI_URL:-"https://localhost:8443"}
 
 cloudapi() {
     local method="$1"
@@ -83,16 +78,16 @@ cloudapi() {
     now=$(date -u '+%a, %d %h %Y %H:%M:%S GMT')
     local signature
     signature=$(echo -n "$now" | \
-        openssl dgst -sha256 -sign "$SDC_KEY_FILE" | \
+        openssl dgst -sha256 -sign ~/.ssh/id_rsa | \
         openssl enc -e -a | tr -d '\n')
 
     curl -sk -X "$method" \
         -H 'Accept: application/json' \
         -H 'Content-Type: application/json' \
-        -H "accept-version: ~9" \
+        -H "accept-version: ~8" \
         -H "Date: $now" \
-        -H "Authorization: Signature keyId=\"/$SDC_ACCOUNT/keys/$SDC_KEY_ID\",algorithm=\"rsa-sha256\" $signature" \
-        "$CLOUDAPI_URL/$MANTA_USER$path" \
+        -H "Authorization: Signature keyId=\"/$SDC_ACCOUNT/keys/macbook m1\",algorithm=\"rsa-sha256\" $signature" \
+        "$SDC_URL/$SDC_ACCOUNT$path" \
         "$@"
 }
 
@@ -659,12 +654,13 @@ test_sts_scope_inheritance() {
     fi
 
     # PUT should be denied with 403 (parent scope is read-only)
+    export AWS_ACCESS_KEY_ID="$temp_key"
+    export AWS_SECRET_ACCESS_KEY="$temp_secret"
+    export AWS_SESSION_TOKEN="$temp_token"
+
     assert_s3_deny \
         "STS inheritance - PUT denied (inherits read-only scope)" \
         "AccessDeniedByKeyScope" \
-        env AWS_ACCESS_KEY_ID="$temp_key" \
-            AWS_SECRET_ACCESS_KEY="$temp_secret" \
-            AWS_SESSION_TOKEN="$temp_token" \
         aws_s3api put-object \
             --bucket "$SCOPE_BUCKET_A" \
             --key "sts-write-test.txt" \
@@ -674,13 +670,15 @@ test_sts_scope_inheritance() {
     assert_s3_deny \
         "STS inheritance - cross-bucket denied with inherited scope" \
         "AccessDeniedByKeyScope" \
-        env AWS_ACCESS_KEY_ID="$temp_key" \
-            AWS_SECRET_ACCESS_KEY="$temp_secret" \
-            AWS_SESSION_TOKEN="$temp_token" \
         aws_s3api get-object \
             --bucket "$SCOPE_BUCKET_OUTSIDE" \
             --key "test.txt" \
             "$TEMP_DIR/sts-cross.txt"
+
+    # Restore original credentials
+    export AWS_ACCESS_KEY_ID="$ORIGINAL_AWS_ACCESS_KEY_ID"
+    export AWS_SECRET_ACCESS_KEY="$ORIGINAL_AWS_SECRET_ACCESS_KEY"
+    unset AWS_SESSION_TOKEN
 
     # Cleanup role
     aws_iam_silent delete-role-policy \

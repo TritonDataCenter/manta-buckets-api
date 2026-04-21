@@ -640,9 +640,11 @@ exports['matchBucketPattern: trailing wildcard prefix'] =
 
 exports['matchBucketPattern: no partial wildcard match'] =
     function (t) {
-    /* These patterns would be rejected by validation,
+    /*
+     * These patterns would be rejected by validation,
      * but matchBucketPattern itself should not match
-     * them as trailing wildcards */
+     * them as trailing wildcards.
+     */
     t.equal(bucketScope.matchBucketPattern(
         'exact', 'exact'), true);
     t.equal(bucketScope.matchBucketPattern(

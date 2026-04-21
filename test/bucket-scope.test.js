@@ -265,7 +265,7 @@ function mockReq(opts) {
             info: function () {},
             warn: function () {},
             error: function () {}
-        },
+        }
     };
 }
 

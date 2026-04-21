@@ -608,6 +608,75 @@ test_role_security() {
 }
 
 # =============================================================================
+# XML Error Response Helpers
+# =============================================================================
+
+# Extract the <Code> value from an S3 XML error response.
+# Usage: xml_error_code "$response_body"
+# Returns the code string on stdout, empty if not found.
+xml_error_code() {
+    local body="$1"
+    echo "$body" | sed -n 's/.*<Code>\([^<]*\)<\/Code>.*/\1/p' \
+        | head -1
+}
+
+# Assert that a command fails with HTTP 403 and the S3
+# XML error body contains the expected <Code>.
+#
+# Usage:
+#   assert_s3_deny "label" "ExpectedCode" \
+#       aws_s3api get-object ...
+#
+# On success calls success(). On failure calls error().
+assert_s3_deny() {
+    local label="$1"
+    local expected_code="$2"
+    shift 2
+
+    set +e
+    local result
+    result=$("$@" 2>&1)
+    local rc=$?
+    set -e
+
+    if [ $rc -eq 0 ]; then
+        error "$label - should be denied but succeeded"
+        return 1
+    fi
+
+    # AWS CLI prints the XML body on stderr; also check
+    # for the error code string in the combined output.
+    if ! echo "$result" | grep -qi "403\|Forbidden\|AccessDenied"; then
+        error "$label - expected 403 but got: $result"
+        return 1
+    fi
+
+    if [ -n "$expected_code" ]; then
+        local actual_code
+        actual_code=$(xml_error_code "$result")
+        if [ -z "$actual_code" ]; then
+            # AWS CLI may not include raw XML; fall back
+            # to checking for the code string anywhere.
+            if echo "$result" | grep -q "$expected_code"; then
+                success "$label (code $expected_code)"
+            else
+                warning "$label - 403 but could not verify code $expected_code"
+                success "$label (403 confirmed)"
+            fi
+        elif [ "$actual_code" = "$expected_code" ]; then
+            success "$label (code $actual_code)"
+        else
+            error "$label - expected code $expected_code but got $actual_code"
+            return 1
+        fi
+    else
+        success "$label"
+    fi
+
+    return 0
+}
+
+# =============================================================================
 # Summary Functions
 # =============================================================================
 

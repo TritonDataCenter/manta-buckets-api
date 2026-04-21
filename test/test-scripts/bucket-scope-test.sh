@@ -13,6 +13,8 @@
 #   8. STS scope inheritance: AssumeRole carries parent scope
 #   9. Scope update: change scope, verify new enforcement
 #  10. Scope removal: make key unrestricted
+#  11. UFDS read-through: use key immediately without
+#      waiting for replication
 #
 # Prerequisites:
 #   - CloudAPI running and accessible (CLOUDAPI_URL)
@@ -238,28 +240,15 @@ test_read_only_scope() {
         log "Output: $get_result"
     fi
 
-    # PUT object should be denied
-    set +e
-    local put_result
-    put_result=$(with_key "$SCOPED_KEY_ID" "$SCOPED_SECRET" \
-        aws_s3api put-object \
-            --bucket "$SCOPE_BUCKET_A" \
-            --key "write-test.txt" \
-            --body "$TEMP_DIR/scope-test-obj.txt" 2>&1)
-    local put_rc=$?
-    set -e
-
-    if [ $put_rc -ne 0 ]; then
-        # Accept 403 (AccessDenied) or 503 (muppet may not forward
-        # the 403 on PUT due to Expect: 100-continue handling)
-        if echo "$put_result" | grep -qi "AccessDenied\|403\|503\|Service Unavailable"; then
-            success "Read-only scope - PUT object denied"
-        else
-            error "Read-only scope - PUT denied but unexpected error: $put_result"
-        fi
-    else
-        error "Read-only scope - PUT object should be denied"
-    fi
+    # PUT object should be denied with 403
+    assert_s3_deny \
+        "Read-only scope - PUT object denied" \
+        "AccessDeniedByKeyScope" \
+        with_key "$SCOPED_KEY_ID" "$SCOPED_SECRET" \
+            aws_s3api put-object \
+                --bucket "$SCOPE_BUCKET_A" \
+                --key "write-test.txt" \
+                --body "$TEMP_DIR/scope-test-obj.txt"
 
     # HEAD bucket should succeed (read level allows it)
     set +e
@@ -340,22 +329,16 @@ test_readwrite_scope() {
         error "Readwrite scope - DELETE object should be allowed"
     fi
 
-    # DELETE bucket should be denied (requires full)
-    set +e
-    local delbkt_result
-    delbkt_result=$(with_key "$SCOPED_KEY_ID_RW" "$SCOPED_SECRET_RW" \
-        aws_s3api delete-bucket \
-            --bucket "$SCOPE_BUCKET_B" 2>&1)
-    local delbkt_rc=$?
-    set -e
-
-    if [ $delbkt_rc -ne 0 ]; then
-        success "Readwrite scope - DELETE bucket denied (requires full)"
-    else
-        error "Readwrite scope - DELETE bucket should be denied"
-        # Re-create the bucket if it was deleted
-        aws_s3api create-bucket --bucket "$SCOPE_BUCKET_B" >/dev/null 2>&1
-    fi
+    # DELETE bucket should be denied with 403 (requires full)
+    assert_s3_deny \
+        "Readwrite scope - DELETE bucket denied (requires full)" \
+        "AccessDeniedByKeyScope" \
+        with_key "$SCOPED_KEY_ID_RW" "$SCOPED_SECRET_RW" \
+            aws_s3api delete-bucket \
+                --bucket "$SCOPE_BUCKET_B"
+    # Re-create the bucket if it was accidentally deleted
+    aws_s3api create-bucket --bucket "$SCOPE_BUCKET_B" \
+        >/dev/null 2>&1 || true
 }
 
 # =============================================================================
@@ -438,25 +421,14 @@ test_cross_bucket_denial() {
         return 0
     fi
 
-    set +e
-    local result
-    result=$(with_key "$SCOPED_KEY_ID" "$SCOPED_SECRET" \
-        aws_s3api get-object \
-            --bucket "$SCOPE_BUCKET_OUTSIDE" \
-            --key "test.txt" \
-            "$TEMP_DIR/cross-bucket.txt" 2>&1)
-    local rc=$?
-    set -e
-
-    if [ $rc -ne 0 ]; then
-        if echo "$result" | grep -qi "AccessDenied\|403\|KeyScope\|503\|Service Unavailable"; then
-            success "Cross-bucket denial - access to unscoped bucket denied"
-        else
-            error "Cross-bucket denial - denied but unexpected error: $result"
-        fi
-    else
-        error "Cross-bucket denial - access to unscoped bucket should be denied"
-    fi
+    assert_s3_deny \
+        "Cross-bucket denial - access to unscoped bucket denied" \
+        "AccessDeniedByKeyScope" \
+        with_key "$SCOPED_KEY_ID" "$SCOPED_SECRET" \
+            aws_s3api get-object \
+                --bucket "$SCOPE_BUCKET_OUTSIDE" \
+                --key "test.txt" \
+                "$TEMP_DIR/cross-bucket.txt"
 }
 
 # =============================================================================
@@ -557,22 +529,15 @@ test_wildcard_scope() {
         error "Wildcard scope - GET on logs-feb bucket should be allowed"
     fi
 
-    # GET on non-matching bucket should be denied
-    set +e
-    local deny_result
-    deny_result=$(with_key "$SCOPED_KEY_ID_WILD" "$SCOPED_SECRET_WILD" \
-        aws_s3api get-object \
-            --bucket "$SCOPE_BUCKET_A" \
-            --key "test.txt" \
-            "$TEMP_DIR/wild-denied.txt" 2>&1)
-    local rc3=$?
-    set -e
-
-    if [ $rc3 -ne 0 ]; then
-        success "Wildcard scope - GET on non-matching bucket denied"
-    else
-        error "Wildcard scope - GET on non-matching bucket should be denied"
-    fi
+    # GET on non-matching bucket should be denied with 403
+    assert_s3_deny \
+        "Wildcard scope - GET on non-matching bucket denied" \
+        "AccessDeniedByKeyScope" \
+        with_key "$SCOPED_KEY_ID_WILD" "$SCOPED_SECRET_WILD" \
+            aws_s3api get-object \
+                --bucket "$SCOPE_BUCKET_A" \
+                --key "test.txt" \
+                "$TEMP_DIR/wild-denied.txt"
 
     # ListBuckets should only show matching buckets
     set +e
@@ -693,48 +658,29 @@ test_sts_scope_inheritance() {
         error "STS inheritance - GET with inherited scope should be allowed"
     fi
 
-    # PUT should be denied (parent scope is read-only)
-    set +e
-    local put_result
-    put_result=$(AWS_ACCESS_KEY_ID="$temp_key" \
-    AWS_SECRET_ACCESS_KEY="$temp_secret" \
-    AWS_SESSION_TOKEN="$temp_token" \
-    aws_s3api put-object \
-        --bucket "$SCOPE_BUCKET_A" \
-        --key "sts-write-test.txt" \
-        --body "$TEMP_DIR/scope-test-obj.txt" \
-        --endpoint-url="$S3_ENDPOINT" \
-        --region="$AWS_REGION" \
-        --no-verify-ssl 2>&1)
-    local put_rc=$?
-    set -e
+    # PUT should be denied with 403 (parent scope is read-only)
+    assert_s3_deny \
+        "STS inheritance - PUT denied (inherits read-only scope)" \
+        "AccessDeniedByKeyScope" \
+        env AWS_ACCESS_KEY_ID="$temp_key" \
+            AWS_SECRET_ACCESS_KEY="$temp_secret" \
+            AWS_SESSION_TOKEN="$temp_token" \
+        aws_s3api put-object \
+            --bucket "$SCOPE_BUCKET_A" \
+            --key "sts-write-test.txt" \
+            --body "$TEMP_DIR/scope-test-obj.txt"
 
-    if [ $put_rc -ne 0 ]; then
-        success "STS inheritance - PUT denied (inherits read-only scope)"
-    else
-        error "STS inheritance - PUT should be denied (parent scope is read-only)"
-    fi
-
-    # Access to unscoped bucket should be denied
-    set +e
-    AWS_ACCESS_KEY_ID="$temp_key" \
-    AWS_SECRET_ACCESS_KEY="$temp_secret" \
-    AWS_SESSION_TOKEN="$temp_token" \
-    aws_s3api get-object \
-        --bucket "$SCOPE_BUCKET_OUTSIDE" \
-        --key "test.txt" \
-        "$TEMP_DIR/sts-cross.txt" \
-        --endpoint-url="$S3_ENDPOINT" \
-        --region="$AWS_REGION" \
-        --no-verify-ssl >/dev/null 2>&1
-    local cross_rc=$?
-    set -e
-
-    if [ $cross_rc -ne 0 ]; then
-        success "STS inheritance - cross-bucket access denied with inherited scope"
-    else
-        error "STS inheritance - cross-bucket access should be denied"
-    fi
+    # Access to unscoped bucket should be denied with 403
+    assert_s3_deny \
+        "STS inheritance - cross-bucket denied with inherited scope" \
+        "AccessDeniedByKeyScope" \
+        env AWS_ACCESS_KEY_ID="$temp_key" \
+            AWS_SECRET_ACCESS_KEY="$temp_secret" \
+            AWS_SESSION_TOKEN="$temp_token" \
+        aws_s3api get-object \
+            --bucket "$SCOPE_BUCKET_OUTSIDE" \
+            --key "test.txt" \
+            "$TEMP_DIR/sts-cross.txt"
 
     # Cleanup role
     aws_iam_silent delete-role-policy \
@@ -858,6 +804,92 @@ test_backward_compat() {
 }
 
 # =============================================================================
+# Test 11: UFDS read-through (no replication wait)
+# =============================================================================
+
+test_ufds_read_through() {
+    log "=== Test 11: UFDS read-through (zero replication wait) ==="
+
+    # Create a brand-new scoped key and use it immediately
+    # without waiting for UFDS->Redis replication.  If mahi's
+    # handlePermanentCredentialUfds read-through works, the
+    # key should be usable within a few seconds even when the
+    # replicator has not yet run.
+
+    local rt_bucket="scope-test-readthru-$(date +%s)"
+    local scope='[{"bucket":"'"$rt_bucket"'","level":"readwrite"}]'
+
+    # Create bucket with admin key first
+    aws_s3api create-bucket --bucket "$rt_bucket" \
+        >/dev/null 2>&1 || true
+    local test_file="$TEMP_DIR/readthru-obj.txt"
+    echo "read-through test" > "$test_file"
+    aws_s3api put-object --bucket "$rt_bucket" \
+        --key "rt.txt" --body "$test_file" \
+        >/dev/null 2>&1 || true
+
+    if ! create_scoped_key "$scope"; then
+        error "UFDS read-through - failed to create scoped key"
+        aws_s3 rm "s3://$rt_bucket" --recursive 2>/dev/null || true
+        aws_s3api delete-bucket --bucket "$rt_bucket" \
+            2>/dev/null || true
+        return 1
+    fi
+    local rt_key="$LAST_KEY_ID"
+    local rt_secret="$LAST_KEY_SECRET"
+    log "Created read-through key: $rt_key (no replication wait)"
+
+    # Try immediately — no sleep.  Mahi should fall through
+    # to UFDS when the key is not yet in Redis.
+    set +e
+    with_key "$rt_key" "$rt_secret" \
+        aws_s3api get-object \
+            --bucket "$rt_bucket" \
+            --key "rt.txt" \
+            "$TEMP_DIR/readthru-dl.txt" >/dev/null 2>&1
+    local rc=$?
+    set -e
+
+    if [ $rc -eq 0 ]; then
+        success "UFDS read-through - GET succeeded without replication wait"
+    else
+        # Retry once after a short pause; the UFDS lookup itself
+        # may take a moment on a loaded system.
+        sleep 2
+        set +e
+        with_key "$rt_key" "$rt_secret" \
+            aws_s3api get-object \
+                --bucket "$rt_bucket" \
+                --key "rt.txt" \
+                "$TEMP_DIR/readthru-dl2.txt" >/dev/null 2>&1
+        local rc2=$?
+        set -e
+
+        if [ $rc2 -eq 0 ]; then
+            success "UFDS read-through - GET succeeded after 2s (read-through latency)"
+        else
+            error "UFDS read-through - GET failed even after retry"
+        fi
+    fi
+
+    # Verify cross-bucket denial works immediately too
+    assert_s3_deny \
+        "UFDS read-through - cross-bucket denied without replication wait" \
+        "AccessDeniedByKeyScope" \
+        with_key "$rt_key" "$rt_secret" \
+            aws_s3api get-object \
+                --bucket "$SCOPE_BUCKET_OUTSIDE" \
+                --key "test.txt" \
+                "$TEMP_DIR/readthru-cross.txt"
+
+    # Cleanup
+    delete_key "$rt_key" 2>/dev/null || true
+    aws_s3 rm "s3://$rt_bucket" --recursive 2>/dev/null || true
+    aws_s3api delete-bucket --bucket "$rt_bucket" \
+        2>/dev/null || true
+}
+
+# =============================================================================
 # Cleanup
 # =============================================================================
 
@@ -915,6 +947,7 @@ main() {
     test_sts_scope_inheritance
     test_scope_update
     test_scope_removal
+    test_ufds_read_through
 
     test_cleanup
     print_summary

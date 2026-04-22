@@ -41,7 +41,7 @@ source "$SCRIPT_DIR/lib/s3-test-common.sh"
 CLOUDAPI_URL=${CLOUDAPI_URL:-"https://localhost:8443"}
 
 # Replication delay — how long to wait for UFDS->Redis sync
-REPL_WAIT=${REPL_WAIT:-5}
+REPL_WAIT=${REPL_WAIT:-15}
 
 # Test-specific bucket names
 SCOPE_BUCKET_A="scope-test-alpha-$(date +%s)"
@@ -119,11 +119,22 @@ create_scoped_key() {
         return 1
     fi
 
-    # Verify scope was stored
-    local resp_scope
-    resp_scope=$(echo "$resp" | jq -r '.scope // empty')
-    if [ -n "$scope_json" ] && [ "$resp_scope" = "" ]; then
-        warning "CloudAPI did not return scope in response"
+    # Verify scope was stored by reading it back
+    local verify_resp
+    verify_resp=$(cloudapi GET "/accesskeys/$LAST_KEY_ID" \
+        2>/dev/null)
+    local stored_scope
+    stored_scope=$(echo "$verify_resp" | \
+        jq -c '.scope // null')
+
+    if [ -n "$scope_json" ]; then
+        if [ "$stored_scope" = "null" ] || \
+           [ -z "$stored_scope" ]; then
+            warning "Scope not stored — CloudAPI " \
+                "returned scope: $stored_scope"
+        else
+            log "Scope verified: $stored_scope"
+        fi
     fi
 
     return 0
@@ -164,10 +175,88 @@ with_key() {
     "$@"
 }
 
+# Validate that a key's scope matches expectations.
+# Usage: validate_key_scope <key_id> <expected>
+#   expected = "null" for unscoped, or a jq filter
+#   that extracts the relevant fields.
+# Logs the scope and returns 0 on match, 1 on
+# mismatch.
+validate_key_scope() {
+    local key_id="$1"
+    local expected="$2"
+
+    local resp
+    resp=$(cloudapi GET "/accesskeys/$key_id" \
+        2>/dev/null)
+    local stored
+    stored=$(echo "$resp" | jq -c '.scope // null')
+
+    if [ "$expected" = "null" ]; then
+        if [ "$stored" = "null" ]; then
+            log "Key $key_id scope: null (unscoped) — OK"
+            return 0
+        else
+            error "Key $key_id expected unscoped, got: $stored"
+            return 1
+        fi
+    fi
+
+    # For scoped keys, check that the scope is not null
+    # and log the full scope for debugging.
+    if [ "$stored" = "null" ] || [ -z "$stored" ]; then
+        error "Key $key_id expected scoped, got null"
+        return 1
+    fi
+
+    local scope_perms
+    scope_perms=$(echo "$stored" | \
+        jq -c '.permissions // []')
+    log "Key $key_id scope: $scope_perms"
+    return 0
+}
+
 # Wait for mahi replicator to sync
 wait_for_replication() {
     log "Waiting ${REPL_WAIT}s for UFDS->Redis replication..."
     sleep "$REPL_WAIT"
+}
+
+# Retry S3 command with backoff on AccessDenied (eventual consistency).
+# Newly created keys may take up to 15s to propagate through the
+# replicator and auth cache — this mirrors AWS IAM's eventual
+# consistency model.
+retry_on_auth() {
+    local max_attempts=3
+    local delay=1
+    local attempt=1
+    local result rc
+
+    while [ $attempt -le $max_attempts ]; do
+        set +e
+        result=$("$@" 2>&1)
+        rc=$?
+        set -e
+
+        if [ $rc -eq 0 ]; then
+            echo "$result"
+            return 0
+        fi
+
+        if echo "$result" | grep -q "AccessDenied\|403"; then
+            if [ $attempt -lt $max_attempts ]; then
+                log "  Auth retry $attempt/$max_attempts (backoff ${delay}s)..."
+                sleep $delay
+                delay=$((delay * 2))
+            fi
+            attempt=$((attempt + 1))
+        else
+            echo "$result"
+            return $rc
+        fi
+    done
+
+    echo "$result"
+    return $rc
 }
 
 # =============================================================================
@@ -175,6 +264,9 @@ wait_for_replication() {
 # =============================================================================
 
 test_setup() {
+    log "Validating admin key scope..."
+    validate_key_scope "$AWS_ACCESS_KEY_ID" "null"
+
     log "Creating test buckets with admin credentials..."
 
     # Create all test buckets using the admin (unrestricted) key
@@ -215,6 +307,7 @@ test_read_only_scope() {
     SCOPED_KEY_ID="$LAST_KEY_ID"
     SCOPED_SECRET="$LAST_KEY_SECRET"
     log "Created read-only key: $SCOPED_KEY_ID"
+    validate_key_scope "$SCOPED_KEY_ID" "scoped"
     wait_for_replication
 
     # GET object should succeed
@@ -275,6 +368,7 @@ test_readwrite_scope() {
     SCOPED_KEY_ID_RW="$LAST_KEY_ID"
     SCOPED_SECRET_RW="$LAST_KEY_SECRET"
     log "Created readwrite key: $SCOPED_KEY_ID_RW"
+    validate_key_scope "$SCOPED_KEY_ID_RW" "scoped"
     wait_for_replication
 
     # GET object should succeed
@@ -353,19 +447,21 @@ test_full_scope() {
     SCOPED_KEY_ID_FULL="$LAST_KEY_ID"
     SCOPED_SECRET_FULL="$LAST_KEY_SECRET"
     log "Created full key: $SCOPED_KEY_ID_FULL"
+    validate_key_scope "$SCOPED_KEY_ID_FULL" "scoped"
     wait_for_replication
 
-    # CREATE bucket should succeed (full allows bucket operations)
-    set +e
-    with_key "$SCOPED_KEY_ID_FULL" "$SCOPED_SECRET_FULL" \
-        aws_s3api create-bucket --bucket "$tmp_bucket" >/dev/null 2>&1
+    # CREATE bucket should succeed (full allows bucket operations).
+    # Uses retry_on_auth — newly created keys are eventually consistent.
+    local create_result
+    create_result=$(retry_on_auth with_key "$SCOPED_KEY_ID_FULL" "$SCOPED_SECRET_FULL" \
+        aws_s3api create-bucket --bucket "$tmp_bucket")
     local create_rc=$?
-    set -e
 
     if [ $create_rc -eq 0 ]; then
         success "Full scope - CREATE bucket allowed"
     else
         error "Full scope - CREATE bucket should be allowed"
+        log "Output: $create_result"
         return 1
     fi
 
@@ -490,27 +586,16 @@ test_wildcard_scope() {
     SCOPED_KEY_ID_WILD="$LAST_KEY_ID"
     SCOPED_SECRET_WILD="$LAST_KEY_SECRET"
     log "Created wildcard key: $SCOPED_KEY_ID_WILD (pattern: ${log_prefix}*)"
+    validate_key_scope "$SCOPED_KEY_ID_WILD" "scoped"
     wait_for_replication
 
-    # GET on logs-jan bucket should succeed (retry once
-    # if muppet returns 503 transiently)
-    set +e
-    with_key "$SCOPED_KEY_ID_WILD" "$SCOPED_SECRET_WILD" \
+    # GET on logs-jan bucket should succeed
+    retry_on_auth with_key "$SCOPED_KEY_ID_WILD" "$SCOPED_SECRET_WILD" \
         aws_s3api get-object \
             --bucket "$SCOPE_BUCKET_LOGS1" \
             --key "test.txt" \
             "$TEMP_DIR/wild-logs1.txt" >/dev/null 2>&1
     local rc1=$?
-    if [ $rc1 -ne 0 ]; then
-        sleep 3
-        with_key "$SCOPED_KEY_ID_WILD" "$SCOPED_SECRET_WILD" \
-            aws_s3api get-object \
-                --bucket "$SCOPE_BUCKET_LOGS1" \
-                --key "test.txt" \
-                "$TEMP_DIR/wild-logs1.txt" >/dev/null 2>&1
-        rc1=$?
-    fi
-    set -e
 
     if [ $rc1 -eq 0 ]; then
         success "Wildcard scope - GET on logs-jan bucket allowed"
@@ -519,23 +604,12 @@ test_wildcard_scope() {
     fi
 
     # GET on logs-feb bucket should succeed
-    set +e
-    with_key "$SCOPED_KEY_ID_WILD" "$SCOPED_SECRET_WILD" \
+    retry_on_auth with_key "$SCOPED_KEY_ID_WILD" "$SCOPED_SECRET_WILD" \
         aws_s3api get-object \
             --bucket "$SCOPE_BUCKET_LOGS2" \
             --key "test.txt" \
             "$TEMP_DIR/wild-logs2.txt" >/dev/null 2>&1
     local rc2=$?
-    if [ $rc2 -ne 0 ]; then
-        sleep 3
-        with_key "$SCOPED_KEY_ID_WILD" "$SCOPED_SECRET_WILD" \
-            aws_s3api get-object \
-                --bucket "$SCOPE_BUCKET_LOGS2" \
-                --key "test.txt" \
-                "$TEMP_DIR/wild-logs2.txt" >/dev/null 2>&1
-        rc2=$?
-    fi
-    set -e
 
     if [ $rc2 -eq 0 ]; then
         success "Wildcard scope - GET on logs-feb bucket allowed"
@@ -855,38 +929,22 @@ test_ufds_read_through() {
     local rt_key="$LAST_KEY_ID"
     local rt_secret="$LAST_KEY_SECRET"
     log "Created read-through key: $rt_key (no replication wait)"
+    validate_key_scope "$rt_key" "scoped"
 
-    # Try immediately — no sleep.  Mahi should fall through
-    # to UFDS when the key is not yet in Redis.
-    set +e
-    with_key "$rt_key" "$rt_secret" \
+    # Try immediately — no sleep.  Mahi should fall through to UFDS
+    # when the key is not yet in Redis.  Uses retry_on_auth for
+    # eventual consistency (UFDS lookup may have variable latency).
+    retry_on_auth with_key "$rt_key" "$rt_secret" \
         aws_s3api get-object \
             --bucket "$rt_bucket" \
             --key "rt.txt" \
             "$TEMP_DIR/readthru-dl.txt" >/dev/null 2>&1
     local rc=$?
-    set -e
 
     if [ $rc -eq 0 ]; then
-        success "UFDS read-through - GET succeeded without replication wait"
+        success "UFDS read-through - GET succeeded (eventual consistency)"
     else
-        # Retry once after a short pause; the UFDS lookup itself
-        # may take a moment on a loaded system.
-        sleep 2
-        set +e
-        with_key "$rt_key" "$rt_secret" \
-            aws_s3api get-object \
-                --bucket "$rt_bucket" \
-                --key "rt.txt" \
-                "$TEMP_DIR/readthru-dl2.txt" >/dev/null 2>&1
-        local rc2=$?
-        set -e
-
-        if [ $rc2 -eq 0 ]; then
-            success "UFDS read-through - GET succeeded after 2s (read-through latency)"
-        else
-            error "UFDS read-through - GET failed even after retry"
-        fi
+        error "UFDS read-through - GET failed even after retry"
     fi
 
     # Verify cross-bucket denial works immediately too

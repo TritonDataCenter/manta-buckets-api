@@ -584,7 +584,10 @@ test_role_security() {
                 error "Role $role_name - $operation on $target_bucket was ALLOWED but should be DENIED"
                 all_passed=false
             else
-                warning "Role $role_name - $operation on $target_bucket failed with non-permission error: $op_result"
+                # Non-permission errors (502/503 = backend crash)
+                # must fail the test, not be silently ignored.
+                error "Role $role_name - $operation on $target_bucket failed with non-permission error (possible backend crash): $op_result"
+                all_passed=false
             fi
         fi
     done
@@ -644,24 +647,33 @@ assert_s3_deny() {
         return 1
     fi
 
-    # AWS CLI prints the XML body on stderr; also check
-    # for the error code string in the combined output.
-    # Accept 403 (direct from buckets-api) or 503 (muppet
-    # may reject PUT before buckets-api processes auth when
-    # Expect: 100-continue is not satisfied).
-    if ! echo "$result" | grep -qi "403\|Forbidden\|AccessDenied\|503\|Service Unavailable"; then
-        error "$label - expected 403/503 but got: $result"
+    # AWS CLI prints the XML body on stderr; check for
+    # the error code string in the combined output.
+    # A proper deny returns 403 (AccessDenied XML from
+    # buckets-api).  503/502 means the backend crashed
+    # (e.g. passthrough formatter TypeError) — this is
+    # a bug, not a valid denial.
+    if echo "$result" | grep -qi "503\|502\|Service Unavailable"; then
+        error "$label - got 502/503 (backend crash, not a valid deny)"
+        error "  This usually means the error response formatter crashed."
+        error "  Check buckets-api logs for 'Uncaught TypeError'."
+        return 1
+    fi
+
+    # Connection reset may happen on Expect:100-continue
+    # race with muppet/haproxy — accept but warn.
+    if echo "$result" | grep -qi "Connection was closed"; then
+        warning "$label - connection closed (muppet/haproxy Expect:100-continue race)"
+        success "$label (denied via connection reset)"
+        return 0
+    fi
+
+    if ! echo "$result" | grep -qi "403\|Forbidden\|AccessDenied"; then
+        error "$label - expected 403 but got: $result"
         return 1
     fi
 
     if [ -n "$expected_code" ]; then
-        # 503 from muppet won't carry our S3 error code;
-        # still counts as a valid denial.
-        if echo "$result" | grep -qi "503\|Service Unavailable"; then
-            warning "$label - got 503 (muppet), cannot verify $expected_code"
-            success "$label (denied via 503)"
-            return 0
-        fi
 
         local actual_code
         actual_code=$(xml_error_code "$result")

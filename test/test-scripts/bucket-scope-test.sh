@@ -35,6 +35,13 @@
 
 set -eo pipefail
 
+# macOS + Homebrew Python 3.14: pyexpat links against system libexpat which
+# is missing _XML_SetAllocTrackerActivationThreshold.  Point the dynamic
+# linker at Homebrew's libexpat instead so the aws CLI works.
+if [ -d "/opt/homebrew/opt/expat/lib" ]; then
+    export DYLD_LIBRARY_PATH="/opt/homebrew/opt/expat/lib${DYLD_LIBRARY_PATH:+:$DYLD_LIBRARY_PATH}"
+fi
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/lib/s3-test-common.sh"
 
@@ -805,11 +812,27 @@ test_sts_assume_role_after_idle() {
     log "=== Test 9: STS AssumeRole after UFDS idle ===" \
         "(${STS_IDLE_WAIT}s wait)"
 
+    # This test creates IAM roles, which requires the admin key.
+    # Restore original credentials in case a prior test left a
+    # scoped key or session token active.
+    local saved_key saved_secret saved_token
+    saved_key="$AWS_ACCESS_KEY_ID"
+    saved_secret="$AWS_SECRET_ACCESS_KEY"
+    saved_token="${AWS_SESSION_TOKEN:-}"
+    export AWS_ACCESS_KEY_ID="$ORIGINAL_AWS_ACCESS_KEY_ID"
+    export AWS_SECRET_ACCESS_KEY="$ORIGINAL_AWS_SECRET_ACCESS_KEY"
+    unset AWS_SESSION_TOKEN
+
     local account_uuid
+    set +e
     account_uuid=$(aws_sts get-caller-identity --output json 2>/dev/null \
         | jq -r '.Account // empty')
+    set -e
     if [ -z "$account_uuid" ]; then
         warning "STS idle test - could not get account UUID, skipping"
+        export AWS_ACCESS_KEY_ID="$saved_key"
+        export AWS_SECRET_ACCESS_KEY="$saved_secret"
+        [ -n "$saved_token" ] && export AWS_SESSION_TOKEN="$saved_token" || true
         return 0
     fi
 
@@ -822,6 +845,9 @@ test_sts_assume_role_after_idle() {
         --role-name "$role_name" \
         --assume-role-policy-document "$trust_policy" >/dev/null 2>&1; then
         warning "STS idle test - could not create role, skipping"
+        export AWS_ACCESS_KEY_ID="$saved_key"
+        export AWS_SECRET_ACCESS_KEY="$saved_secret"
+        [ -n "$saved_token" ] && export AWS_SESSION_TOKEN="$saved_token" || true
         return 0
     fi
 
@@ -871,6 +897,10 @@ test_sts_assume_role_after_idle() {
 
     success "STS idle test - AssumeRole succeeded after ${STS_IDLE_WAIT}s" \
         "idle; UFDS connection survived"
+
+    export AWS_ACCESS_KEY_ID="$saved_key"
+    export AWS_SECRET_ACCESS_KEY="$saved_secret"
+    [ -n "$saved_token" ] && export AWS_SESSION_TOKEN="$saved_token" || true
 }
 
 # =============================================================================
@@ -1028,12 +1058,14 @@ test_ufds_read_through() {
     # Try immediately — no sleep.  Mahi should fall through to UFDS
     # when the key is not yet in Redis.  Uses retry_on_auth for
     # eventual consistency (UFDS lookup may have variable latency).
+    set +e
     retry_on_auth with_key "$rt_key" "$rt_secret" \
         aws_s3api get-object \
             --bucket "$rt_bucket" \
             --key "rt.txt" \
             "$TEMP_DIR/readthru-dl.txt" >/dev/null 2>&1
     local rc=$?
+    set -e
 
     if [ $rc -eq 0 ]; then
         success "UFDS read-through - GET succeeded (eventual consistency)"

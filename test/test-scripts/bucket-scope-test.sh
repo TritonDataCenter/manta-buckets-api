@@ -11,9 +11,10 @@
 #   6. ListBuckets filtering: only scoped buckets visible
 #   7. Wildcard scope: pattern matching (logs-*)
 #   8. STS scope inheritance: AssumeRole carries parent scope
-#   9. Scope update: change scope, verify new enforcement
-#  10. Scope removal: make key unrestricted
-#  11. UFDS read-through: use key immediately without
+#   9. STS AssumeRole after UFDS idle: connection survives 90s+ idle
+#  10. Scope update: change scope, verify new enforcement
+#  11. Scope removal: make key unrestricted
+#  12. UFDS read-through: use key immediately without
 #      waiting for replication
 #
 # Prerequisites:
@@ -42,6 +43,12 @@ CLOUDAPI_URL=${CLOUDAPI_URL:-"https://localhost:8443"}
 
 # Replication delay — how long to wait for UFDS->Redis sync
 REPL_WAIT=${REPL_WAIT:-15}
+
+# Idle wait for the UFDS LDAP idle-disconnect test.
+# Must exceed the ldapjs idleTimeout in the mahi UFDS pool factory
+# (default 90s before CHG-068 fix). Reduce only when testing against
+# a patched mahi where idleTimeout is disabled.
+STS_IDLE_WAIT=${STS_IDLE_WAIT:-100}
 
 # Test-specific bucket names
 SCOPE_BUCKET_A="scope-test-alpha-$(date +%s)"
@@ -780,11 +787,98 @@ test_sts_scope_inheritance() {
 }
 
 # =============================================================================
-# Test 8: Scope update
+# Test 9: STS AssumeRole after UFDS idle (regression for CHG-068)
+#
+# The mahi UFDS pool uses ldapjs, which defaults to disconnecting idle
+# connections after 90 seconds (idleTimeout: opts.idleTimeout || 90000).
+# generic-pool does not detect the silent disconnect; the next acquire()
+# returns a dead client, the LDAP add() hangs, and AssumeRole exceeds
+# requestTimeout.
+#
+# This test reproduces the failure condition: create a role, wait longer
+# than STS_IDLE_WAIT seconds (default 100, > ldapjs default 90), then
+# call AssumeRole. Without CHG-068 the call returns RequestTimeout.
+# With the fix (idleTimeout disabled in the pool factory) it succeeds.
+# =============================================================================
+
+test_sts_assume_role_after_idle() {
+    log "=== Test 9: STS AssumeRole after UFDS idle ===" \
+        "(${STS_IDLE_WAIT}s wait)"
+
+    local account_uuid
+    account_uuid=$(aws_sts get-caller-identity --output json 2>/dev/null \
+        | jq -r '.Account // empty')
+    if [ -z "$account_uuid" ]; then
+        warning "STS idle test - could not get account UUID, skipping"
+        return 0
+    fi
+
+    local role_name="scope-sts-idle-$(date +%s)"
+    local trust_policy
+    trust_policy='{"Version":"2012-10-17","Statement":[{"Effect":"Allow",'\
+'"Principal":{"AWS":"*"},"Action":"sts:AssumeRole"}]}'
+
+    if ! aws_iam create-role \
+        --role-name "$role_name" \
+        --assume-role-policy-document "$trust_policy" >/dev/null 2>&1; then
+        warning "STS idle test - could not create role, skipping"
+        return 0
+    fi
+
+    local s3_policy
+    s3_policy='{"Version":"2012-10-17","Statement":[{"Effect":"Allow",'\
+'"Action":["s3:GetObject","s3:ListBucket"],"Resource":"*"}]}'
+    aws_iam put-role-policy \
+        --role-name "$role_name" \
+        --policy-name "S3ReadOnly" \
+        --policy-document "$s3_policy" >/dev/null 2>&1
+
+    local role_arn="arn:aws:iam::${account_uuid}:role/${role_name}"
+
+    log "STS idle test - sleeping ${STS_IDLE_WAIT}s to exceed ldapjs" \
+        "idleTimeout (90s default)..."
+    sleep "$STS_IDLE_WAIT"
+
+    # AssumeRole must succeed after the idle period.
+    # Pre-fix: mahi returns RequestTimeout (LDAP connection was
+    # silently dropped and reconnect exceeds requestTimeout:10000).
+    # Post-fix: returns valid credentials within requestTimeout.
+    set +e
+    local sts_result sts_rc
+    sts_result=$(aws_sts assume-role \
+        --role-arn "$role_arn" \
+        --role-session-name "idle-regression-test" \
+        --output json 2>&1)
+    sts_rc=$?
+    set -e
+
+    aws_iam_silent delete-role-policy \
+        --role-name "$role_name" --policy-name "S3ReadOnly" || true
+    aws_iam_silent delete-role --role-name "$role_name" || true
+
+    if [ $sts_rc -ne 0 ]; then
+        error "STS idle test - AssumeRole failed after ${STS_IDLE_WAIT}s" \
+            "idle: $sts_result"
+        return 1
+    fi
+
+    local temp_key
+    temp_key=$(echo "$sts_result" | jq -r '.Credentials.AccessKeyId // empty')
+    if [ -z "$temp_key" ] || [ "$temp_key" = "null" ]; then
+        error "STS idle test - AssumeRole returned no credentials"
+        return 1
+    fi
+
+    success "STS idle test - AssumeRole succeeded after ${STS_IDLE_WAIT}s" \
+        "idle; UFDS connection survived"
+}
+
+# =============================================================================
+# Test 10: Scope update
 # =============================================================================
 
 test_scope_update() {
-    log "=== Test 8: Scope update ==="
+    log "=== Test 10: Scope update ==="
 
     if [ -z "$SCOPED_KEY_ID" ]; then
         warning "Scope update test - no scoped key available, skipping"
@@ -833,11 +927,11 @@ test_scope_update() {
 }
 
 # =============================================================================
-# Test 9: Scope removal (make unrestricted)
+# Test 11: Scope removal (make unrestricted)
 # =============================================================================
 
 test_scope_removal() {
-    log "=== Test 9: Scope removal ==="
+    log "=== Test 11: Scope removal ==="
 
     if [ -z "$SCOPED_KEY_ID" ]; then
         warning "Scope removal test - no scoped key available, skipping"
@@ -866,11 +960,11 @@ test_scope_removal() {
 }
 
 # =============================================================================
-# Test 10: Backward compatibility (unscoped key)
+# Test 12: Backward compatibility (unscoped key)
 # =============================================================================
 
 test_backward_compat() {
-    log "=== Test 10: Backward compatibility (unscoped key) ==="
+    log "=== Test 12: Backward compatibility (unscoped key) ==="
 
     # The admin key has no scope — it should work on everything
     set +e
@@ -895,11 +989,11 @@ test_backward_compat() {
 }
 
 # =============================================================================
-# Test 11: UFDS read-through (no replication wait)
+# Test 13: UFDS read-through (no replication wait)
 # =============================================================================
 
 test_ufds_read_through() {
-    log "=== Test 11: UFDS read-through (zero replication wait) ==="
+    log "=== Test 13: UFDS read-through (zero replication wait) ==="
 
     # Create a brand-new scoped key and use it immediately
     # without waiting for UFDS->Redis replication.  If mahi's
@@ -1020,6 +1114,7 @@ main() {
     test_list_buckets_filtering
     test_wildcard_scope
     test_sts_scope_inheritance
+    test_sts_assume_role_after_idle
     test_scope_update
     test_scope_removal
     test_ufds_read_through

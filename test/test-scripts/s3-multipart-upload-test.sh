@@ -87,7 +87,7 @@ test_multipart_upload_basic() {
         log "  DEBUG: file_offset=$file_offset, bytes_uploaded=$bytes_uploaded, file_remaining=$file_remaining"
         
         # Extract part from original file using file_offset
-        local part_file="part$part_number.bin"
+        local part_file="$TEMP_DIR/part$part_number.bin"
         dd if="$mpu_object" of="$part_file" bs=1 skip=$file_offset count=$current_part_size 2>/dev/null
         
         local actual_part_size=$(wc -c < "$part_file")
@@ -423,7 +423,7 @@ test_multipart_upload_resume() {
         log "  Uploading part $part_number ($current_part_size bytes)..."
         log "  DEBUG: file_offset=$file_offset, bytes_uploaded=$bytes_uploaded, file_remaining=$file_remaining"
         
-        local part_file="part$part_number.bin"
+        local part_file="$TEMP_DIR/part$part_number.bin"
         dd if="$mpu_object" of="$part_file" bs=1 skip=$file_offset count=$current_part_size 2>/dev/null
         
         set +e

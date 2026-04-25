@@ -52,7 +52,7 @@ fi
 TEST_BUCKET="s3-compat-test-$(date +%s)"
 TEST_OBJECT="test-object.txt"
 TEST_CONTENT="Hello, S3 World! This is a test file for manta-buckets-api compatibility."
-TEMP_DIR="/tmp/s3-compat-test"
+TEMP_DIR="/tmp/s3-compat-test-$$"
 
 # Colors for output
 RED='\033[0;31m'
@@ -472,15 +472,31 @@ test_role_security() {
 
     log "Testing security for role: $role_name"
 
-    # Assume the role to get temporary credentials
-    set +e
+    # Assume the role to get temporary credentials.
+    # Retry up to 3 times — newly created roles may not be
+    # immediately visible to the STS endpoint (eventual
+    # consistency / authcache latency).
     local assume_result
-    capture_output assume_result aws_sts assume-role --role-arn "$role_arn" --role-session-name "$session_name"
-    local assume_exit=$?
-    set -e
+    local assume_exit=1
+    local attempt
+    for attempt in 1 2 3; do
+        set +e
+        capture_output assume_result aws_sts assume-role \
+            --role-arn "$role_arn" \
+            --role-session-name "$session_name"
+        assume_exit=$?
+        set -e
+        if [ $assume_exit -eq 0 ]; then
+            break
+        fi
+        if [ $attempt -lt 3 ]; then
+            log "  AssumeRole attempt $attempt failed, retrying in 5s..."
+            sleep 5
+        fi
+    done
 
     if [ $assume_exit -ne 0 ]; then
-        error "Role security test - Failed to assume role $role_name: $assume_result"
+        error "Role security test - Failed to assume role $role_name after 3 attempts: $assume_result"
         return 1
     fi
 

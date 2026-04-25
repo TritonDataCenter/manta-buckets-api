@@ -30,6 +30,42 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/lib/s3-test-common.sh"
 
 # =============================================================================
+# Cleanup stale roles from previous runs
+# =============================================================================
+
+# All tests use static role names.  Delete them before and after the suite
+# so that EntityAlreadyExists errors do not cause false failures.
+STATIC_ROLES=(
+    DenyOverrideRole MultiDenyRole WildcardDenyRole OnlyDenyRole
+    BackwardsCompatRole ComplexMixedRole DenyFirstRole AllowFirstRole
+    PrincipalFormatsRole StsIntegrationRole
+    TrustPolicyPrincipalTestRole TrustPolicyConditionTestRole
+    TrustPolicyDenyTestRole TrustPolicyServiceTestRole
+    TrustPolicyMissingTestRole TrustPolicyCrossAccountTestRole
+    TrustPolicyInvalidJSONTestRole TrustPolicyVersionTestRole
+    TrustPolicyActionTestRole TrustPolicySecurityFixTestRole
+)
+
+cleanup_static_roles() {
+    log "Cleaning up stale IAM roles from previous runs..."
+    set +e
+    for r in "${STATIC_ROLES[@]}"; do
+        # Delete attached policies first, then the role
+        local policies
+        policies=$(aws_iam list-role-policies --role-name "$r" \
+            --query 'PolicyNames' --output text 2>/dev/null)
+        if [ -n "$policies" ] && [ "$policies" != "None" ]; then
+            for p in $policies; do
+                aws_iam delete-role-policy \
+                    --role-name "$r" --policy-name "$p" 2>/dev/null
+            done
+        fi
+        aws_iam delete-role --role-name "$r" 2>/dev/null
+    done
+    set -e
+}
+
+# =============================================================================
 # Test Functions
 # =============================================================================
 
@@ -1224,6 +1260,7 @@ main() {
     log "=========================================="
 
     setup
+    cleanup_static_roles
 
     # Run trust policy tests in order
     test_iam_trust_policy_deny_overrides_allow
@@ -1246,6 +1283,7 @@ main() {
     test_trust_policy_action_validation
     test_trust_policy_security_fix
 
+    cleanup_static_roles
     cleanup_basic
     print_summary
 }

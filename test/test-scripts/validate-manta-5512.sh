@@ -121,7 +121,13 @@ main() {
     # but AWS CLI v2 doesn't support this. Instead, use a small Python
     # script that manually constructs the aws-chunked request with
     # per-chunk signatures using botocore's internal SigV4 machinery.
-    capture_output upload_result /tmp/boto3-env/bin/python3 - "$test_file" \
+    # Locate boto3 venv relative to script directory
+    local script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    local boto3_python="${script_dir}/../../boto3-env/bin/python3"
+    if [ ! -x "$boto3_python" ]; then
+        boto3_python="/tmp/boto3-env/bin/python3"
+    fi
+    capture_output upload_result "$boto3_python" - "$test_file" \
         "$VALIDATION_BUCKET" "$VALIDATION_OBJECT" \
         "$AWS_ACCESS_KEY_ID" "$AWS_SECRET_ACCESS_KEY" \
         "$AWS_SESSION_TOKEN" "$S3_ENDPOINT" <<'PYEOF'

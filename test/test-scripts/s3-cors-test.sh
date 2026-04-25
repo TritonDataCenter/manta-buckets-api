@@ -187,7 +187,7 @@ test_cors_presigned_urls() {
     
     # Set up CORS configuration for the bucket to expose ETag header
     log "  Setting up CORS configuration with ETag exposure..."
-    cat > cors-presigned-config.json << 'EOF'
+    cat > $TEMP_DIR/cors-presigned-config.json << 'EOF'
 {
     "CORSRules": [
         {
@@ -202,7 +202,7 @@ test_cors_presigned_urls() {
 EOF
     
     set +e
-    local cors_put_result=$(aws_s3api put-bucket-cors --bucket "$cors_presigned_bucket" --cors-configuration file://cors-presigned-config.json 2>&1)
+    local cors_put_result=$(aws_s3api put-bucket-cors --bucket "$cors_presigned_bucket" --cors-configuration file://$TEMP_DIR/cors-presigned-config.json 2>&1)
     local cors_put_exit_code=$?
     set -e
     

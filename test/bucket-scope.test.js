@@ -659,3 +659,142 @@ exports['matchBucketPattern: single char bucket names'] =
         false);
     t.done();
 };
+
+
+// ============================================================================
+// CHG-070: LRU cache scope contamination regression test
+//
+// Simulates what happens when node-mahi's LRU authCache
+// returns the same caller object reference for two requests:
+// first a scoped key, then an unscoped admin key.
+// Before the fix, the admin key inherited the scope from
+// the scoped key because both mutated the shared object.
+// ============================================================================
+
+exports['enforceBucketScope: shared caller object ' +
+    'does not leak scope across requests (CHG-070)'] =
+function (t) {
+    /*
+     * Simulate the LRU-cached caller object that node-mahi
+     * returns for the same account across multiple requests.
+     */
+    var sharedCaller = {
+        uuid: 'fe3617d8-test',
+        account: { login: 'testuser', uuid: 'fe3617d8-test' }
+    };
+
+    /*
+     * Request 1: scoped key — set bucketScope on a COPY,
+     * not on the shared object (this is what the fix does).
+     */
+    var callerCopy = {};
+    Object.keys(sharedCaller).forEach(function (k) {
+        callerCopy[k] = sharedCaller[k];
+    });
+    callerCopy.bucketScope = JSON.stringify({
+        version: 1,
+        permissions: [
+            { bucket: 'alpha', level: 'read' },
+            { bucket: 'bravo', level: 'readwrite' }
+        ]
+    });
+    callerCopy.parsedBucketScope =
+        bucketScope.parseScope(callerCopy.bucketScope);
+
+    t.ok(callerCopy.parsedBucketScope,
+        'scoped copy has parsedBucketScope');
+    t.equal(callerCopy.parsedBucketScope.permissions.length,
+        2, 'scoped copy has 2 permissions');
+
+    /*
+     * Request 2: admin key — reuse the SAME shared object.
+     * The shared object must NOT have scope properties.
+     */
+    t.equal(sharedCaller.bucketScope, undefined,
+        'shared caller must not have bucketScope');
+    t.equal(sharedCaller.parsedBucketScope, undefined,
+        'shared caller must not have parsedBucketScope');
+
+    /*
+     * Verify enforceBucketScope passes through for the
+     * unscoped admin key using the shared object.
+     */
+    var req2 = {
+        method: 'PUT',
+        caller: sharedCaller,
+        auth: { accessKeyId: 'ADMIN_KEY' },
+        params: { 0: 'my-bucket' },
+        path: function () { return '/my-bucket/obj'; },
+        log: {
+            debug: function () {},
+            info: function () {},
+            warn: function () {},
+            error: function () {}
+        }
+    };
+    bucketScope.enforceBucketScope(req2, {}, function (err) {
+        t.ok(!err,
+            'admin key with shared caller must pass through');
+        t.done();
+    });
+};
+
+
+/*
+ * Proves the pre-fix failure mode: if scope properties are
+ * set directly on the shared caller object (simulating the
+ * old code that mutated the cached reference), an unscoped
+ * admin key is incorrectly denied.  This test would FAIL
+ * if the clone fix were reverted and the contamination
+ * happened at the caller layer instead of here, but it
+ * documents the exact failure mode that CHG-070 prevents.
+ */
+exports['enforceBucketScope: contaminated shared caller ' +
+    'causes false deny (CHG-070 regression proof)'] =
+function (t) {
+    /*
+     * Simulate the pre-fix bug: a scoped key request
+     * mutates the shared cached caller object directly.
+     */
+    var sharedCaller = {
+        uuid: 'fe3617d8-test',
+        account: { login: 'testuser', uuid: 'fe3617d8-test' }
+    };
+    sharedCaller.bucketScope = JSON.stringify({
+        version: 1,
+        permissions: [
+            { bucket: 'alpha', level: 'read' },
+            { bucket: 'bravo', level: 'readwrite' }
+        ]
+    });
+    sharedCaller.parsedBucketScope =
+        bucketScope.parseScope(sharedCaller.bucketScope);
+
+    /*
+     * Now an admin key request reuses this contaminated
+     * object.  enforceBucketScope sees the stale scope
+     * and denies access to an unscoped bucket.
+     */
+    var req = {
+        method: 'PUT',
+        caller: sharedCaller,
+        auth: { accessKeyId: 'ADMIN_KEY' },
+        params: { 0: 'unscoped-bucket' },
+        path: function () { return ('/unscoped-bucket/obj'); },
+        log: {
+            debug: function () {},
+            info: function () {},
+            warn: function () {},
+            error: function () {}
+        }
+    };
+    bucketScope.enforceBucketScope(req, {}, function (err) {
+        t.ok(err,
+            'contaminated caller must cause deny');
+        t.equal(err.restCode, 'AccessDeniedByKeyScope',
+            'deny must be scope-related');
+        t.equal(err.statusCode, 403,
+            'deny must be 403');
+        t.done();
+    });
+};

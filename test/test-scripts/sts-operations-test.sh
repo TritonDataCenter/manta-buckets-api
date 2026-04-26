@@ -104,12 +104,13 @@ test_sts_assume_role() {
     # Test 2: AWS CLI JSON parsing test (existing functionality)
     log "Step 2: Testing AWS CLI JSON parsing..."
     local aws_output
+    set +e
     capture_output aws_output aws_sts assume-role \
         --role-arn "$role_arn" \
         --role-session-name "$session_name" \
         --output json
-    
     local exit_code=$?
+    set -e
     
     if [ $exit_code -eq 0 ]; then
         # Verify response contains expected fields
@@ -698,11 +699,12 @@ test_sts_get_session_token() {
     
     # Test GetSessionToken operation with detailed response capture
     local aws_output
+    set +e
     capture_output aws_output aws_sts get-session-token \
         --duration-seconds 3600 \
         --output json
-    
     local exit_code=$?
+    set -e
     
     if [ $exit_code -eq 0 ] && echo "$aws_output" | grep -q "Credentials"; then
         success "STS GetSessionToken - Session token generated successfully"
@@ -793,9 +795,10 @@ test_sts_get_caller_identity() {
 
     # Test GetCallerIdentity operation
     local aws_output
+    set +e
     capture_output aws_output aws_sts get-caller-identity --output json
-
     local exit_code=$?
+    set -e
 
     if [ $exit_code -eq 0 ]; then
         success "STS GetCallerIdentity - Request succeeded"
@@ -868,8 +871,10 @@ test_sts_get_caller_identity() {
             export AWS_SESSION_TOKEN="$temp_session_token"
 
             local temp_output
+            set +e
             capture_output temp_output aws_sts get-caller-identity --output json
             local temp_exit_code=$?
+            set -e
 
             # Restore original credentials
             export AWS_ACCESS_KEY_ID="$orig_access_key"
@@ -931,12 +936,15 @@ test_sts_get_caller_identity_with_temp_creds() {
     # Step 1: Create a role for testing
     log "Creating test role: $role_name"
     local create_output
+    set +e
     capture_output create_output aws_iam create-role \
         --role-name "$role_name" \
         --assume-role-policy-document "$trust_policy" \
         --output json
+    local create_exit=$?
+    set -e
 
-    if [ $? -ne 0 ]; then
+    if [ $create_exit -ne 0 ]; then
         error "STS GetCallerIdentity with temp creds - Failed to create test role"
         log "Create role output: $create_output"
         return 1
@@ -1118,11 +1126,14 @@ test_iam_create_role_with_session_token() {
     # Step 1: Get session token credentials (MSTS prefix)
     log "Step 1: Getting session token credentials..."
     local session_output
+    set +e
     capture_output session_output aws_sts get-session-token \
         --duration-seconds 3600 \
         --output json
+    local session_exit=$?
+    set -e
 
-    if [ $? -ne 0 ]; then
+    if [ $session_exit -ne 0 ]; then
         error "IAM with MSTS - Failed to get session token"
         log "GetSessionToken output: $session_output"
         return 1
@@ -1426,11 +1437,14 @@ test_sts_credential_prefix_verification() {
     # Test 1: GetSessionToken returns MSTS prefix
     log "Test 1: Verifying GetSessionToken returns MSTS prefix..."
     local session_output
+    set +e
     capture_output session_output aws_sts get-session-token \
         --duration-seconds 900 \
         --output json
+    local session_exit=$?
+    set -e
 
-    if [ $? -eq 0 ]; then
+    if [ $session_exit -eq 0 ]; then
         local session_key
         session_key=$(echo "$session_output" | \
             jq -r '.Credentials.AccessKeyId // empty' 2>/dev/null)

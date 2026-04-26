@@ -48,8 +48,11 @@ source "$SCRIPT_DIR/lib/s3-test-common.sh"
 # CloudAPI endpoint (separate from S3 endpoint)
 CLOUDAPI_URL=${CLOUDAPI_URL:-"https://localhost:8443"}
 
-# Replication delay — how long to wait for UFDS->Redis sync
-REPL_WAIT=${REPL_WAIT:-15}
+# Replication delay — how long to wait for UFDS->Redis sync.
+# cachePush writes keys to Redis immediately on create/update,
+# so keys are typically available within milliseconds.  3s is a
+# safety margin for the replicator fallback path.
+REPL_WAIT=${REPL_WAIT:-3}
 
 # Idle wait for the UFDS LDAP idle-disconnect test.
 # Must exceed the ldapjs idleTimeout in the mahi UFDS pool factory

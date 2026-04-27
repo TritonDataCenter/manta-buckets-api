@@ -798,3 +798,145 @@ function (t) {
         t.done();
     });
 };
+
+// ============================================================================
+// extractBucket tests
+//
+// extractBucket parses the bucket name from the request.  It must agree
+// with the route handler on which bucket the request targets.  These
+// tests verify correct extraction for normal paths and adversarial
+// edge cases.  Note: in production, restify's sanitizePath() runs
+// before extractBucket, so paths like //bucket are normalized to
+// /bucket before extraction.
+// ============================================================================
+
+exports['extractBucket: normal bucket path'] = function (t) {
+    var req = {
+        params: {},
+        path: function () { return ('/my-bucket/key.txt'); }
+    };
+    t.equal(bucketScope.extractBucket(req), 'my-bucket',
+        'should extract bucket from /bucket/key');
+    t.done();
+};
+
+exports['extractBucket: bucket only, no key'] = function (t) {
+    var req = {
+        params: {},
+        path: function () { return ('/my-bucket'); }
+    };
+    t.equal(bucketScope.extractBucket(req), 'my-bucket',
+        'should extract bucket from /bucket');
+    t.done();
+};
+
+exports['extractBucket: root path returns null'] = function (t) {
+    var req = {
+        params: {},
+        path: function () { return ('/'); }
+    };
+    t.equal(bucketScope.extractBucket(req), null,
+        'root path should return null (ListBuckets)');
+    t.done();
+};
+
+exports['extractBucket: empty path returns null'] = function (t) {
+    var req = {
+        params: {},
+        path: function () { return (''); }
+    };
+    t.equal(bucketScope.extractBucket(req), null,
+        'empty path should return null');
+    t.done();
+};
+
+exports['extractBucket: prefers req.params[0]'] = function (t) {
+    var req = {
+        params: { 0: 'from-route' },
+        path: function () { return ('/from-path/key'); }
+    };
+    t.equal(bucketScope.extractBucket(req), 'from-route',
+        'should prefer params[0] over path parsing');
+    t.done();
+};
+
+exports['extractBucket: prefers req.params.bucket'] = function (t) {
+    var req = {
+        params: { bucket: 'named-param' },
+        path: function () { return ('/from-path/key'); }
+    };
+    t.equal(bucketScope.extractBucket(req), 'named-param',
+        'should prefer params.bucket over path parsing');
+    t.done();
+};
+
+exports['extractBucket: sanitized double slash'] = function (t) {
+    /* After sanitizePath, //bucket becomes /bucket */
+    var req = {
+        params: {},
+        path: function () { return ('/bucket'); }
+    };
+    t.equal(bucketScope.extractBucket(req), 'bucket',
+        'sanitized //bucket should extract bucket');
+    t.done();
+};
+
+exports['extractBucket: trailing slash stripped'] = function (t) {
+    /* After sanitizePath, /bucket/ becomes /bucket */
+    var req = {
+        params: {},
+        path: function () { return ('/bucket'); }
+    };
+    t.equal(bucketScope.extractBucket(req), 'bucket',
+        'sanitized /bucket/ should extract bucket');
+    t.done();
+};
+
+exports['extractBucket: deep object path'] = function (t) {
+    var req = {
+        params: {},
+        path: function () { return ('/bucket/a/b/c/key.txt'); }
+    };
+    t.equal(bucketScope.extractBucket(req), 'bucket',
+        'should extract first segment regardless of path depth');
+    t.done();
+};
+
+exports['extractBucket: bucket with dots'] = function (t) {
+    var req = {
+        params: {},
+        path: function () { return ('/my.bucket.name/key'); }
+    };
+    t.equal(bucketScope.extractBucket(req), 'my.bucket.name',
+        'should handle dots in bucket names');
+    t.done();
+};
+
+exports['extractBucket: bucket with hyphens'] = function (t) {
+    var req = {
+        params: {},
+        path: function () { return ('/my-bucket-123/key'); }
+    };
+    t.equal(bucketScope.extractBucket(req), 'my-bucket-123',
+        'should handle hyphens and numbers in bucket names');
+    t.done();
+};
+
+exports['extractBucket: raw double slash without sanitize'] = function (t) {
+    /*
+     * If sanitizePath were somehow bypassed, //bucket/key would
+     * produce segments ['', '', 'bucket', 'key'] and segments[1]
+     * would be '' which coerces to null.  This is fail-closed:
+     * the middleware treats it as a root-level request and applies
+     * ListBuckets filtering rather than granting access to a
+     * specific bucket.
+     */
+    var req = {
+        params: {},
+        path: function () { return ('//bucket/key'); }
+    };
+    var result = bucketScope.extractBucket(req);
+    t.equal(result, null,
+        'unsanitized //bucket should return null (fail-closed)');
+    t.done();
+};

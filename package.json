@@ -21,7 +21,7 @@
         "clone": "0.1.9",
         "cmdln": "4.3.0",
         "content-disposition": "0.5.3",
-        "cueball": "2.10.3",
+        "cueball": "git+https://github.com/TritonDataCenter/node-cueball.git#90bd702",
         "dashdash": "1.3.2",
         "dtrace-provider": "0.8.8",
         "fast": "3.1.3",

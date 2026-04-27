@@ -940,3 +940,108 @@ exports['extractBucket: raw double slash without sanitize'] = function (t) {
         'unsanitized //bucket should return null (fail-closed)');
     t.done();
 };
+
+// ============================================================================
+// STS "none" sentinel tests
+//
+// STS temp credentials from unscoped parent keys carry
+// bucketScope: "none" (a sentinel) instead of null, so
+// enforceBucketScope can distinguish "parent was unscoped"
+// from "scope was lost in transit."
+// ============================================================================
+
+exports['enforceBucketScope: none sentinel allows (unscoped parent)'] =
+    function (t) {
+    var req = {
+        caller: {
+            account: { login: 'test' },
+            bucketScope: 'none',
+            parsedBucketScope: null
+        },
+        auth: {
+            isTemporaryCredential: true,
+            assumedRole: 'arn:aws:iam::1234:role/test',
+            accessKeyId: 'MSAR_TEST'
+        },
+        params: {},
+        path: function () { return ('/some-bucket/key'); },
+        log: {
+            debug: function () {},
+            info: function () {},
+            warn: function () {},
+            error: function () {}
+        }
+    };
+    bucketScope.enforceBucketScope(req, {}, function (err) {
+        t.ifError(err,
+            '"none" sentinel should allow (parent was unscoped)');
+        t.equal(req.scopeContext, undefined,
+            'should NOT set scopeContext (no filtering)');
+        t.done();
+    });
+};
+
+exports['enforceBucketScope: invalid bucketScope string is denied'] =
+    function (t) {
+    var req = {
+        caller: {
+            account: { login: 'test' },
+            bucketScope: 'garbage-not-json',
+            parsedBucketScope: null
+        },
+        auth: {
+            isTemporaryCredential: true,
+            assumedRole: 'arn:aws:iam::1234:role/test',
+            accessKeyId: 'MSAR_TEST'
+        },
+        params: { 0: 'some-bucket' },
+        path: function () { return ('/some-bucket/key'); },
+        log: {
+            debug: function () {},
+            info: function () {},
+            warn: function () {},
+            error: function () {}
+        }
+    };
+    bucketScope.enforceBucketScope(req, {}, function (err) {
+        t.ok(err, 'invalid bucketScope string should deny');
+        t.equal(err.restCode, 'AccessDeniedByKeyScope',
+            'should deny with scope error code');
+        t.equal(err.statusCode, 403, 'should be 403');
+        t.done();
+    });
+};
+
+exports['enforceBucketScope: null scope on temp cred allows (compat)'] =
+    function (t) {
+    /*
+     * Old temp credentials in Redis have bucketScope: null.
+     * loadCaller's falsy check means req.caller.bucketScope
+     * is never set.  The middleware should allow these
+     * (same behavior as pre-sentinel code).
+     */
+    var req = {
+        caller: {
+            account: { login: 'test' }
+            /* bucketScope not set — simulates null from Redis */
+        },
+        auth: {
+            isTemporaryCredential: true,
+            assumedRole: 'arn:aws:iam::1234:role/test',
+            accessKeyId: 'MSAR_OLD'
+        },
+        params: {},
+        path: function () { return ('/some-bucket/key'); },
+        log: {
+            debug: function () {},
+            info: function () {},
+            warn: function () {},
+            error: function () {}
+        }
+    };
+    bucketScope.enforceBucketScope(req, {}, function (err) {
+        t.ifError(err,
+            'old temp cred with no bucketScope should still allow');
+        t.done();
+    });
+};

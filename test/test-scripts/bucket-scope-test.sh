@@ -826,11 +826,12 @@ test_sts_assume_role_after_idle() {
     export AWS_SECRET_ACCESS_KEY="$ORIGINAL_AWS_SECRET_ACCESS_KEY"
     unset AWS_SESSION_TOKEN
 
-    local account_uuid
+    local account_uuid identity_result
     set +e
-    account_uuid=$(aws_sts get-caller-identity --output json 2>/dev/null \
-        | jq -r '.Account // empty')
+    identity_result=$(aws_sts get-caller-identity --output json 2>&1)
+    account_uuid=$(echo "$identity_result" | jq -r '.Account // empty')
     set -e
+    log "STS idle test - get-caller-identity: $identity_result"
     if [ -z "$account_uuid" ]; then
         warning "STS idle test - could not get account UUID, skipping"
         export AWS_ACCESS_KEY_ID="$saved_key"
@@ -844,9 +845,17 @@ test_sts_assume_role_after_idle() {
     trust_policy='{"Version":"2012-10-17","Statement":[{"Effect":"Allow",'\
 '"Principal":{"AWS":"*"},"Action":"sts:AssumeRole"}]}'
 
-    if ! aws_iam create-role \
+    log "STS idle test - creating role: $role_name"
+    local create_role_result
+    set +e
+    create_role_result=$(aws_iam create-role \
         --role-name "$role_name" \
-        --assume-role-policy-document "$trust_policy" >/dev/null 2>&1; then
+        --assume-role-policy-document "$trust_policy" 2>&1)
+    local create_role_rc=$?
+    set -e
+    log "STS idle test - create-role rc=$create_role_rc"
+    log "STS idle test - create-role result: $create_role_result"
+    if [ $create_role_rc -ne 0 ]; then
         warning "STS idle test - could not create role, skipping"
         export AWS_ACCESS_KEY_ID="$saved_key"
         export AWS_SECRET_ACCESS_KEY="$saved_secret"
@@ -857,12 +866,43 @@ test_sts_assume_role_after_idle() {
     local s3_policy
     s3_policy='{"Version":"2012-10-17","Statement":[{"Effect":"Allow",'\
 '"Action":["s3:GetObject","s3:ListBucket"],"Resource":"*"}]}'
-    aws_iam put-role-policy \
+    local put_policy_result
+    set +e
+    put_policy_result=$(aws_iam put-role-policy \
         --role-name "$role_name" \
         --policy-name "S3ReadOnly" \
-        --policy-document "$s3_policy" >/dev/null 2>&1
+        --policy-document "$s3_policy" 2>&1)
+    local put_policy_rc=$?
+    set -e
+    log "STS idle test - put-role-policy rc=$put_policy_rc"
+    if [ $put_policy_rc -ne 0 ]; then
+        log "STS idle test - put-role-policy failed: $put_policy_result"
+    fi
 
     local role_arn="arn:aws:iam::${account_uuid}:role/${role_name}"
+
+    # Verify role was created and is usable before idle
+    log "STS idle test - verifying role works before idle..."
+    set +e
+    local pre_idle_result pre_idle_rc
+    pre_idle_result=$(aws_sts assume-role \
+        --role-arn "$role_arn" \
+        --role-session-name "pre-idle-check" \
+        --output json 2>&1)
+    pre_idle_rc=$?
+    set -e
+    log "STS idle test - pre-idle AssumeRole rc=$pre_idle_rc"
+    if [ $pre_idle_rc -ne 0 ]; then
+        log "STS idle test - pre-idle AssumeRole FAILED: $pre_idle_result"
+        log "STS idle test - role_arn: $role_arn"
+        log "STS idle test - skipping idle wait (role not usable)"
+        aws_iam_silent delete-role-policy \
+            --role-name "$role_name" --policy-name "S3ReadOnly" || true
+        aws_iam_silent delete-role --role-name "$role_name" || true
+        error "STS idle test - AssumeRole failed BEFORE idle (role setup broken)"
+        return 1
+    fi
+    log "STS idle test - pre-idle AssumeRole OK"
 
     log "STS idle test - sleeping ${STS_IDLE_WAIT}s to exceed ldapjs" \
         "idleTimeout (90s default)..."
@@ -881,13 +921,17 @@ test_sts_assume_role_after_idle() {
     sts_rc=$?
     set -e
 
+    log "STS idle test - post-idle AssumeRole rc=$sts_rc"
+    if [ $sts_rc -ne 0 ]; then
+        log "STS idle test - post-idle response: $sts_result"
+    fi
+
     aws_iam_silent delete-role-policy \
         --role-name "$role_name" --policy-name "S3ReadOnly" || true
     aws_iam_silent delete-role --role-name "$role_name" || true
 
     if [ $sts_rc -ne 0 ]; then
-        error "STS idle test - AssumeRole failed after ${STS_IDLE_WAIT}s" \
-            "idle: $sts_result"
+        error "STS idle test - AssumeRole failed after ${STS_IDLE_WAIT}s idle"
         return 1
     fi
 
@@ -1149,10 +1193,13 @@ main() {
     test_list_buckets_filtering
     test_wildcard_scope
     test_sts_scope_inheritance
-    test_sts_assume_role_after_idle
     test_scope_update
     test_scope_removal
     test_ufds_read_through
+
+    # STS idle test last: it sleeps 100s and may fail
+    # on infrastructure issues unrelated to bucket scope.
+    test_sts_assume_role_after_idle
 
     test_cleanup
     print_summary

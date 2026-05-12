@@ -1,7 +1,7 @@
 {
     "name": "buckets-api",
     "description": "Manta user-facing API",
-    "version": "2.0.0",
+    "version": "2.1.0",
     "author": "Edgecast Cloud (edgecast.io)",
     "private": true,
     "repository": {

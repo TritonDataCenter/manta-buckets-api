@@ -543,6 +543,140 @@ test_cross_bucket_denial() {
 }
 
 # =============================================================================
+# Test 4b: Cross-scope key isolation
+#
+# Verifies that scopes are strictly per-key: a key scoped to
+# bucket X cannot perform any operation against bucket Y, even
+# when another key in the same account has Y in its scope.
+# Pins the "scopes do not pool across keys" property.
+#
+# Reuses state from tests 1-3:
+#   SCOPED_KEY_ID       (level=read,      bucket=SCOPE_BUCKET_A)
+#   SCOPED_KEY_ID_RW    (level=readwrite, bucket=SCOPE_BUCKET_B)
+#   SCOPED_KEY_ID_FULL  (level=full,      bucket=<deleted by Test 3>)
+#
+# The FULL-scope test creates its own bucket inline and DELETEs
+# it as part of asserting "delete-bucket allowed with full".
+# So SCOPED_KEY_ID_FULL outlives its bucket; we only use it as
+# an AGGRESSOR against A and B (which are still alive). That
+# is the security-critical direction anyway: prove a full-scope
+# key cannot escape its bucket pattern.
+# =============================================================================
+
+test_cross_scope_key_isolation() {
+    log "=== Test 4b: Cross-scope key isolation ==="
+
+    if [ -z "$SCOPED_KEY_ID" ] || [ -z "$SCOPED_KEY_ID_RW" ] || \
+       [ -z "$SCOPED_KEY_ID_FULL" ]; then
+        warning "Cross-scope test - prerequisites missing, skipping"
+        return 0
+    fi
+
+    # Key A (read on A) -> bucket B (RW-key's scope, not A's)
+    assert_s3_deny \
+        "Cross-scope - read-key denied GET against RW-key's bucket" \
+        "AccessDeniedByKeyScope" \
+        with_key "$SCOPED_KEY_ID" "$SCOPED_SECRET" \
+            aws_s3api get-object \
+                --bucket "$SCOPE_BUCKET_B" \
+                --key "test.txt" \
+                "$TEMP_DIR/xs-read-vs-rw.txt"
+
+    assert_s3_deny \
+        "Cross-scope - read-key denied PUT against RW-key's bucket" \
+        "AccessDeniedByKeyScope" \
+        with_key "$SCOPED_KEY_ID" "$SCOPED_SECRET" \
+            aws_s3api put-object \
+                --bucket "$SCOPE_BUCKET_B" \
+                --key "xs-write-test.txt" \
+                --body "$TEMP_DIR/scope-test-obj.txt"
+
+    # Key RW (readwrite on B) -> bucket A (read-key's scope, not RW's)
+    assert_s3_deny \
+        "Cross-scope - rw-key denied GET against read-key's bucket" \
+        "AccessDeniedByKeyScope" \
+        with_key "$SCOPED_KEY_ID_RW" "$SCOPED_SECRET_RW" \
+            aws_s3api get-object \
+                --bucket "$SCOPE_BUCKET_A" \
+                --key "test.txt" \
+                "$TEMP_DIR/xs-rw-vs-read.txt"
+
+    assert_s3_deny \
+        "Cross-scope - rw-key denied PUT against read-key's bucket" \
+        "AccessDeniedByKeyScope" \
+        with_key "$SCOPED_KEY_ID_RW" "$SCOPED_SECRET_RW" \
+            aws_s3api put-object \
+                --bucket "$SCOPE_BUCKET_A" \
+                --key "xs-write-test.txt" \
+                --body "$TEMP_DIR/scope-test-obj.txt"
+
+    # Key FULL (full on now-deleted bucket) -> bucket A / bucket B.
+    # Critical: a full-scope key must not escape its bucket pattern
+    # just because the level is 'full'.
+    assert_s3_deny \
+        "Cross-scope - full-key denied GET against read-key's bucket" \
+        "AccessDeniedByKeyScope" \
+        with_key "$SCOPED_KEY_ID_FULL" "$SCOPED_SECRET_FULL" \
+            aws_s3api get-object \
+                --bucket "$SCOPE_BUCKET_A" \
+                --key "test.txt" \
+                "$TEMP_DIR/xs-full-vs-read.txt"
+
+    assert_s3_deny \
+        "Cross-scope - full-key denied PUT against read-key's bucket" \
+        "AccessDeniedByKeyScope" \
+        with_key "$SCOPED_KEY_ID_FULL" "$SCOPED_SECRET_FULL" \
+            aws_s3api put-object \
+                --bucket "$SCOPE_BUCKET_A" \
+                --key "xs-full-write.txt" \
+                --body "$TEMP_DIR/scope-test-obj.txt"
+
+    assert_s3_deny \
+        "Cross-scope - full-key denied DELETE-bucket against read-key's bucket" \
+        "AccessDeniedByKeyScope" \
+        with_key "$SCOPED_KEY_ID_FULL" "$SCOPED_SECRET_FULL" \
+            aws_s3api delete-bucket --bucket "$SCOPE_BUCKET_A"
+
+    assert_s3_deny \
+        "Cross-scope - full-key denied PUT against RW-key's bucket" \
+        "AccessDeniedByKeyScope" \
+        with_key "$SCOPED_KEY_ID_FULL" "$SCOPED_SECRET_FULL" \
+            aws_s3api put-object \
+                --bucket "$SCOPE_BUCKET_B" \
+                --key "xs-full-write-b.txt" \
+                --body "$TEMP_DIR/scope-test-obj.txt"
+
+    # ListBuckets from each key must exclude buckets in other keys' scopes.
+    # Complements test 5 (single key) with same-account multi-key coverage.
+    local listed_a listed_rw listed_full
+    listed_a=$(with_key "$SCOPED_KEY_ID" "$SCOPED_SECRET" \
+        aws_s3api list-buckets --output json 2>/dev/null | \
+        jq -r '.Buckets[].Name' 2>/dev/null)
+    listed_rw=$(with_key "$SCOPED_KEY_ID_RW" "$SCOPED_SECRET_RW" \
+        aws_s3api list-buckets --output json 2>/dev/null | \
+        jq -r '.Buckets[].Name' 2>/dev/null)
+    listed_full=$(with_key "$SCOPED_KEY_ID_FULL" "$SCOPED_SECRET_FULL" \
+        aws_s3api list-buckets --output json 2>/dev/null | \
+        jq -r '.Buckets[].Name' 2>/dev/null)
+
+    if echo "$listed_a" | grep -qE "^${SCOPE_BUCKET_B}$"; then
+        error "Cross-scope - read-key list leaked RW-key's bucket"
+    else
+        success "Cross-scope - read-key list excludes RW-key's bucket"
+    fi
+    if echo "$listed_rw" | grep -qE "^${SCOPE_BUCKET_A}$"; then
+        error "Cross-scope - rw-key list leaked read-key's bucket"
+    else
+        success "Cross-scope - rw-key list excludes read-key's bucket"
+    fi
+    if echo "$listed_full" | grep -qE "^${SCOPE_BUCKET_A}$|^${SCOPE_BUCKET_B}$"; then
+        error "Cross-scope - full-key list leaked other keys' buckets"
+    else
+        success "Cross-scope - full-key list excludes read/RW buckets"
+    fi
+}
+
+# =============================================================================
 # Test 5: ListBuckets filtering
 # =============================================================================
 
@@ -1193,6 +1327,7 @@ main() {
     test_readwrite_scope
     test_full_scope
     test_cross_bucket_denial
+    test_cross_scope_key_isolation
     test_list_buckets_filtering
     test_wildcard_scope
     test_sts_scope_inheritance

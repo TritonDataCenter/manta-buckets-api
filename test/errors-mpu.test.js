@@ -46,7 +46,7 @@
  * in lib/auth.js and the full server boot dependencies), no tape
  * (not in this project's node_modules). Each `exports.<name>` is a
  * nodeunit test taking a `t` object; `make test` invokes them via
- * node_modules/.bin/nodeunit on test/*.test.js.
+ * node_modules/.bin/nodeunit on the test directory glob.
  */
 
 var errors = require('../lib/errors');
@@ -54,6 +54,7 @@ var errors = require('../lib/errors');
 
 function defineTest(name, fn) {
     exports[name] = function (t) {
+
         // Polyfill nodeunit's t with the helper-style affordances
         // this file uses (t.end alias, t.notOk).
         t.end = function () {

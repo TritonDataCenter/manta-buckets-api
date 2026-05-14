@@ -206,15 +206,17 @@ def wait_for_cleanup_convergence(s3, bucket: str, key: str,
            have been swept but the upload record has not yet been
            deleted.
        - 4xx (NoSuchUpload / 404):
-           upload record is gone — the textbook signal.
-       - 5xx (InternalError):
-           buckets-api currently surfaces getUploadRecord's
-           ObjectNotFound as a 500. That is a separate pre-existing
-           bug, but for our purposes a 5xx on ListParts after Complete
-           is just as conclusive a "record is gone" signal as a 4xx.
-           The metadata-side cross-shard sweep does the actual fix
-           validation, so accepting 5xx here only affects when we
-           stop polling, not what we ultimately verify.
+           upload record is gone — the textbook S3 signal.
+
+    A 5xx response means the server hit something it didn't expect.
+    Earlier revisions of this helper accepted a 5xx as evidence the
+    record was gone, because buckets-api was surfacing the
+    "getUploadRecord -> ObjectNotFound" path as a generic 500
+    InternalError. That has been fixed (see openspec/changes/
+    CHG-141-listparts-completed-error-mapping/): ListParts on a
+    completed uploadId now serializes as 404 NoSuchUpload via the
+    BucketsApiError chain in lib/errors.js. Accepting 5xx here would
+    silently mask a regression of CHG-141.
 
     Returns True on convergence within timeout, False otherwise.
     """
@@ -238,12 +240,6 @@ def wait_for_cleanup_convergence(s3, bucket: str, key: str,
             if code in ('NoSuchUpload', '404') or http == 404:
                 ok(f'{label}: cleanup converged — ListParts returns '
                    f'NoSuchUpload')
-                return True
-            if 500 <= http < 600:
-                ok(f'{label}: cleanup converged — ListParts returns '
-                   f'{code} / HTTP {http} (upload record gone; see '
-                   f'comment in helper for buckets-api error-mapping '
-                   f'caveat)')
                 return True
             last_state = f'ListParts raised {code} (HTTP {http})'
         time.sleep(interval)

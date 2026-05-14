@@ -237,9 +237,19 @@ def wait_for_cleanup_convergence(s3, bucket: str, key: str,
             code = e.response.get('Error', {}).get('Code', '')
             http = e.response.get('ResponseMetadata',
                                    {}).get('HTTPStatusCode', 0)
-            if code in ('NoSuchUpload', '404') or http == 404:
+            # Require both signals — Code in the XML body AND the
+            # HTTP status. Accepting HTTP 404 alone (regardless of
+            # the body Code) used to pass even when the body said
+            # InternalError: that masked the S3_ERROR_RESPONSES gap
+            # uncovered by test/integration-mpu-error-mapping.py
+            # (the table in lib/s3-compat.js had no NoSuchUpload
+            # entry, so the body fell through to InternalError while
+            # preserveStatusCode kept the HTTP at 404). The fix in
+            # s3-compat.js makes both signals agree; this assertion
+            # locks it in.
+            if (code == 'NoSuchUpload') and (http == 404):
                 ok(f'{label}: cleanup converged — ListParts returns '
-                   f'NoSuchUpload')
+                   f'404 NoSuchUpload')
                 return True
             last_state = f'ListParts raised {code} (HTTP {http})'
         time.sleep(interval)

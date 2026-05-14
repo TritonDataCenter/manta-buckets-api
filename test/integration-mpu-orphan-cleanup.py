@@ -212,11 +212,10 @@ def wait_for_cleanup_convergence(s3, bucket: str, key: str,
     Earlier revisions of this helper accepted a 5xx as evidence the
     record was gone, because buckets-api was surfacing the
     "getUploadRecord -> ObjectNotFound" path as a generic 500
-    InternalError. That has been fixed (see openspec/changes/
-    CHG-141-listparts-completed-error-mapping/): ListParts on a
+    InternalError. That has been fixed: ListParts on a
     completed uploadId now serializes as 404 NoSuchUpload via the
     BucketsApiError chain in lib/errors.js. Accepting 5xx here would
-    silently mask a regression of CHG-141.
+    silently mask a regression.
 
     Returns True on convergence within timeout, False otherwise.
     """

@@ -3,14 +3,14 @@
 # Per-Bucket Access Key Scope — Error Response Format Tests
 #
 # Verifies that scope denials return proper S3-compatible XML error
-# responses. Also acts as a regression test for CHG-069 (passthrough
-# formatter crash on binary paths like GET/PUT object).
+# responses. Also acts as a regression test for the passthrough
+# formatter crash on binary paths like GET/PUT object.
 #
 # Tests:
 #   1. Scope deny returns <Code>AccessDenied</Code> in XML
 #   2. Scope deny returns HTTP 403
-#   3. Scope deny on GET object (binary path) — CHG-069 regression
-#   4. Scope deny on PUT object (binary path) — CHG-069 regression
+#   3. Scope deny on GET object (binary path)
+#   4. Scope deny on PUT object (binary path)
 #   5. Error includes <RequestId> for SDK compatibility
 #
 # Prerequisites:
@@ -294,19 +294,19 @@ test_error_http_403() {
 }
 
 # =============================================================================
-# Test 3: Scope deny on GET object (binary path) — CHG-069 regression
+# Test 3: Scope deny on GET object (binary path)
 #
-# Pre-CHG-069: GET object paths set _skipS3ResponseProcessing=true and
+# Pre-fix: GET object paths set _skipS3ResponseProcessing=true and
 # _binaryOperation=true. When enforceBucketScope denied the request,
 # the passthrough formatter received an Error object and passed it to
 # res.write(), causing TypeError → process crash → 502.
 #
-# Post-CHG-069: The passthrough formatter routes Error objects through
+# Post-fix: the passthrough formatter routes Error objects through
 # formatJSON, producing a valid XML error response.
 # =============================================================================
 
 test_get_object_binary_path_deny() {
-    log "=== Test 3: GET object scope deny (binary path, CHG-069 regression) ==="
+    log "=== Test 3: GET object scope deny (binary path) ==="
 
     export AWS_ACCESS_KEY_ID="$ERR_RO_KEY_ID"
     export AWS_SECRET_ACCESS_KEY="$ERR_RO_SECRET"
@@ -329,11 +329,11 @@ test_get_object_binary_path_deny() {
     if [ $rc -ne 0 ]; then
         # Check it's a proper 403, NOT a 502/503 (crash)
         if echo "$result" | grep -qi "502\|503\|Service Unavailable"; then
-            error "GET binary path deny - got 502/503 (CHG-069 REGRESSION: backend crashed)"
+            error "GET binary path deny - got 502/503 (REGRESSION: backend crashed)"
             error "  The passthrough formatter is crashing on Error objects."
             error "  Check buckets-api logs for 'TypeError: First argument must be a string or Buffer'"
         elif echo "$result" | grep -qi "403\|Forbidden\|AccessDenied"; then
-            success "GET binary path deny - proper 403 (CHG-069 fixed)"
+            success "GET binary path deny - proper 403 (fixed)"
         else
             error "GET binary path deny - unexpected error: $result"
         fi
@@ -346,11 +346,11 @@ test_get_object_binary_path_deny() {
 }
 
 # =============================================================================
-# Test 4: Scope deny on PUT object (binary path) — CHG-069 regression
+# Test 4: Scope deny on PUT object (binary path)
 # =============================================================================
 
 test_put_object_binary_path_deny() {
-    log "=== Test 4: PUT object scope deny (binary path, CHG-069 regression) ==="
+    log "=== Test 4: PUT object scope deny (binary path) ==="
 
     export AWS_ACCESS_KEY_ID="$ERR_RO_KEY_ID"
     export AWS_SECRET_ACCESS_KEY="$ERR_RO_SECRET"
@@ -373,13 +373,13 @@ test_put_object_binary_path_deny() {
 
     if [ $rc -ne 0 ]; then
         if echo "$result" | grep -qi "502\|503\|Service Unavailable"; then
-            error "PUT binary path deny - got 502/503 (CHG-069 REGRESSION: backend crashed)"
+            error "PUT binary path deny - got 502/503 (REGRESSION: backend crashed)"
             error "  Check buckets-api logs for 'TypeError: First argument must be a string or Buffer'"
         elif echo "$result" | grep -qi "Connection was closed"; then
             warning "PUT binary path deny - connection closed (muppet/haproxy Expect:100-continue race)"
-            success "PUT binary path deny - denied via connection reset (CHG-069 OK)"
+            success "PUT binary path deny - denied via connection reset (OK)"
         elif echo "$result" | grep -qi "403\|Forbidden\|AccessDenied"; then
-            success "PUT binary path deny - proper 403 (CHG-069 fixed)"
+            success "PUT binary path deny - proper 403 (fixed)"
         else
             error "PUT binary path deny - unexpected error: $result"
         fi

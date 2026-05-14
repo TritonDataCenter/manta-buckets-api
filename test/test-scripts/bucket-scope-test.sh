@@ -59,7 +59,7 @@ REPL_WAIT=${REPL_WAIT:-3}
 
 # Idle wait for the UFDS LDAP idle-disconnect test.
 # Must exceed the ldapjs idleTimeout in the mahi UFDS pool factory
-# (default 90s before CHG-068 fix). Reduce only when testing against
+# (default 90s). Reduce only when testing against
 # a patched mahi where idleTimeout is disabled.
 STS_IDLE_WAIT=${STS_IDLE_WAIT:-100}
 
@@ -934,7 +934,7 @@ test_sts_scope_inheritance() {
 }
 
 # =============================================================================
-# Test 9: STS AssumeRole after UFDS idle (regression for CHG-068)
+# Test 9: STS AssumeRole after UFDS idle (regression for ldapjs idle disconnect)
 #
 # The mahi UFDS pool uses ldapjs, which defaults to disconnecting idle
 # connections after 90 seconds (idleTimeout: opts.idleTimeout || 90000).
@@ -944,7 +944,7 @@ test_sts_scope_inheritance() {
 #
 # This test reproduces the failure condition: create a role, wait longer
 # than STS_IDLE_WAIT seconds (default 100, > ldapjs default 90), then
-# call AssumeRole. Without CHG-068 the call returns RequestTimeout.
+# call AssumeRole. Without the fix the call returns RequestTimeout.
 # With the fix (idleTimeout disabled in the pool factory) it succeeds.
 # =============================================================================
 

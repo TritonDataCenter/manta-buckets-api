@@ -662,7 +662,7 @@ exports['matchBucketPattern: single char bucket names'] =
 
 
 // ============================================================================
-// CHG-070: LRU cache scope contamination regression test
+// LRU cache scope contamination regression test
 //
 // Simulates what happens when node-mahi's LRU authCache
 // returns the same caller object reference for two requests:
@@ -672,7 +672,7 @@ exports['matchBucketPattern: single char bucket names'] =
 // ============================================================================
 
 exports['enforceBucketScope: shared caller object ' +
-    'does not leak scope across requests (CHG-070)'] =
+    'does not leak scope across requests'] =
 function (t) {
     /*
      * Simulate the LRU-cached caller object that node-mahi
@@ -747,10 +747,10 @@ function (t) {
  * admin key is incorrectly denied.  This test would FAIL
  * if the clone fix were reverted and the contamination
  * happened at the caller layer instead of here, but it
- * documents the exact failure mode that CHG-070 prevents.
+ * documents the exact failure mode the clone fix prevents.
  */
 exports['enforceBucketScope: contaminated shared caller ' +
-    'causes false deny (CHG-070 regression proof)'] =
+    'causes false deny'] =
 function (t) {
     /*
      * Simulate the pre-fix bug: a scoped key request

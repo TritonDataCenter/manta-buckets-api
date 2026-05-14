@@ -270,7 +270,7 @@ test_presigned_get_denied() {
     elif echo "$body" | grep -qi "AccessDenied\|Forbidden"; then
         success "Presigned GET on unscoped bucket - denied"
     elif [ "$http_code" = "502" ] || [ "$http_code" = "503" ]; then
-        error "Presigned GET on unscoped bucket - 502/503 (backend crash, CHG-069?)"
+        error "Presigned GET on unscoped bucket - 502/503 (backend crash)"
     else
         error "Presigned GET on unscoped bucket - expected 403, got HTTP $http_code"
         log "Body: $body"

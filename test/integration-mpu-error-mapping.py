@@ -3,7 +3,7 @@
 #
 # Wire-level integration test for the MPU error-mapping fix.
 #
-# CHG-141 moved the MPU-local error constructors from
+# Moved the MPU-local error constructors from
 # lib/s3-multipart.js (plain Errors with tacked-on
 # statusCode/restCode) into lib/errors.js as proper BucketsApiError
 # subclasses. The unit test test/errors-mpu.test.js verifies each

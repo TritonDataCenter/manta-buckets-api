@@ -21,24 +21,13 @@
  *      shape restify's error pipeline needs to serialize the error
  *      as an S3-style XML body. Plain Error instances (the previous
  *      anti-pattern) would fail this assertion AND would surface as
- *      generic 500 InternalError on the wire — see CHG-141 for the
- *      live-system evidence on coal.
+ *      generic 500 InternalError on the wire.
  *   3. statusCode matches the intended HTTP status code per the S3
  *      ListParts / UploadPart / CompleteMultipartUpload spec.
  *   4. restCode matches the S3 <Code> element clients see in the
  *      error body.
  *   5. The message is non-empty and includes any caller-supplied
  *      context (uploadId, partNumber, custom message).
- *
- * What this test does NOT do:
- *
- *   - Spin up a restify server to round-trip the XML body. The
- *     BucketsApiError -> restify.RestError inheritance handles that
- *     serialization deterministically; if (2) holds, the wire shape
- *     follows. End-to-end XML verification is left to the integration
- *     test (test/integration-mpu-orphan-cleanup.py) where TASK-4 will
- *     tighten the convergence assertion to require an exact 404
- *     NoSuchUpload response once this fix is deployed.
  */
 
 /*
@@ -251,6 +240,6 @@ test('plain Error with tacked-on restCode is NOT a BucketsApiError',
     t.notOk(brokenLike instanceof errors.BucketsApiError,
         'plain Error with statusCode/restCode is NOT a ' +
         'BucketsApiError — this is exactly the shape that surfaces ' +
-        'as a generic 500 InternalError on the wire (see CHG-141)');
+        'as a generic 500 InternalError on the wire');
     t.end();
 });

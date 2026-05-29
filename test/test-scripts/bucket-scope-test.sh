@@ -106,7 +106,7 @@ cloudapi() {
         -H 'Content-Type: application/json' \
         -H "accept-version: ~8" \
         -H "Date: $now" \
-        -H "Authorization: Signature keyId=\"/$SDC_ACCOUNT/keys/macbook m1\",algorithm=\"rsa-sha256\" $signature" \
+        -H "Authorization: Signature keyId=\"/$SDC_ACCOUNT/keys/${SDC_KEY_NAME:-macbook m1}\",algorithm=\"rsa-sha256\" $signature" \
         "$SDC_URL/$SDC_ACCOUNT$path" \
         "$@"
 }

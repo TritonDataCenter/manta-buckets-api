@@ -146,12 +146,20 @@ fi
 IFS=$'\n' SORTED_X_AMZ=($(sort <<<"${X_AMZ_PARAMS[*]}"))
 unset IFS
 
-# Sort MPU parameters alphabetically
-IFS=$'\n' SORTED_MPU=($(sort <<<"${MPU_PARAMS[*]}"))
-unset IFS
+# Sort MPU parameters alphabetically (handle empty array for set -u)
+if [ ${#MPU_PARAMS[@]} -gt 0 ]; then
+    IFS=$'\n' SORTED_MPU=($(sort <<<"${MPU_PARAMS[*]}"))
+    unset IFS
+else
+    SORTED_MPU=()
+fi
 
 # Combine: X-Amz parameters first, then MPU parameters
-SORTED_PARAMS=("${SORTED_X_AMZ[@]}" "${SORTED_MPU[@]}")
+if [ ${#SORTED_MPU[@]} -gt 0 ]; then
+    SORTED_PARAMS=("${SORTED_X_AMZ[@]}" "${SORTED_MPU[@]}")
+else
+    SORTED_PARAMS=("${SORTED_X_AMZ[@]}")
+fi
 
 # Join sorted parameters
 CANONICAL_QUERYSTRING=""

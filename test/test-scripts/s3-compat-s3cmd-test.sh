@@ -8,6 +8,11 @@
 
 set -euo pipefail  # Exit on error, undefined vars, pipe failures
 
+# macOS + Homebrew Python 3.14: pyexpat needs Homebrew's libexpat
+if [ -d "/opt/homebrew/opt/expat/lib" ]; then
+    export DYLD_LIBRARY_PATH="/opt/homebrew/opt/expat/lib${DYLD_LIBRARY_PATH:+:$DYLD_LIBRARY_PATH}"
+fi
+
 # Configuration variables (can be overridden via environment)
 AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID:-"AKIA123456789EXAMPLE"}
 AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY:-"wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"}

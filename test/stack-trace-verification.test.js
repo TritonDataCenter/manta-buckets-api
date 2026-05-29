@@ -10,10 +10,10 @@
 
 /*
  * stack-trace-verification.test.js: Verify that named functions appear in
- * stack traces for improved debugging (CHG-006 TASK-007)
+ * stack traces for improved debugging.
  *
  * This test demonstrates that the anonymous-to-named function conversions
- * in CHG-006 successfully improve stack trace readability by showing
+ * successfully improve stack trace readability by showing
  * descriptive function names instead of anonymous functions.
  */
 
@@ -118,24 +118,24 @@ helper.test('callback naming pattern verification', function (t) {
     // - <verb>On<Target> for iteration callbacks
 
     t.ok(expectedPatterns.length > 0,
-         'CHG-006 introduced ' + expectedPatterns.length +
+         'introduced ' + expectedPatterns.length +
          ' named functions following consistent patterns');
     t.end();
 });
 
 helper.test('debugging improvement demonstration', function (t) {
-    // Before CHG-006: Stack traces showed "(anonymous function)"
-    // After CHG-006: Stack traces show descriptive names
+    // Before: Stack traces showed "(anonymous function)"
+    // After:  Stack traces show descriptive names
 
     var before = 'at (anonymous function) (lib/s3-routes.js:212)';
     var after = 'at onListBucketsComplete (lib/s3-routes.js:212)';
 
     t.ok(before.indexOf('(anonymous function)') > -1,
-         'before CHG-006 showed anonymous function');
+         'before showed anonymous function');
     t.ok(after.indexOf('onListBucketsComplete') > -1,
-         'after CHG-006 shows descriptive function name');
+         'after shows descriptive function name');
     t.ok(after.indexOf('(anonymous function)') === -1,
-         'after CHG-006 no longer shows anonymous');
+         'after no longer shows anonymous');
 
     t.end();
 });

@@ -10,6 +10,11 @@
 
 set -eo pipefail  # Exit on error, pipe failures (removed -u for compatibility)
 
+# macOS + Homebrew Python 3.14: pyexpat needs Homebrew's libexpat
+if [ -d "/opt/homebrew/opt/expat/lib" ]; then
+    export DYLD_LIBRARY_PATH="/opt/homebrew/opt/expat/lib${DYLD_LIBRARY_PATH:+:$DYLD_LIBRARY_PATH}"
+fi
+
 # =============================================================================
 # Configuration Variables
 # =============================================================================
@@ -47,7 +52,7 @@ fi
 TEST_BUCKET="s3-compat-test-$(date +%s)"
 TEST_OBJECT="test-object.txt"
 TEST_CONTENT="Hello, S3 World! This is a test file for manta-buckets-api compatibility."
-TEMP_DIR="/tmp/s3-compat-test"
+TEMP_DIR="/tmp/s3-compat-test-$$"
 
 # Colors for output
 RED='\033[0;31m'
@@ -467,15 +472,31 @@ test_role_security() {
 
     log "Testing security for role: $role_name"
 
-    # Assume the role to get temporary credentials
-    set +e
+    # Assume the role to get temporary credentials.
+    # Retry up to 3 times — newly created roles may not be
+    # immediately visible to the STS endpoint (eventual
+    # consistency / authcache latency).
     local assume_result
-    capture_output assume_result aws_sts assume-role --role-arn "$role_arn" --role-session-name "$session_name"
-    local assume_exit=$?
-    set -e
+    local assume_exit=1
+    local attempt
+    for attempt in 1 2 3; do
+        set +e
+        capture_output assume_result aws_sts assume-role \
+            --role-arn "$role_arn" \
+            --role-session-name "$session_name"
+        assume_exit=$?
+        set -e
+        if [ $assume_exit -eq 0 ]; then
+            break
+        fi
+        if [ $attempt -lt 3 ]; then
+            log "  AssumeRole attempt $attempt failed, retrying in 5s..."
+            sleep 5
+        fi
+    done
 
     if [ $assume_exit -ne 0 ]; then
-        error "Role security test - Failed to assume role $role_name: $assume_result"
+        error "Role security test - Failed to assume role $role_name after 3 attempts: $assume_result"
         return 1
     fi
 
@@ -579,7 +600,10 @@ test_role_security() {
                 error "Role $role_name - $operation on $target_bucket was ALLOWED but should be DENIED"
                 all_passed=false
             else
-                warning "Role $role_name - $operation on $target_bucket failed with non-permission error: $op_result"
+                # Non-permission errors (502/503 = backend crash)
+                # must fail the test, not be silently ignored.
+                error "Role $role_name - $operation on $target_bucket failed with non-permission error (possible backend crash): $op_result"
+                all_passed=false
             fi
         fi
     done
@@ -600,6 +624,95 @@ test_role_security() {
         error "Role $role_name - Some security tests failed"
         return 1
     fi
+}
+
+# =============================================================================
+# XML Error Response Helpers
+# =============================================================================
+
+# Extract the <Code> value from an S3 XML error response.
+# Usage: xml_error_code "$response_body"
+# Returns the code string on stdout, empty if not found.
+xml_error_code() {
+    local body="$1"
+    echo "$body" | sed -n 's/.*<Code>\([^<]*\)<\/Code>.*/\1/p' \
+        | head -1
+}
+
+# Assert that a command fails with HTTP 403 and the S3
+# XML error body contains the expected <Code>.
+#
+# Usage:
+#   assert_s3_deny "label" "ExpectedCode" \
+#       aws_s3api get-object ...
+#
+# On success calls success(). On failure calls error().
+assert_s3_deny() {
+    local label="$1"
+    local expected_code="$2"
+    shift 2
+
+    set +e
+    local result
+    result=$("$@" 2>&1)
+    local rc=$?
+    set -e
+
+    if [ $rc -eq 0 ]; then
+        error "$label - should be denied but succeeded"
+        return 1
+    fi
+
+    # AWS CLI prints the XML body on stderr; check for
+    # the error code string in the combined output.
+    # A proper deny returns 403 (AccessDenied XML from
+    # buckets-api).  503/502 means the backend crashed
+    # (e.g. passthrough formatter TypeError) — this is
+    # a bug, not a valid denial.
+    if echo "$result" | grep -qi "503\|502\|Service Unavailable"; then
+        error "$label - got 502/503 (backend crash, not a valid deny)"
+        error "  This usually means the error response formatter crashed."
+        error "  Check buckets-api logs for 'Uncaught TypeError'."
+        return 1
+    fi
+
+    # Connection reset may happen on Expect:100-continue
+    # race with muppet/haproxy — accept but warn.
+    if echo "$result" | grep -qi "Connection was closed"; then
+        warning "$label - connection closed (muppet/haproxy Expect:100-continue race)"
+        success "$label (denied via connection reset)"
+        return 0
+    fi
+
+    if ! echo "$result" | grep -qi "403\|Forbidden\|AccessDenied"; then
+        error "$label - expected 403 but got: $result"
+        return 1
+    fi
+
+    if [ -n "$expected_code" ]; then
+
+        local actual_code
+        actual_code=$(xml_error_code "$result")
+        if [ -z "$actual_code" ]; then
+            # AWS CLI may not include raw XML; fall back
+            # to checking for the code string anywhere.
+            if echo "$result" | grep -q "$expected_code"; then
+                success "$label (code $expected_code)"
+            else
+                warning "$label - 403 but could not verify code $expected_code"
+                success "$label (403 confirmed)"
+            fi
+        elif [ "$actual_code" = "$expected_code" ]; then
+            success "$label (code $actual_code)"
+        else
+            error "$label - expected code $expected_code but got $actual_code"
+            return 1
+        fi
+    else
+        success "$label"
+    fi
+
+    return 0
 }
 
 # =============================================================================

@@ -187,7 +187,7 @@ test_cors_presigned_urls() {
     
     # Set up CORS configuration for the bucket to expose ETag header
     log "  Setting up CORS configuration with ETag exposure..."
-    cat > cors-presigned-config.json << 'EOF'
+    cat > $TEMP_DIR/cors-presigned-config.json << 'EOF'
 {
     "CORSRules": [
         {
@@ -202,7 +202,7 @@ test_cors_presigned_urls() {
 EOF
     
     set +e
-    local cors_put_result=$(aws_s3api put-bucket-cors --bucket "$cors_presigned_bucket" --cors-configuration file://cors-presigned-config.json 2>&1)
+    local cors_put_result=$(aws_s3api put-bucket-cors --bucket "$cors_presigned_bucket" --cors-configuration file://$TEMP_DIR/cors-presigned-config.json 2>&1)
     local cors_put_exit_code=$?
     set -e
     
@@ -475,7 +475,7 @@ ${canonical_request_hash}"
                     set -e
                     
                     if [ $mpu_presigned_exit_code -eq 0 ]; then
-                        mpu_presigned_url=$(echo "$mpu_script_output" | grep "^https://" | tail -1)
+                        mpu_presigned_url=$(echo "$mpu_script_output" | grep -E "^https?://" | tail -1)
                         if [ -n "$mpu_presigned_url" ]; then
                             success "CORS MPU presigned URL test - MPU presigned URL for part 1 generated"
                             log "  MPU Presigned URL: $mpu_presigned_url"
@@ -485,13 +485,13 @@ ${canonical_request_hash}"
                             set +e
                             local mpu_script_output2=$("$boto3_script" --generate-only --upload-id "$mpu_upload_id" --part-number 2 PUT "$cors_presigned_bucket" "$mpu_test_object" 3600 2>&1)
                             set -e
-                            local mpu_presigned_url2=$(echo "$mpu_script_output2" | grep "^https://" | tail -1)
+                            local mpu_presigned_url2=$(echo "$mpu_script_output2" | grep -E "^https?://" | tail -1)
                             
                             log "  Generating MPU presigned URL for part 3..."
                             set +e
                             local mpu_script_output3=$("$boto3_script" --generate-only --upload-id "$mpu_upload_id" --part-number 3 PUT "$cors_presigned_bucket" "$mpu_test_object" 3600 2>&1)
                             set -e
-                            local mpu_presigned_url3=$(echo "$mpu_script_output3" | grep "^https://" | tail -1)
+                            local mpu_presigned_url3=$(echo "$mpu_script_output3" | grep -E "^https?://" | tail -1)
                             
                             success "CORS MPU presigned URL test - All MPU part URLs generated"
                         else
